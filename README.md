@@ -14,13 +14,19 @@
 
 ## 游戏画面
 
-以下为早期开发实机截图，仅展示胖鲸鱼；当前界面、院子尺寸和布局已有变化。
+以下为当前版本的实机截图，由项目作者提供并同意公开展示。截图使用本地人物版；**公开代码默认使用胖鲸鱼，人物模型和立绘文件不随仓库提供，也不因截图展示而获得使用授权。**
 
-![胖鲸鱼的房间](docs/screenshots/room.png)
+### 卧室与电脑互动
 
-![院子与花圃](docs/screenshots/yard.png)
+![卧室与电脑椅互动](docs/screenshots/room.png)
 
-![胖鲸鱼在泳池里](docs/screenshots/pool.png)
+### 庭院、九宫格农田与泳池滑梯
+
+![庭院绿化、农田和泳池滑梯](docs/screenshots/yard.png)
+
+### 家具编辑模式
+
+![家具分类、摆放与编辑面板](docs/screenshots/editor.png)
 
 ## 快速开始
 
