@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>大肥鱼的房间 · 2.5D</title>
+<style>
+  :root{
+    --ink:#2b2340; --ink-soft:rgba(43,35,64,.62);
+    --glass:rgba(255,248,238,.72); --glass-line:rgba(255,255,255,.55);
+    --accent:#5b7cfa; --peach:#ffb08a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#171526}
+  body{font-family:"PingFang SC","Hiragino Sans GB","Helvetica Neue",system-ui,sans-serif;color:var(--ink);
+       user-select:none;-webkit-user-select:none}
+  #app{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;outline:none}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:10}
+  #fade{position:fixed;inset:0;z-index:80;background:#0d0a16;opacity:0;pointer-events:none;
+    transition:opacity .42s cubic-bezier(.4,0,.2,1)}
+  #fade.on{opacity:1}
+  .loc{margin-left:10px;padding:2px 8px;border-radius:99px;font-size:11px;letter-spacing:.08em;
+    background:rgba(255,255,255,.14);color:rgba(255,255,255,.9);border:1px solid rgba(255,255,255,.18)}
+  #hud *{pointer-events:auto}
+
+  /* 载入 */
+  #loading{position:fixed;inset:0;z-index:90;display:grid;place-items:center;
+    background:radial-gradient(120% 90% at 50% 30%,#312a4d 0%,#171526 70%);
+    transition:opacity .9s cubic-bezier(.2,.7,.2,1), visibility .9s}
+  #loading.gone{opacity:0;visibility:hidden}
+  .load-wrap{display:flex;flex-direction:column;align-items:center;gap:18px}
+  .load-whale{width:92px;height:92px;animation:bob 2.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-10px) rotate(2deg)}}
+  .load-text{color:rgba(255,255,255,.82);font-size:13px;letter-spacing:.22em;font-weight:500}
+  .load-bar{width:170px;height:3px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
+  .load-bar i{display:block;height:100%;width:0%;border-radius:99px;
+    background:linear-gradient(90deg,#7aa2ff,#ffb08a);transition:width .4s ease}
+
+  .tag{pointer-events:none}
+  #title{position:absolute;left:28px;top:26px;max-width:38vw;opacity:0;transform:translateY(-6px);
+    transition:opacity 1s .5s, transform 1s .5s}
+  #title.in{opacity:1;transform:none}
+  #title h1{margin:0;font-size:20px;font-weight:600;letter-spacing:.02em;color:#fff;
+    text-shadow:0 2px 18px rgba(20,10,40,.45)}
+  #title p{margin:6px 0 0;font-size:12.5px;color:rgba(255,255,255,.62);letter-spacing:.06em}
+
+  /* 状态卡 */
+  #status{position:absolute;left:28px;bottom:28px;width:232px;padding:15px 16px 14px;
+    border-radius:20px;background:var(--glass);border:1px solid var(--glass-line);
+    backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
+    box-shadow:0 18px 46px -18px rgba(30,16,60,.55), inset 0 1px 0 rgba(255,255,255,.8);
+    opacity:0;transform:translateY(10px);transition:opacity .9s .8s, transform .9s .8s}
+  #status.in{opacity:1;transform:none}
+  .st-head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .st-dot{width:7px;height:7px;border-radius:50%;background:#7ad3a8;box-shadow:0 0 0 4px rgba(122,211,168,.18)}
+  .st-name{font-size:14px;font-weight:600;letter-spacing:.01em}
+  .st-mood{margin-left:auto;font-size:11px;color:var(--ink-soft);letter-spacing:.08em}
+  .bar{margin:9px 0 0}
+  .bar span{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-soft);letter-spacing:.1em;margin-bottom:5px}
+  .bar span b{font-weight:500;color:rgba(43,35,64,.8);font-variant-numeric:tabular-nums}
+  .bar i{display:block;height:5px;border-radius:99px;background:rgba(43,35,64,.1);overflow:hidden}
+  .bar i em{display:block;height:100%;border-radius:99px;width:50%;transition:width .55s cubic-bezier(.2,.8,.2,1)}
+  .bar.mood i em{background:linear-gradient(90deg,#8fb2ff,#5b7cfa)}
+  .bar.food i em{background:linear-gradient(90deg,#ffc98a,#ff9f6e)}
+  .bar.love i em{background:linear-gradient(90deg,#ffb3c9,#ff7fa5)}
+
+  /* 动作 */
+  #actions{position:absolute;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);
+    display:flex;gap:9px;opacity:0;transition:opacity .9s 1s, transform .9s 1s}
+  #actions.in{opacity:1;transform:translateX(-50%)}
+  .btn{white-space:nowrap;display:flex;align-items:center;gap:7px;padding:10px 15px;border-radius:99px;cursor:pointer;
+    border:1px solid rgba(255,255,255,.5);background:rgba(255,248,238,.66);
+    backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
+    box-shadow:0 14px 34px -16px rgba(30,16,60,.6), inset 0 1px 0 rgba(255,255,255,.75);
+    font-size:12.5px;font-weight:500;color:#3a3150;letter-spacing:.06em;
+    transition:transform .18s cubic-bezier(.2,.8,.2,1), background .18s, box-shadow .18s}
+  .btn svg{width:15px;height:15px;opacity:.8}
+  .btn:hover{transform:translateY(-2px);background:rgba(255,252,246,.9);
+    box-shadow:0 20px 40px -18px rgba(30,16,60,.66), inset 0 1px 0 #fff}
+  .btn:active{transform:translateY(0) scale(.97)}
+
+  #hint{position:absolute;right:28px;bottom:30px;font-size:12px;letter-spacing:.09em;
+    color:rgba(255,255,255,.55);text-align:right;line-height:1.9;opacity:0;transition:opacity 1s 1.2s}
+  #hint.in{opacity:1}
+  #hint b{color:rgba(255,255,255,.82);font-weight:500}
+
+  @media (max-width:760px){
+    #title{left:18px;top:18px;max-width:60vw}
+    #title h1{font-size:17px}
+    #status{left:14px;bottom:auto;top:74px;width:190px;padding:12px 13px;border-radius:17px;transform:translateY(-6px)}
+    #actions{bottom:18px;gap:6px;flex-wrap:nowrap}
+    #status{top:auto;bottom:82px;left:12px}
+    .btn{padding:11px 13px;font-size:12px;gap:5px;min-height:42px}
+    #hint{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="fade"></div>
+
+<div id="hud">
+  <div id="title" class="tag">
+    <h1>大肥鱼的房间</h1>
+    <p>2.5D · 45° 等距 · MVP<span id="loc" class="loc">房间</span></p>
+  </div>
+
+  <div id="status" class="tag">
+    <div class="st-head">
+      <span class="st-dot"></span>
+      <span class="st-name">蓝色大肥鱼</span>
+      <span class="st-mood" id="mood">悠闲</span>
+    </div>
+    <div class="bar mood"><span>心情 <b id="moodVal">72</b></span><i><em id="moodBar" style="width:72%"></em></i></div>
+    <div class="bar food"><span>饱食 <b id="foodVal">46</b></span><i><em id="foodBar" style="width:46%"></em></i></div>
+    <div class="bar love"><span>亲密 <b id="loveVal">38</b></span><i><em id="loveBar" style="width:38%"></em></i></div>
+  </div>
+
+  <div id="actions">
+    <button class="btn" id="voiceToggle" data-act="voice" aria-pressed="true">语音：开</button>
+    <button class="btn" data-act="pet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.3-7-9.4A4.1 4.1 0 0 1 12 7a4.1 4.1 0 0 1 7 3.6C19 15.7 12 20 12 20Z"/></svg>
+      摸摸头
+    </button>
+    <button class="btn" data-act="feed">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13c3.5-1.6 4.6-5 6-8 2 2.6 3 5.4 3 8.4 0 3-2.2 5.6-4.5 5.6S4 16.4 4 15"/><path d="M14.5 15.5c2.2-1 4-1 5.5-.5"/></svg>
+      喂白饭
+    </button>
+    <button class="btn" data-act="sleep">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></svg>
+      去睡觉
+    </button>
+  </div>
+
+  <div id="hint" class="tag">
+    <b>点地面</b> 她会走过去<br/>
+    <b>点她</b> 摸摸头 · 拖拽可微转视角
+  </div>
+</div>
+
+<div id="loading">
+  <div class="load-wrap">
+    <svg class="load-whale" viewBox="0 0 100 100">
+      <ellipse cx="50" cy="52" rx="34" ry="29" fill="#5b7cfa"/>
+      <ellipse cx="50" cy="61" rx="24" ry="17" fill="#bccaff"/>
+      <circle cx="40" cy="45" r="5.6" fill="#fff"/><circle cx="61" cy="45" r="5.6" fill="#fff"/>
+      <circle cx="41" cy="46" r="3" fill="#23203a"/><circle cx="62" cy="46" r="3" fill="#23203a"/>
+      <circle cx="42.2" cy="44.6" r="1.1" fill="#fff"/><circle cx="63.2" cy="44.6" r="1.1" fill="#fff"/>
+      <ellipse cx="33" cy="55" rx="4" ry="2.6" fill="#ff9db4" opacity=".85"/>
+      <ellipse cx="68" cy="55" rx="4" ry="2.6" fill="#ff9db4" opacity=".85"/>
+      <path d="M18 52c-6-1-10-5-11-9 5 0 9 2 12 5Z" fill="#4666e6"/>
+      <path d="M82 52c6-1 10-5 11-9-5 0-9 2-12 5Z" fill="#4666e6"/>
+      <path d="M46 70c3 2 7 2 10 0" stroke="#3b3560" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+    </svg>
+    <div class="load-bar"><i id="loadBar"></i></div>
+    <div class="load-text" id="loadText">正在布置房间</div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

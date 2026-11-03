@@ -1,0 +1,38 @@
+{
+  "opening": {
+    "url": "/voices/dafeiyu/opening.mp3",
+    "text": "你把我关在这个小房间里，就为了给我搭个家？",
+    "duration": 5.45,
+    "sourceFile": "her-1-clean-tail.m4a"
+  },
+  "pet": {
+    "url": "/voices/dafeiyu/pet.mp3",
+    "text": "别摸头啦。",
+    "duration": 1.93,
+    "sourceFile": "her-2-6d3872f259c3.m4a"
+  },
+  "feed": {
+    "url": "/voices/dafeiyu/feed.mp3",
+    "text": "白饭……再来一点嘛。",
+    "duration": 3.69,
+    "sourceFile": "her-3-3a7abe596957.m4a"
+  },
+  "sleep": {
+    "url": "/voices/dafeiyu/sleep.mp3",
+    "text": "困了，你自己玩会儿。",
+    "duration": 3.05,
+    "sourceFile": "her-4-7f3e8c9b50e7.m4a"
+  },
+  "pool": {
+    "url": "/voices/dafeiyu/pool.mp3",
+    "text": "噗通——变回大肥鱼了。",
+    "duration": 3.21,
+    "sourceFile": "her-5-38b5ab754085.m4a"
+  },
+  "friends": {
+    "url": "/voices/dafeiyu/friends.mp3",
+    "text": "房间先这样。你什么时候把我朋友也搬进来？",
+    "duration": 5.37,
+    "sourceFile": "her-6-6d1facb1abcb.m4a"
+  }
+}
