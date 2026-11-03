@@ -59,3 +59,72 @@ THE SOFTWARE.
 ## 与项目 MIT 许可的边界
 
 项目自身源码使用根目录 LICENSE 中的 MIT 许可，第三方依赖保留原许可。`public/voices/dafeiyu/` 中的配音和 `docs/screenshots/` 中的截图不因代码 MIT 许可自动获得商用或再分发授权；具体范围见 README 的“授权说明”。商业发行前应取得素材授权或替换相应素材，不能仅通过关闭语音播放按钮规避素材打包问题。私人模型不随仓库分发。
+
+
+## 本地后端新增依赖
+
+### fastify 5.12.8 — MIT
+
+来源：https://github.com/fastify/fastify
+
+用途：本地存档 API 与构建产物静态服务。
+
+```text
+MIT License
+
+Copyright (c) 2016-present The Fastify team <https://github.com/fastify/fastify#team>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+### @fastify/static 8.3.0 — MIT
+
+来源：https://github.com/fastify/fastify-static
+
+用途：本地存档 API 与构建产物静态服务。
+
+```text
+MIT License
+
+Copyright (c) 2017-present The Fastify team
+
+The Fastify team members are listed at https://github.com/fastify/fastify#team.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+SQLite 通过 Node.js 内置 `node:sqlite` 调用，不额外分发数据库引擎二进制。Node.js 与其内置组件的声明随用户安装的运行时提供。

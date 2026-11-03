@@ -22,3 +22,10 @@ README.private.md
 src/characters/whaleGirl.js
 docs/*
 !docs/screenshots/
+
+# Local database and personal saves
+data/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*

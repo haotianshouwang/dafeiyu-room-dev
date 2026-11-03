@@ -116,15 +116,6 @@ export function buildRoom() {
   mg.fillStyle = 'rgba(120,80,56,.55)';
   for (let y = 26; y < 148; y += 12) for (let x = 26; x < 244; x += 12) mg.fillRect(x, y, 5, 3);
   const matTex = tex(matCanvas, { repeat: [1, 1], wrap: THREE.ClampToEdgeWrapping });
-  // 门口地上一小块暖光斑，提示“这里可以出去”
-  const exitGlow = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.5, 1.5),
-    new THREE.MeshBasicMaterial({ color: 0xffcf9a, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending })
-  );
-  exitGlow.rotation.x = -Math.PI / 2;
-  exitGlow.position.set(-2.95, 0.03, 1.05);
-  group.add(exitGlow);
-
   const roomDoorHit = new THREE.Mesh(
     new THREE.PlaneGeometry(2.4, 2.5),
     new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.001, depthWrite: false, side: THREE.DoubleSide })
@@ -142,6 +133,7 @@ export function buildRoom() {
   doormat.receiveShadow = true;
   doormat.name = 'doormat';
   doormat.userData.hotspot = 'exit';
+  doormat.userData.walkPortal = 'yard';
   group.add(doormat);
 
   /* ---------- 右侧：通往客厅的门垫（不建门框） ---------- */
@@ -160,15 +152,8 @@ export function buildRoom() {
   mat2.position.set(3.12, 0.022, pz);
   mat2.rotation.y = Math.PI / 2;
   mat2.receiveShadow = true;
+  mat2.userData.walkPortal = 'living';
   toLiving.add(mat2);
-  // 门垫边缘描一圈暖色，提示“可以走”
-  const matRim = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.35, 1.05),
-    new THREE.MeshBasicMaterial({ color: 0xffcf9a, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending })
-  );
-  matRim.rotation.x = -Math.PI / 2;
-  matRim.position.set(3.12, 0.028, pz);
-  toLiving.add(matRim);
   // 可点热区：整块垫子 + 一点余量
   const portalHit = new THREE.Mesh(
     new THREE.PlaneGeometry(2.0, 2.0),

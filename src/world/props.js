@@ -595,6 +595,38 @@ function makeHangingPlant() {
   return g;
 }
 
+export const FURNITURE = {
+  bed: { label: '床', icon: '🛏️', make: makeBed },
+  desk: { label: '电脑桌', icon: '🖥️', make: makeDesk },
+  chair: { label: '椅子', icon: '🪑', make: makeChair },
+  shelf: { label: '书架', icon: '📚', make: makeBookshelf },
+  lamp: { label: '落地灯', icon: '💡', make: makeFloorLamp },
+  bean: { label: '懒人沙发', icon: '🛋️', make: makeBeanbag },
+  table: { label: '小圆桌', icon: '☕', make: makeSideTable },
+  plant: { label: '大盆栽', icon: '🪴', make: makeMonstera },
+  smallPlant: { label: '小盆栽', icon: '🌿', make: () => makeSmallPlant(0x6fa87e) },
+  nightstand: { label: '床头柜', icon: '🗄️', make: makeNightstand },
+  rug: { label: '地毯', icon: '🧶', make: makeRug },
+};
+export function registerSceneFurniture(object, type, label, icon) {
+  const template=object.clone(true);
+  FURNITURE[type]={label,icon,make:()=>template.clone(true)};
+  object.userData.furnitureType=type;
+  return object;
+}
+export function markFurniture(object, type) {
+  object.userData.furnitureType = type;
+  if (type === 'chair') {
+    object.name = 'computer-chair';
+    object.userData.seat = { height: 0.53 };
+  }
+  return object;
+}
+export function createFurniture(type) {
+  if (!Object.hasOwn(FURNITURE, type)) throw new Error('Unknown furniture');
+  return markFurniture(FURNITURE[type].make(), type);
+}
+
 /* ================= 组装 ================= */
 export function buildProps() {
   const group = new THREE.Group();
@@ -612,7 +644,9 @@ export function buildProps() {
   desk.position.set(0.62, 0, -2.92); group.add(desk);
 
   const chair = makeChair();
-  chair.position.set(0.58, 0, -2.18); chair.rotation.y = 0.18; group.add(chair);
+  chair.userData.seat = { heading: Math.PI, height: 0.53 };
+  chair.name = 'computer-chair';
+  chair.position.set(0.58, 0, -2.18); chair.rotation.y = Math.PI; group.add(chair);
 
   const shelf = makeBookshelf();
   shelf.position.set(-3.24, 0, 2.15); shelf.rotation.y = Math.PI / 2; group.add(shelf);
@@ -683,6 +717,10 @@ export function buildProps() {
   bigFrame.position.set(-3.38, 1.78, -2.30);
   bigFrame.rotation.y = Math.PI / 2;
   group.add(bigFrame);
+
+  for (const [object, type] of [[bed,'bed'],[desk,'desk'],[chair,'chair'],[shelf,'shelf'],
+    [lamp,'lamp'],[bean,'bean'],[table,'table'],[monstera,'plant'],[plant2,'smallPlant'],
+    [bigPlant,'plant'],[nightstand,'nightstand'],[rug,'rug']]) markFurniture(object, type);
 
   group.traverse((o) => {
     if (!o.isMesh) return;

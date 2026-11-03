@@ -17,6 +17,7 @@ export class IsoCamera {
     this.parTarget = new THREE.Vector2();
     this.drag = 0;                         // 用户拖拽角度
     this.dragTarget = 0;
+    this.rotationLimit = 0.22;
     this.zoom = 1;
     this.zoomTarget = 1;
     this.baseHalfH = 4.78;
@@ -46,12 +47,19 @@ export class IsoCamera {
     this._view = { target: target.clone(), zoom };
     this.resize();
   }
+  /** 仅平移跟随，保持场景原有俯角、高度和观看距离。 */
+  follow(position, dt, instant = false) {
+    const k = instant ? 1 : 1 - Math.exp(-5 * dt);
+    this.target.x += (position.x - this.target.x) * k;
+    this.target.z += (position.z - this.target.z) * k;
+    this.target.y = this.homeTarget.y;
+  }
   /** 指针位置：-1~1 */
   setPointer(nx, ny) {
     this.parTarget.set(nx * 0.34, ny * 0.24);
   }
   addDrag(dx) {
-    this.dragTarget = clamp(this.dragTarget + dx, -0.22, 0.22);
+    this.dragTarget = clamp(this.dragTarget + dx, -this.rotationLimit, this.rotationLimit);
   }
   update(dt) {
     this.par.x = damp(this.par.x, this.parTarget.x, 3.2, dt);

@@ -1,3 +1,6 @@
+import {makeYardGarden, protectFarmSpace} from './yard-garden.js';
+import { makePoolSlide } from './pool-slide.js';
+import { registerSceneFurniture } from './props.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { P } from '../core/palette.js';
@@ -39,13 +42,13 @@ function plasterTextureLocal({ size = 512 } = {}) {
 
 export function buildYard() {
   const group = new THREE.Group();
-  const X0 = -4.45, X1 = 4.45, Z0 = -4.05, Z1 = 4.05;
+  const X0 = -8.9, X1 = 8.9, Z0 = -8.1, Z1 = 8.1;
   const cx = (X0 + X1) / 2, cz = (Z0 + Z1) / 2;
   const W = X1 - X0, D = Z1 - Z0;
-  const wallX = -4.0;                 // 房子外墙内表面
+  const wallX = X0 + 0.45;                 // 房子外墙内表面
 
   /* ---------- 地面 ---------- */
-  const grassTex = tex(grassTexture(), { repeat: [3.2, 3.2], aniso: 12 });
+  const grassTex = tex(grassTexture(), { repeat: [6.4, 6.4], aniso: 12 });
   const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.96, metalness: 0, envMapIntensity: 0.3, color: 0xf0f2da });
   const grass = new THREE.Mesh(new THREE.PlaneGeometry(W, D), grassMat);
   grass.rotation.x = -Math.PI / 2;
@@ -64,7 +67,10 @@ export function buildYard() {
   sg.fillStyle = '#b9b2a6'; sg.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 700; i++) { sg.fillStyle = `rgba(${140 + Math.random() * 60},${136 + Math.random() * 60},${128 + Math.random() * 56},${Math.random() * 0.22})`; sg.beginPath(); sg.arc(Math.random() * 256, Math.random() * 256, Math.random() * 7, 0, Math.PI * 2); sg.fill(); }
   const stoneMat = new THREE.MeshStandardMaterial({ map: tex(stoneC, { repeat: [1, 1], aniso: 8 }), roughness: 0.92, envMapIntensity: 0.4 });
-  const path = [[-3.3, 1.0], [-2.8, 0.85], [-2.3, 0.55], [-1.7, 0.35], [-1.0, 0.3]];
+  const path = Array.from({ length: 13 }, (_, i) => {
+    const k = i / 12;
+    return [wallX + 0.7 + k * 7.1, 1.05 - Math.sin(k * Math.PI / 2) * 0.75];
+  });
   path.forEach(([x, z], i) => {
     const st = setShadow(new THREE.Mesh(rbox(0.52, 0.045, 0.46, 0.05, 3), stoneMat));
     st.position.set(x, 0.028, z);
@@ -136,15 +142,6 @@ export function buildYard() {
   const doorLight = new THREE.PointLight(0xffb877, 4.5, 5.5, 2);
   doorLight.position.set(wallX + 0.65, 1.0, (door.z0 + door.z1) / 2);
   group.add(doorLight);
-  // 门口地上的暖光斑
-  const spill = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.9, 2.2),
-    new THREE.MeshBasicMaterial({ color: 0xffb072, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending })
-  );
-  spill.rotation.x = -Math.PI / 2;
-  spill.position.set(wallX + 1.0, 0.06, 1.05);
-  group.add(spill);
-
   // 可点热区：覆盖整扇门（透明，但参与射线检测）
   const doorHit = new THREE.Mesh(
     new THREE.PlaneGeometry(2.6, 2.5),
@@ -170,6 +167,7 @@ export function buildYard() {
   doormat.receiveShadow = true;
   doormat.name = 'doormatYard';
   doormat.userData.hotspot = 'enter';
+  doormat.userData.walkPortal = 'room';
   group.add(doormat);
 
   // 窗户
@@ -284,7 +282,8 @@ export function buildYard() {
   group.add(fence(cx, Z1 - 0.1, W - 0.2, Math.PI));
 
   // 游泳池
-  const POOL = { x0: -0.8, x1: 2.6, z0: -2.2, z1: 0.2 };
+  const poolStart = group.children.length;
+  const POOL = { x0: X1 - 5.8, x1: X1 - 1.0, z0: Z0 + 1.0, z1: Z0 + 4.4 };
   const poolCx = (POOL.x0 + POOL.x1) / 2, poolCz = (POOL.z0 + POOL.z1) / 2;
   const poolW = POOL.x1 - POOL.x0, poolD = POOL.z1 - POOL.z0;
 
@@ -387,6 +386,21 @@ export function buildYard() {
   floatRing.rotation.z = 0.12;
   group.add(floatRing);
 
+  const slide=makePoolSlide();
+  slide.position.set(POOL.x0 - 0.04, 0, poolCz);
+  slide.rotation.y = -Math.PI / 2;
+  group.add(slide);
+
+  const poolGroup=new THREE.Group();
+  poolGroup.name='yard-pool';
+  const poolParts=group.children.slice(poolStart);
+  for(const part of poolParts)poolGroup.add(part);
+  group.add(poolGroup);
+  for(const part of poolParts){part.position.x-=poolCx;part.position.z-=poolCz;}
+  poolGroup.position.set(poolCx,0,poolCz);
+  poolGroup.userData.poolRect={x0:-poolW/2,x1:poolW/2,z0:-poolD/2,z1:poolD/2};
+  registerSceneFurniture(poolGroup,'yardPool','游泳池','🏊');
+
   // 树
   const tree = new THREE.Group();
   const trunk = setShadow(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.18, 1.7, 12), clay(0x7d5a41, { roughness: 0.9 })));
@@ -397,7 +411,7 @@ export function buildYard() {
       const leaf = setShadow(new THREE.Mesh(new THREE.SphereGeometry(br, 18, 14), leafMats[i % 3]));
       leaf.position.set(bx, by, bz); leaf.scale.set(1, 0.85, 1); tree.add(leaf);
     });
-  tree.position.set(2.55, 0, 2.1);
+  tree.position.set(6.4, 0, 4.8);
   group.add(tree);
 
   // 长椅
@@ -410,14 +424,44 @@ export function buildYard() {
     const leg = setShadow(new THREE.Mesh(rbox(0.07, 0.44, 0.07, 0.02, 2), clay(0x6f5136, { roughness: 0.85 })));
     leg.position.set(sx, 0.22, sz); bench.add(leg);
   }
-  bench.position.set(1.1, 0, 2.85);
+  bench.position.set(3.8, 0, 5.8);
   bench.rotation.y = -0.25;
   group.add(bench);
 
+  // −X、−Z 角落：九块独立正方形农田，留出田间小路。
+  const farm = new THREE.Group();
+  farm.name = 'farm-plots';
+  const plotSize = 1.25, plotGap = 0.3;
+  const farmSoil = clay(0x62412e, { roughness: 1 });
+  const furrowMat = clay(0x4c3022, { roughness: 1 });
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const plot = new THREE.Group();
+      plot.name = `farm-plot-${row + 1}-${col + 1}`;
+      const soil = setShadow(new THREE.Mesh(rbox(plotSize, 0.12, plotSize, 0.045, 3), farmSoil));
+      soil.position.y = 0.065;
+      plot.add(soil);
+      for (let line = 0; line < 4; line++) {
+        const furrow = new THREE.Mesh(rbox(plotSize - 0.16, 0.014, 0.045, 0.008, 2), furrowMat);
+        furrow.position.set(0, 0.13, (line - 1.5) * 0.25);
+        furrow.receiveShadow = true;
+        plot.add(furrow);
+      }
+      plot.position.set(wallX + 1.1 + col * (plotSize + plotGap), 0,
+        Z0 + 1.1 + row * (plotSize + plotGap));
+      farm.add(plot);
+    }
+  }
+  const farmCenter=new THREE.Box3().setFromObject(farm).getCenter(new THREE.Vector3());farmCenter.y=0;
+  for(const plot of farm.children)plot.position.sub(farmCenter);
+  farm.position.copy(farmCenter);
+  group.add(farm);
+
   // 花圃
+  const flowerStart=group.children.length;
   const flowerColors = [0xf6a9c0, 0xffd479, 0xa9c6f6, 0xf2a08a];
   for (let bed = 0; bed < 3; bed++) {
-    const bx = -1.4 + bed * 1.25, bz = -3.35;
+    const bx = -3.6 + bed * 2.5, bz = Z1 - 0.9;
     const soil = setShadow(new THREE.Mesh(rbox(1.0, 0.12, 0.5, 0.04, 3), clay(0x6a4d38, { roughness: 1 })));
     soil.position.set(bx, 0.06, bz); group.add(soil);
     for (let i = 0; i < 7; i++) {
@@ -429,6 +473,12 @@ export function buildYard() {
     }
   }
 
+  const flowerGroup=new THREE.Group();
+  for(const part of group.children.slice(flowerStart))flowerGroup.add(part);
+  const flowerCenter=new THREE.Box3().setFromObject(flowerGroup).getCenter(new THREE.Vector3());flowerCenter.y=0;
+  for(const part of flowerGroup.children)part.position.sub(flowerCenter);
+  flowerGroup.position.copy(flowerCenter);
+  group.add(flowerGroup);
   // 石灯笼
   const lantern = new THREE.Group();
   const lbase = setShadow(new THREE.Mesh(rbox(0.34, 0.18, 0.34, 0.05, 3), clay(0xb0a89c, { roughness: 0.9 })));
@@ -443,7 +493,7 @@ export function buildYard() {
   lroof.position.y = 1.25; lroof.rotation.y = Math.PI / 4; lantern.add(lroof);
   const lLight = new THREE.PointLight(0xffb877, 5, 5.5, 2);
   lLight.position.set(0, 0.97, 0); lantern.add(lLight);
-  lantern.position.set(-2.2, 0, 2.55);
+  lantern.position.set(-1.8, 0, 5.1);
   group.add(lantern);
 
   // 靠墙一排花盆
@@ -479,7 +529,7 @@ export function buildYard() {
   for (let i = 0; i < 10; i++) {
     const r = setShadow(new THREE.Mesh(new THREE.SphereGeometry(0.07 + Math.random() * 0.07, 10, 8), clay(0xb0a89c, { roughness: 0.95 })));
     r.scale.set(1, 0.65, 1);
-    r.position.set(-3.2 + Math.random() * 7.0, 0.05, -3.0 + Math.random() * 6.2);
+    r.position.set(wallX + 0.9 + Math.random() * (X1 - wallX - 1.8), 0.05, Z0 + 0.8 + Math.random() * (D - 1.6));
     group.add(r);
   }
 
@@ -489,7 +539,7 @@ export function buildYard() {
   const ffPos = new Float32Array(N * 3);
   const ffData = [];
   for (let i = 0; i < N; i++) {
-    const p = new THREE.Vector3(-3.4 + Math.random() * 7.4, 0.35 + Math.random() * 1.2, -3.2 + Math.random() * 6.6);
+    const p = new THREE.Vector3(wallX + 0.8 + Math.random() * (X1 - wallX - 1.6), 0.35 + Math.random() * 1.2, Z0 + 0.8 + Math.random() * (D - 1.6));
     ffPos.set([p.x, p.y, p.z], i * 3);
     ffData.push({ p, phase: Math.random() * Math.PI * 2, speed: 0.2 + Math.random() * 0.3 });
   }
@@ -509,14 +559,16 @@ export function buildYard() {
   ff.frustumCulled = false;
   group.add(ff);
 
+  const garden=makeYardGarden();group.add(garden);
+
   // 院子光照：黄昏侧逆光（暖）+ 天空冷补光
   const dusk = new THREE.DirectionalLight(0xffc28a, 2.6);
   dusk.position.set(9, 9.5, -6);
   dusk.castShadow = true;
   dusk.shadow.mapSize.set(2048, 2048);
-  dusk.shadow.camera.left = -8; dusk.shadow.camera.right = 8;
-  dusk.shadow.camera.top = 8; dusk.shadow.camera.bottom = -8;
-  dusk.shadow.camera.near = 1; dusk.shadow.camera.far = 30;
+  dusk.shadow.camera.left = -14; dusk.shadow.camera.right = 14;
+  dusk.shadow.camera.top = 14; dusk.shadow.camera.bottom = -14;
+  dusk.shadow.camera.near = 1; dusk.shadow.camera.far = 45;
   dusk.shadow.bias = -0.0006; dusk.shadow.normalBias = 0.03;
   group.add(dusk);
   const sky = new THREE.HemisphereLight(0xbcd3ff, 0x5d6b4a, 1.15);
@@ -524,6 +576,11 @@ export function buildYard() {
   const coolFill = new THREE.DirectionalLight(0xa9c4ff, 0.6);
   coolFill.position.set(-6, 5, 7);
   group.add(coolFill);
+
+  for(const [object,type,label,icon] of [
+    [farm,'yardFarm','九宫格农田','🌱'],[tree,'yardTree','树木','🌳'],[bench,'yardBench','长椅','🪑'],
+    [lantern,'yardLantern','石灯笼','🏮'],[flowerGroup,'yardFlowers','花圃','🌷'],[can,'yardCan','浇水壶','🚿'],
+  ]) registerSceneFurniture(object,type,label,icon);
 
   group.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
 
@@ -539,8 +596,8 @@ export function buildYard() {
       d.p.x += Math.sin(t * d.speed + d.phase) * 0.14 * dt;
       d.p.y += Math.cos(t * d.speed * 0.8 + d.phase) * 0.1 * dt;
       d.p.z += Math.cos(t * d.speed * 0.6 + d.phase * 1.7) * 0.14 * dt;
-      if (d.p.x < -3.6) d.p.x = 3.7; if (d.p.x > 3.8) d.p.x = -3.6;
-      if (d.p.z < -3.3) d.p.z = 3.4; if (d.p.z > 3.5) d.p.z = -3.3;
+      if (d.p.x < wallX + 0.6) d.p.x = X1 - 0.6; if (d.p.x > X1 - 0.5) d.p.x = wallX + 0.7;
+      if (d.p.z < Z0 + 0.6) d.p.z = Z1 - 0.6; if (d.p.z > Z1 - 0.5) d.p.z = Z0 + 0.7;
       if (d.p.y < 0.25) d.p.y = 1.6; if (d.p.y > 1.7) d.p.y = 0.3;
       attr.setXYZ(i, d.p.x, d.p.y, d.p.z);
     }
@@ -553,7 +610,16 @@ export function buildYard() {
 
   return {
     group, update,
+    refreshLandscape:()=>protectFarmSpace(group,garden),
     pool: POOL,
+    containsWater(position) {
+      group.updateMatrixWorld(true);
+      return group.children.some(o=>{
+        const rect=o.userData.poolRect;if(!rect)return false;
+        const p=o.worldToLocal(position.clone());
+        return p.x>rect.x0&&p.x<rect.x1&&p.z>rect.z0&&p.z<rect.z1;
+      });
+    },
     bounds: { x0: wallX + 0.35, x1: X1 - 0.55, z0: Z0 + 0.55, z1: Z1 - 0.55 },
     view: { target: new THREE.Vector3(0.55, 1.1, 0.05), zoom: 0.86 },
     spawn: new THREE.Vector3(wallX + 1.9, 1.12, 0.1),

@@ -36,8 +36,13 @@ export class WhaleMaid {
         upperL: find('UpperArm.L'), upperR: find('UpperArm.R'),
         foreL: find('Forearm.L'), foreR: find('Forearm.R'),
         handL: find('Hand.L'), handR: find('Hand.R'),
-        head: find('Head'),
+        head: find('Head'), hips: find('Hips'),
+        thighL: find('Thigh.L'), thighR: find('Thigh.R'),
+        shinL: find('Shin.L'), shinR: find('Shin.R'),
       };
+      this.seatLegRest = ['thighL', 'thighR', 'shinL', 'shinR']
+        .filter(key => this.bones[key])
+        .map(key => ({ key, bone: this.bones[key], rest: this.bones[key].quaternion.clone() }));
       const tail=find('Tail');
       if (tail) {
         this.model.updateWorldMatrix(true,true);
@@ -217,11 +222,29 @@ export class WhaleMaid {
         ? Math.min(1.9, Math.max(1.0, this.speedMax / 2.1))
         : Math.min(1.9, Math.max(1.0, this.speedMax / 1.25));
       this.mixer.timeScale = lying ? .2 : base;
+      // 清掉上一帧的程序坐姿，让没有动画轨道的腿骨也能正确复原。
+      if (this.wasSeated || this.state === 'sit') {
+        for (const leg of this.seatLegRest || []) leg.bone.quaternion.copy(leg.rest);
+      }
       this.mixer.update(dt);
       this.applyHandPose(dt, time || 0, lying);
       this.applyIdleLife(dt, moving, lying);
       this.applyHairMotion(dt, moving, lying);
       this.applyTailMotion(dt, moving, lying);
+      this.wasSeated = this.state === 'sit';
+      if (this.wasSeated) {
+        for (const leg of this.seatLegRest || []) {
+          const bend = leg.key.startsWith('thigh') ? -1.35 : 1.35;
+          leg.bone.quaternion.copy(leg.rest).multiply(
+            new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), bend));
+        }
+        if (this.bones.hips) {
+          this.group.updateMatrixWorld(true);
+          const hip = this.bones.hips.getWorldPosition(new THREE.Vector3());
+          this.group.position.y += this.seatHeight - hip.y;
+        }
+      }
+
     }
   }
 }

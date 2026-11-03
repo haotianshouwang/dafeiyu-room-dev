@@ -44,6 +44,7 @@ export class Interactions {
   _bind() {
     const el = document.getElementById('actions');
     el?.addEventListener('click', (e) => {
+      if (this.editing) return;
       const btn = e.target.closest('[data-act]');
       if (!btn) return;
       const act = btn.dataset.act;
@@ -56,6 +57,7 @@ export class Interactions {
     const canvas = document.querySelector('#app canvas');
     this.pointerDown = null;
     canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
       this.pointerDown = { x: e.clientX, y: e.clientY, t: performance.now() };
     });
     canvas.addEventListener('pointerup', (e) => {
@@ -82,13 +84,9 @@ export class Interactions {
   }
 
   _click(e) {
+    if (this.editing) return;
     this.pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     this.ray.setFromCamera(this.pointer, this.camera);
-    // 先判断门垫等热点
-    if (this.hotspots.length) {
-      const hs = this.ray.intersectObjects(this.hotspots, false);
-      if (hs.length) { this.onHotspot?.(hs[0].object.userData.hotspot); return; }
-    }
     // NPC
     if (this.npcs.length) {
       const ns = this.ray.intersectObjects(this.npcs, true);
@@ -105,18 +103,7 @@ export class Interactions {
     const hits = this.ray.intersectObject(this.whale.group, true);
     if (hits.length) { this.pet(); return; }
 
-    // 点到家具/地面：地面交点
-    const ground = new THREE.Vector3();
-    if (this.ray.ray.intersectPlane(this.plane, ground)) {
-      if (ground.x < this.bounds.x0 - 0.15 || ground.x > this.bounds.x1 + 0.15) return;
-      if (ground.z < this.bounds.z0 - 0.15 || ground.z > this.bounds.z1 + 0.15) return;
-      pushOutside(ground, 0.32, this.whale.colliders || []);
-      this.fx.ripple(ground);
-      const h = this.whale.state.startsWith('sleep') ? 0.62 : 0.92 + Math.random() * 0.35;
-      this.whale.swimTo({ x: ground.x, y: h, z: ground.z }, { fast: false });
-      if (Math.random() < 0.35) this._line('move');
-      this.fx.splash(this.whale.group.position.clone().setY(this.whale.pos.y - 0.15));
-    }
+    // 地面移动由 WASD 控制，左键保留角色和 NPC 交互。
   }
 
   _syncVoiceButton() {

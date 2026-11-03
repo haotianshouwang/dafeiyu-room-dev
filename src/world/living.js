@@ -1,3 +1,4 @@
+import { registerSceneFurniture } from './props.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { P } from '../core/palette.js';
@@ -165,6 +166,7 @@ export function buildLiving() {
     if (axis === 'x') mat.position.set(mid, 0.022, wallPos + 0.5);
     else { mat.position.set(wallPos + 0.5, 0.022, mid); mat.rotation.y = Math.PI / 2; }
     mat.receiveShadow = true;
+    mat.userData.walkPortal = opts.target;
     g.add(mat);
     // 大片可点热区
     const hit = new THREE.Mesh(
@@ -464,6 +466,12 @@ export function buildLiving() {
   /* ---------- 补光 ---------- */
   const hemi = new THREE.HemisphereLight(0xffe0c0, 0x4a3f55, 0.55);
   group.add(hemi);
+
+  for(const [object,type,label,icon] of [
+    [sofa,'livingSofa','长沙发','🛋️'],[table,'livingTable','茶几','☕'],
+    [chair,'livingChair','休闲椅','🪑'],[shelf,'livingShelf','客厅书架','📚'],
+    [lamp,'livingLamp','客厅落地灯','💡'],[plant,'livingPlant','客厅盆栽','🪴'],[rug,'livingRug','客厅地毯','🧶'],
+  ]) registerSceneFurniture(object,type,label,icon);
 
   group.traverse((o) => {
     if (!o.isMesh) return;
