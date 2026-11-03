@@ -8,6 +8,9 @@ import { buildProps } from './world/props.js';
 import { buildYard } from './world/yard.js';
 import { buildLiving } from './world/living.js';
 import { Whale } from './characters/whale.js';
+import characterConfig from 'virtual:character-config';
+import { WhaleMaid } from './characters/whaleMaid.js';
+import { WhalePaper } from './characters/whalePaper.js';
 import { FX } from './effects/fx.js';
 import { HUD } from './ui/hud.js';
 import { Interactions } from './interactions.js';
@@ -40,14 +43,20 @@ scene.add(living.group);
 living.group.visible = false;
 
 
-const characterMode = 'whale';
-let whale = new Whale();
+const requestedCharacter = new URLSearchParams(location.search).get('character');
+const characterMode = characterConfig.modelBase ? (requestedCharacter || characterConfig.defaultCharacter) : 'whale';
+let whale = characterMode === 'whale' ? new Whale() : characterMode === 'paper' ? new WhalePaper() : characterMode === 'maid-arms' ? new WhaleMaid({ modelFile: 'Whale_Maid_Lively.glb' }) : new WhaleMaid();
+whale.ready?.catch(error => {
+  console.error('大肥鱼模型加载失败', error);
+  const hint = document.getElementById('hint');
+  if (hint) { hint.textContent = '模型加载失败，请刷新页面，或在地址后加 ?character=whale 查看原角色。'; hint.classList.add('in'); }
+});
 whale.group.scale.setScalar(1.28);
 whale.group.position.copy(whale.pos);
 scene.add(whale.group);
 
 // 备用形态：掉进泳池会变成这只圆胖鲸鱼
-const landWhale = whale;
+const maidRef = whale;
 const blob = new Whale();
 blob.group.scale.setScalar(1.28);
 blob.group.visible = false;
@@ -114,7 +123,7 @@ function exitWater() {
   if (!inWater) return;
   inWater = false;
   const p = whale.group.position.clone();
-  setCharacter(whale === blob ? (characterMode === 'whale' ? whale : landWhale) : whale, {});
+  setCharacter(whale === blob ? (characterMode === 'whale' ? whale : maidRef) : whale, {});
   fx.splash(p.clone().setY(0.4));
   hud.say('上岸就变回来啦。', p.clone().setY(1.6), 2.8);
 }
@@ -153,7 +162,7 @@ const locEl = document.getElementById('loc');
 let switching = false;
 
 function applyScene(id, { instant = false } = {}) {
-  if (id !== 'yard' && whale === blob) { inWater = false; setCharacter(landWhale, {}); }
+  if (id !== 'yard' && whale === blob) { inWater = false; setCharacter(maidRef, {}); }
   const cfg = SCENES[id];
   for (const key of Object.keys(SCENES)) SCENES[key].root.visible = (key === id);
   activeScene = id;
@@ -319,6 +328,7 @@ window.__whale = whale;
 window.__scene = scene;
 window.__game = game;
 window.__blob = blob;
+window.__maid = maidRef;
 window.__roomDebug = () => ({
   whale: whale.pos.toArray().map((v) => +v.toFixed(2)),
   state: whale.state,

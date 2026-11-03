@@ -1,12 +1,13 @@
 {
-  "name": "dafeiyu-whale-room",
+  "name": "dafeiyu-room",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "build": "vite build --mode public",
+    "preview": "vite preview --host 127.0.0.1",
+    "check:public": "node scripts/check-public.mjs"
   },
   "dependencies": {
     "three": "0.170.0"
