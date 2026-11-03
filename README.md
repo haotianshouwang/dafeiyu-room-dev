@@ -12,6 +12,16 @@
 
 开发通过自然语言描述需求与反复试玩推进。本项目是可运行的探索原型，部分动作和交互仍在打磨，不代表完整商业游戏。
 
+## 游戏画面
+
+以下为早期开发实机截图，仅展示胖鲸鱼；当前界面、院子尺寸和布局已有变化。
+
+![胖鲸鱼的房间](docs/screenshots/room.png)
+
+![院子与花圃](docs/screenshots/yard.png)
+
+![胖鲸鱼在泳池里](docs/screenshots/pool.png)
+
 ## 快速开始
 
 需要 **Node.js 22.13 或更高版本，推荐 Node.js 24**，数据库使用 Node.js 内置的 `node:sqlite`。
@@ -139,16 +149,6 @@ npm run check:public
 ```
 
 测试覆盖家具变换、撤销、布局恢复、泳池与滑梯路径、SQLite 持久化、场景存档隔离、离线重试和版本冲突；不等同于所有设备上的视觉或完整端到端测试。
-
-## 游戏画面
-
-以下为早期开发实机截图，仅展示胖鲸鱼；当前界面、院子尺寸和布局已有变化。
-
-![胖鲸鱼的房间](docs/screenshots/room.png)
-
-![院子与花圃](docs/screenshots/yard.png)
-
-![胖鲸鱼在泳池里](docs/screenshots/pool.png)
 
 ## 日常开发与私人资源
 
