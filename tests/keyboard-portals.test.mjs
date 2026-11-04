@@ -65,7 +65,7 @@ test('scene arrival clears held keys but retains portal protection until the mov
  handlers[0]({...snapshot,actors:[{...snapshot.actors[0],actionId:null}]});assert.equal(context.portalPending,false);
 });
 test('OS key repeat cannot re-arm movement after a scene transition clears held keys',()=>{
- let keydown;const context={window:{addEventListener:(_name,fn)=>keydown=fn},agentConnect:{},editable:()=>false,keys:new Set()};vm.createContext(context);
+ let keydown;const context={editor:null,window:{addEventListener:(_name,fn)=>keydown=fn},agentConnect:{},editable:()=>false,keys:new Set()};vm.createContext(context);
  vm.runInContext(source.slice(source.indexOf("window.addEventListener('keydown'"),source.indexOf("window.addEventListener('keyup'")),context);
  keydown({code:'KeyW',repeat:true,preventDefault(){}});assert.equal(context.keys.size,0);
  keydown({code:'KeyW',repeat:false,preventDefault(){}});assert.equal(context.keys.has('KeyW'),true);

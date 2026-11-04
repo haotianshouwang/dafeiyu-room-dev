@@ -88,6 +88,8 @@ export class RoomEditor {
   buildUI() {
     const style=document.createElement('style');
     style.textContent=`
+      .room-reset-dialog{box-sizing:border-box;width:min(540px,92vw);border:2px solid #b53131;border-radius:18px;padding:25px;background:#fff7ef;color:#503735;font:14px/1.7 system-ui;box-shadow:0 18px 90px #3008}
+      .room-reset-dialog::backdrop{background:#281415b8;backdrop-filter:blur(4px)}.room-reset-dialog h2{margin:0 0 12px;color:#a61e25;font-size:21px}.room-reset-dialog #room-reset-warning{padding:14px;border:1px solid #e3aaa5;border-radius:10px;background:#ffe9e5}.room-reset-dialog strong{color:#a61e25}.room-reset-dialog p{margin:8px 0}.room-reset-dialog label{display:block;margin-top:16px;font-weight:600}.room-reset-dialog input{box-sizing:border-box;display:block;width:100%;margin-top:7px;padding:11px;border:1px solid #bd8a83;border-radius:8px;font:inherit}.room-reset-dialog footer{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap}.room-reset-dialog button{padding:10px 14px;border:1px solid #baaaa0;border-radius:9px;background:#fff;color:#51454a;font:inherit;cursor:pointer}.room-reset-dialog [data-confirm]{background:#b3262d;border-color:#b3262d;color:white}.room-reset-dialog [data-confirm]:disabled{opacity:.4;cursor:not-allowed}
       .room-edit-state{position:fixed;left:50%;bottom:94px;transform:translateX(-50%);z-index:38;width:max-content;max-width:90vw;box-sizing:border-box;padding:10px 16px;border-radius:14px;background:#faf1e5f2;color:#51454a;box-shadow:0 6px 24px #0004;font:13px system-ui;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
       .room-edit-state button{cursor:pointer;border:1px solid #bfae9d;border-radius:9px;padding:7px 10px;background:#fff9ee;color:#51454a}.room-edit-state small{display:block;margin-top:4px}
       .room-edit-toggle{position:fixed;right:24px;top:24px;z-index:35}
@@ -141,7 +143,7 @@ export class RoomEditor {
     this.showCategory=showCategory;showCategory('全部');
     this.panel.querySelector('[data-action="done"]').onclick=()=>this.setActive(false);
     this.panel.querySelector('[data-action="undo"]').onclick=()=>this.undo();
-    this.panel.querySelector('[data-action="reset"]').onclick=()=>{this.checkpoint();this.restore(this.defaults);this.save();};
+    this.panel.querySelector('[data-action="reset"]').onclick=()=>this.requestReset();
     this.panel.querySelector('[data-action="export"]').onclick=()=>{
       const url=URL.createObjectURL(new Blob([JSON.stringify(this.snapshot(),null,2)],{type:'application/json'}));
       const a=document.createElement('a');a.href=url;a.download=`大肥鱼${this.context?.label || '卧室'}布局.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -150,6 +152,21 @@ export class RoomEditor {
     for(const [label,action] of [['↻ 旋转 90°',()=>this.rotate()],['⧉ 复制',()=>this.duplicate()],['删除家具',()=>this.remove()]]) {
       const button=document.createElement('button');button.textContent=label;button.onclick=()=>{action();this.menu.hidden=true;};this.menu.append(button);
     }document.body.append(this.menu);
+  }
+  async requestReset() {
+    if(this.resetPending)return;
+    this.resetPending=true;const context=this.context;
+    try{if(!await this.confirmReset())return;if(this.context!==context||!this.active)return;
+      this.checkpoint();this.restore(this.defaults);this.save();
+    }finally{this.resetPending=false;this.panel.querySelector('[data-action="reset"]').focus();}
+  }
+  confirmReset() {
+    const dialog=document.createElement('dialog');dialog.className='room-reset-dialog';
+    dialog.setAttribute('role','alertdialog');dialog.setAttribute('aria-labelledby','room-reset-title');dialog.setAttribute('aria-describedby','room-reset-warning');
+    dialog.innerHTML='<h2 id="room-reset-title">⚠ 危险操作：恢复默认布局</h2><p data-scene></p><div id="room-reset-warning"><strong>当前自定义家具和摆放修改将被替换！</strong><p>恢复到本次打开游戏时载入的布局，并在校验通过后覆盖当前场景的数据库存档。其他场景不受影响。</p><p>请先取消并使用「导出布局」备份，不要依赖撤销来恢复。</p></div><label>确认继续，请输入「恢复默认」<input data-ack autocomplete="off" spellcheck="false" placeholder="恢复默认"></label><footer><button data-cancel type="button">取消，保留当前布置</button><button data-confirm type="button" disabled>确认覆盖当前布局</button></footer>';
+    dialog.querySelector('[data-scene]').textContent=`操作范围：${this.context?.label||'当前场景'}`;
+    document.body.append(dialog);const input=dialog.querySelector('[data-ack]'),confirm=dialog.querySelector('[data-confirm]'),cancel=dialog.querySelector('[data-cancel]');
+    return new Promise(resolve=>{const finish=value=>{dialog.close();dialog.remove();resolve(value);};input.oninput=()=>{confirm.disabled=input.value.trim()!=='恢复默认';};confirm.onclick=()=>{if(input.value.trim()==='恢复默认')finish(true);};cancel.onclick=()=>finish(false);dialog.addEventListener('cancel',event=>{event.preventDefault();finish(false);});dialog.showModal();cancel.focus();});
   }
   async setActive(value) {
     if(this.worldClient&&!value){this.finishDrag();this.save();await this.sync.flush();if(this.sync.pending){if(!this.sync.error)this.syncMessage='正在保存，请稍候再完成布置';this.refreshState();return;}}
@@ -256,7 +273,7 @@ export class RoomEditor {
       this.menu.hidden=false;this.menu.style.left=`${Math.min(e.clientX,innerWidth-170)}px`;this.menu.style.top=`${Math.min(e.clientY,innerHeight-150)}px`;
     });
     window.addEventListener('keydown',e=>{
-      if(!this.active||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
+      if(!this.active||this.resetPending||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
       if(e.code==='Escape'){e.preventDefault();this.setActive(false);}
       if(e.code==='KeyR'){consume(e);this.rotate();}
       if(e.code==='Delete'||e.code==='Backspace'){consume(e);this.remove();}

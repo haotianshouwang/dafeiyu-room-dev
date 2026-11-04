@@ -77,7 +77,7 @@ game.getFurniture=()=>registry.scenes.get(activeScene)?.furniture.children||[];
 const scenePicker=document.createElement('div');scenePicker.hidden=true;scenePicker.style.cssText='position:fixed;left:24px;top:110px;z-index:60;display:none;gap:8px;background:#faf1e5;padding:14px;border-radius:15px;font:14px system-ui';document.body.append(scenePicker);
 document.getElementById('loc')?.addEventListener('click',()=>{scenePicker.replaceChildren();scenePicker.style.display=scenePicker.style.display==='none'?'grid':'none';for(const [id,cfg]of registry.scenes){if(cfg.data.status!=='active')continue;const button=document.createElement('button');button.textContent=cfg.label;button.onclick=()=>{scenePicker.style.display='none';keys.clear();action('move',{sceneId:id},{force:true});};scenePicker.append(button);}});
 const editable=target=>target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName);
-window.addEventListener('keydown',e=>{if(e.repeat||agentConnect.panel||editable(e.target)||!['KeyW','KeyA','KeyS','KeyD'].includes(e.code))return;e.preventDefault();keys.add(e.code);});
+window.addEventListener('keydown',e=>{if(e.repeat||editor?.resetPending||agentConnect.panel||editable(e.target)||!['KeyW','KeyA','KeyS','KeyD'].includes(e.code))return;e.preventDefault();keys.add(e.code);});
 window.addEventListener('keyup',e=>{const wasMovement=keys.delete(e.code);if(wasMovement&&!keys.size&&!editor?.active){player.stop();player.flush().catch(()=>{});}});
 function stopMovement(){const moving=keys.size>0;keys.clear();if(moving&&!editor?.active){player.stop();player.flush().catch(()=>{});}}window.addEventListener('blur',stopMovement);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMovement();});
 const pointer=new THREE.Vector2();window.addEventListener('pointermove',e=>{pointer.set(e.clientX/window.innerWidth*2-1,-e.clientY/window.innerHeight*2+1);iso.setPointer(pointer.x,pointer.y);});
@@ -85,7 +85,7 @@ const canvas=R.renderer.domElement;let dragging=false,lastX=0;canvas.addEventLis
 window.addEventListener('resize',()=>{R.resize(window.innerWidth,window.innerHeight);iso.resize();});
 function directions(snapshot){const result=[];for(const portal of snapshot.portals){const end=portalEnds(snapshot,portal);if(end.fromSceneId===actor.sceneId)result.push({...end,inwardNormal:portalInwardNormal(snapshot,{...portal,...end})});if(portal.bidirectional&&end.toSceneId===actor.sceneId)result.push({fromSceneId:end.toSceneId,toSceneId:end.fromSceneId,departure:end.landing,landing:end.departure,inwardNormal:portalInwardNormal(snapshot,{...portal,...end},true)});}return result;}
 function updateKeyboard(dt,now){
- if(agentConnect.panel){stopMovement();return;}
+ if(agentConnect.panel||editor?.resetPending){stopMovement();return;}
  const x=Number(keys.has('KeyD'))-Number(keys.has('KeyA')),z=Number(keys.has('KeyS'))-Number(keys.has('KeyW'));
  if(!actor)return;
  if(!(x||z)){if(player.active&&player.held){player.stop();player.flush().catch(()=>{});}return;}
