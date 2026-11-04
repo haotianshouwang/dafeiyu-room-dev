@@ -1,22 +1,11 @@
 import {defineConfig} from 'vite';
 import {GAME_PORT, DEV_API_PORT} from './shared/ports.js';
 import fs from 'node:fs';
-import path from 'node:path';
 const virtualId='virtual:character-config',resolvedId='\0'+virtualId;
 export default defineConfig(({command,mode})=>{
-  let local={};
-  if(command==='serve'&&mode!=='public')try{local=JSON.parse(fs.readFileSync(new URL('./character.local.json',import.meta.url),'utf8'));}catch{}
-  const enabled=!!local.assetRoot;
-  const config=enabled?{defaultCharacter:local.defaultCharacter||'maid-arms',modelBase:'/__private/models/',paperUrl:'/__private/characters/whale-maid-paper.png'}:{defaultCharacter:'whale',modelBase:null,paperUrl:null};
-  return {server:{port:GAME_PORT,strictPort:true,proxy:{'/mcp':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/api':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/oauth':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/.well-known':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false}}},preview:{port:GAME_PORT,strictPort:true,proxy:{'/mcp':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/api':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/oauth':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/.well-known':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false}}},plugins:[{name:'local-private-character',resolveId(id){if(id===virtualId)return resolvedId;},load(id){if(id===resolvedId)return 'export default '+JSON.stringify(config);},configureServer(server){
-    if(!enabled)return;
-    const root=fs.realpathSync(local.assetRoot);
-    server.middlewares.use('/__private/',(req,res)=>{
-      try{
-        const rel=decodeURIComponent((req.url||'').split('?')[0]);const candidate=path.resolve(root,'.'+(rel.startsWith('/')?rel:'/'+rel));const file=fs.realpathSync(candidate);
-        if(!file.startsWith(root+path.sep)||!['.glb','.png','.jpg','.webp'].includes(path.extname(file))){res.statusCode=403;res.end();return;}
-        res.setHeader('Content-Type',path.extname(file)==='.glb'?'model/gltf-binary':'image/'+path.extname(file).slice(1));fs.createReadStream(file).pipe(res);
-      }catch{res.statusCode=404;res.end();}
-    });
+  const config={defaultCharacter:'maid-arms',modelBase:'./resources/character/models/',paperUrl:'./resources/character/characters/whale-maid-paper.png'};
+  const manifest=JSON.parse(fs.readFileSync(new URL('./resources/character/manifest.json',import.meta.url),'utf8'));
+  return {server:{port:GAME_PORT,strictPort:true,proxy:{'/mcp':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/api':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/oauth':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/.well-known':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false}}},preview:{port:GAME_PORT,strictPort:true,proxy:{'/mcp':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/api':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/oauth':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false},'/.well-known':{target:`http://127.0.0.1:${DEV_API_PORT}`,changeOrigin:false}}},plugins:[{name:'bundled-character',resolveId(id){if(id===virtualId)return resolvedId;},load(id){if(id===resolvedId)return 'export default '+JSON.stringify(config);},generateBundle(){
+    for(const file of manifest.files.filter(f=>f.runtime))this.emitFile({type:'asset',fileName:file.path,source:fs.readFileSync(new URL('./'+file.path,import.meta.url))});
   }}]};
 });

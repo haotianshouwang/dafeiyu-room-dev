@@ -1,0 +1,94 @@
+{
+  "files": [
+    {
+      "path": "resources/character/characters/whale-maid-paper.png",
+      "sha256": "9da8306037746a4f3261e114cfff2975dbe98a2ea4541a9167fc41a904e5b3e5",
+      "bytes": 1324522,
+      "runtime": true
+    },
+    {
+      "path": "resources/character/models/Meshy_AI_Whale_Maid_Starlet_1101164325_texture.glb",
+      "sha256": "329d8f00fc7790bb64eb9d5bfd7c0a40ec62e62b5e9d14653f3512bc8897ed36",
+      "bytes": 86264036,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/Meshy_AI_Whale_Maid_Starlet_All_Animations.glb",
+      "sha256": "4087a1c5713789e7046b8664a10d4f056a897251e59f089f90e125b122c32d52",
+      "bytes": 17518872,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/Whale_Maid_Arms.blend",
+      "sha256": "87307b6df04eaedfcc6e15fbd45cc5fc490205e78a764cd5d75985ac7e8e8cc0",
+      "bytes": 16350088,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/Whale_Maid_Arms.glb",
+      "sha256": "141e1a1ba20a110f87cd7229554812472e61c2b55805d3bfcc6be2bcbdfb2f19",
+      "bytes": 17447208,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/Whale_Maid_Closed.blend",
+      "sha256": "b9a14aa3dd5e5ee78f4d9dad49936d252bf2193182148852ea15ecf34d2b9aa2",
+      "bytes": 16638270,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/Whale_Maid_Closed.glb",
+      "sha256": "8b1c6481ec3ebc9f768859fc340dc3741491a18853e76dd4d0ecd6518d56480d",
+      "bytes": 19784076,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/Whale_Maid_Lively.blend",
+      "sha256": "45d7fa9eb4d0f8f644c8b31bbe53af2b10eeb9a30ac277a8d8f14d3dc76a3398",
+      "bytes": 16439720,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/Whale_Maid_Lively.glb",
+      "sha256": "e327bf37ddb4495734a937825526ab59bcae7f3a6d2181e1894c958eef6c4631",
+      "bytes": 17455236,
+      "runtime": true
+    },
+    {
+      "path": "resources/character/models/Whale_Maid_Repaired.blend",
+      "sha256": "412afc7df7a9844867dfdd09dae303f3e7e3d3c3d8b97f9820d1dcbaef6b8b0b",
+      "bytes": 16274131,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/Whale_Maid_Repaired.glb",
+      "sha256": "335e1994a8a333bb1b432172a841cfbcdd124f0121d8cac4b2b28bc5eb6e72b4",
+      "bytes": 17437888,
+      "runtime": true
+    },
+    {
+      "path": "resources/character/models/whale-maid-repair-work.blend",
+      "sha256": "899e718d3db7850fde7ff5633ca33586fbbb7b936d280eb4fdc53a42e1950f0b",
+      "bytes": 16539374,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/notes/修复说明.txt",
+      "sha256": "11077a10f2c23d25f994a158c2aae305ce2e0dd6d0c3d94983cbc032b1488d5f",
+      "bytes": 1384,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/notes/头发与摆臂试用说明.txt",
+      "sha256": "1e65e9625b4d929c1d6950588a161f5571423d925723a7c8444f3aa430c534c4",
+      "bytes": 948,
+      "runtime": false
+    },
+    {
+      "path": "resources/character/models/腾讯版.glb",
+      "sha256": "96f4812ae7806333f4aa93e50851a3e2c8ebc50af652a98498113a59da450e1a",
+      "bytes": 37866408,
+      "runtime": false
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import { resolveCircle } from '../world/nav.js';
 
 // Adapter for the existing pet interactions. The GLB's feet are at local Y=0.
 export class WhaleMaid {
-  constructor({ modelFile = 'Whale_Maid_Repaired.glb', loadModel = () => characterConfig.modelBase ? new GLTFLoader().loadAsync(characterConfig.modelBase + encodeURIComponent(modelFile)) : Promise.reject(new Error('Private model unavailable')) } = {}) {
+  constructor({ modelFile = 'Whale_Maid_Repaired.glb', loadModel = () => characterConfig.modelBase ? new GLTFLoader().loadAsync(characterConfig.modelBase + encodeURIComponent(modelFile)) : Promise.reject(new Error('Character model unavailable')) } = {}) {
     this.weightedArms = ['Whale_Maid_Arms.glb','Whale_Maid_Lively.glb'].includes(modelFile);
     this.idleLifeTime = 0; this.idleLifeBlend = 0;
     this.hairTime = 0; this.hairSpeed = 0; this.hairHeading = this.heading ?? Math.PI/4;

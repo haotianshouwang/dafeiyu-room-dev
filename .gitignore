@@ -32,3 +32,7 @@ data/
 
 # Local implementation reports and scratch artifacts
 .superpowers/
+
+# Approved redistributable character assets; exact inventory checked by check:public
+!resources/character/models/*.glb
+!resources/character/models/*.blend
