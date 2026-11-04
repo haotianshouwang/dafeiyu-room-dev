@@ -21,7 +21,7 @@ export class Interactions {
     this.ray = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    this.stats = { mood: 72, food: 46, love: 38, moodLabel: '悠闲' };
+    this.stats = { mood: 72, food: 46, energy: 80, love: 38, moodLabel: '悠闲' };
     this.hotspots = [];
     this.npcs = [];
     this.sleepAnchor = null;

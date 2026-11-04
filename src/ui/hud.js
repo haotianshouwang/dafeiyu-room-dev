@@ -8,8 +8,8 @@ export class HUD {
       moodVal: document.getElementById('moodVal'),
       foodBar: document.getElementById('foodBar'),
       foodVal: document.getElementById('foodVal'),
-      loveBar: document.getElementById('loveBar'),
-      loveVal: document.getElementById('loveVal'),
+      energyBar: document.getElementById('energyBar'),
+      energyVal: document.getElementById('energyVal'),
       actions: document.getElementById('actions'),
     };
     this.bubble = null;
@@ -21,10 +21,10 @@ export class HUD {
   setStats(s) {
     this.el.moodBar.style.width = s.mood + '%';
     this.el.foodBar.style.width = s.food + '%';
-    this.el.loveBar.style.width = s.love + '%';
+    this.el.energyBar.style.width = s.energy + '%';
     this.el.moodVal.textContent = Math.round(s.mood);
     this.el.foodVal.textContent = Math.round(s.food);
-    this.el.loveVal.textContent = Math.round(s.love);
+    this.el.energyVal.textContent = Number(s.energy).toFixed(1);
     this.el.mood.textContent = s.moodLabel;
   }
 
