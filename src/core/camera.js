@@ -28,7 +28,7 @@ export class IsoCamera {
     this.az = this.policy.az;
     this.el = this.policy.el;
     this.dist = this.policy.distance;
-    this.rotationLimit = this.policy.horizontalRotation ? Infinity : 0;
+    this.rotationLimit = this.policy.horizontalRotation ? Infinity : this.policy.horizontalDragLimit;
     this.drag = this.dragTarget = 0;
   }
   resize() {
@@ -79,7 +79,8 @@ export class IsoCamera {
     this.el = this.policy.el;
     this.dist = this.policy.distance;
     this.target.y = this.policy.targetY;
-    if (!this.policy.horizontalRotation) this.drag = this.dragTarget = 0;
+    this.dragTarget=clamp(this.dragTarget,-this.rotationLimit,this.rotationLimit);
+    this.drag=clamp(this.drag,-this.rotationLimit,this.rotationLimit);
     const az = this.az + this.drag;
     const el = this.el;
     const dir = new THREE.Vector3(
