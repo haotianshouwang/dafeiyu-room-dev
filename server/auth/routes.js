@@ -11,6 +11,8 @@ export function installAuth(app,db,service,options={}){
  const management=fn=>wrap((req,reply)=>{const p=owner.resolve(req,{write:!['GET','HEAD'].includes(req.method)});return fn(req,reply,p);});
  function resolvePrincipal(req){if(req.headers.authorization){const match=/^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization);if(!match)throw Error('UNAUTHORIZED');return store.authorize(match[1],'world:read',req.params?.id||'default');}return owner.resolve(req,{write:!['GET','HEAD'].includes(req.method)});}
  app.addContentTypeParser('application/x-www-form-urlencoded',{parseAs:'string'},(_req,body,done)=>done(null,Object.fromEntries(new URLSearchParams(body))));
+ app.get('/api/auth/status',async(_req,reply)=>{reply.header('cache-control','no-store');return {localEntryAvailable:owner.localEntryAvailable};});
+ app.post('/api/auth/local-session',wrap((req,reply)=>owner.localSession(req,reply)));
  app.post('/api/auth/pair',wrap((req,reply)=>owner.pair(req,reply)));
  app.get('/api/auth/session',management((_req,_reply,p)=>({role:p.role,subjectId:p.subjectId,worldIds:p.worldIds,actorIds:p.actorIds,scopes:p.scopes,csrfToken:p.csrfToken})));
  app.post('/api/auth/logout',management((req,reply)=>{const raw=(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('world_owner='))?.slice(12);if(raw)store.remove('session',hash(raw));reply.header('set-cookie','world_owner=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return {status:'logged_out'};}));
