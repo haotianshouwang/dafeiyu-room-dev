@@ -33,9 +33,13 @@ test('mock DOM panel copies address only, renders untrusted names as text, refre
  const document={head:new Element('head'),body:new Element('body'),createElement:t=>new Element(t),addEventListener(){},removeEventListener(){}};
  const calls=[],data={endpoint:'http://127.0.0.1:5200/mcp',health:{service:'ready',protocol:'awaiting_client',authorization:'owner'},reachability:{message:'仅限本机'},connectedAgents:[{grantId:'test-grant',clientName:'<img src=x onerror=alert(1)>',scopes:['world:read'],status:'authorized'}]};let copied;
  const panel=new AgentConnect({document,clipboard:{writeText:async value=>copied=value},session:{read:async()=>({csrfToken:'fixture-csrf'})},request:async(url,init)=>{calls.push({url,init});return {ok:true,json:async()=>data};}});
- await panel.open();assert.equal(panel.panel.querySelector('input').value,data.endpoint);await panel.panel.querySelector('[data-copy]').onclick();assert.equal(copied,data.endpoint);assert.equal(calls.length,1);
+ await panel.open();assert.equal(panel.panel.querySelector('input').value,data.endpoint);await panel.panel.querySelector('[data-copy]').onclick();assert.equal(copied,data.endpoint);assert.equal(calls.length,1);assert.equal(panel.panel.querySelector('[data-copy]').textContent,'已复制');assert.equal(panel.panel.querySelector('[data-connect]').hidden,true);assert.match(panel.style.textContent,/\[hidden\]\{display:none!important\}/);
  const row=panel.panel.querySelector('[data-agents]').children[0];assert.equal(row.children[0].children[0].textContent,data.connectedAgents[0].clientName);
  await row.children[1].onclick();assert.equal(calls[1].url,'/api/auth/grants/test-grant/revoke');assert.equal(calls[1].init.headers['x-csrf-token'],'fixture-csrf');assert.equal(calls[1].init.body,'{}');assert.equal(calls[2].url,'/api/integrations/mcp');
+ await panel.panel.querySelector('[data-refresh]').onclick();assert.match(panel.panel.querySelector('[data-status]').textContent,/状态已刷新/);assert.equal(panel.panel.querySelector('[data-refresh]').disabled,false);
+ data.health.authorization='owner_required';await panel.refresh();assert.equal(panel.panel.querySelector('[data-connect]').hidden,false);
+ panel.session.read=async()=>{throw Error('连接失败测试');};await panel.panel.querySelector('[data-connect]').onclick();assert.equal(panel.panel.querySelector('[data-status]').textContent,'连接失败测试');assert.equal(panel.panel.querySelector('[data-connect]').disabled,false);
+ panel.session.read=async()=>{data.health.authorization='owner';return {};};await panel.panel.querySelector('[data-connect]').onclick();assert.equal(panel.panel.querySelector('[data-connect]').hidden,true);assert.match(panel.panel.querySelector('[data-status]').textContent,/主人会话已连接/);
  panel.panel.querySelector('[data-close]').onclick();assert.equal(panel.panel,null);panel.dispose();
 });
 test('OAuth consent explains local connection and world permissions in Chinese',async()=>{
