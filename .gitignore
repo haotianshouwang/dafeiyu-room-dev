@@ -20,7 +20,15 @@ model-preview.html
 README.private.md
 大肥鱼房间.html
 src/characters/whaleGirl.js
+# Publish curated guides only; local research/process notes stay private.
 docs/*
+!docs/README.md
+!docs/PITFALLS.md
+!docs/MCP-QUICKSTART.md
+!docs/MCP-PROMPTS.md
+!docs/MCP-COMPATIBILITY.md
+!docs/WORLD-SAVES.md
+!docs/SELF-TEST.md
 !docs/screenshots/
 
 # Local database and personal saves

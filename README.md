@@ -6,6 +6,8 @@
 
 这是一个持续探索的 AI 陪伴小世界，部分动作和交互仍在打磨。世界由规则和程序动画执行，外部智能体通过 MCP 决策，QQ 是聊天入口。
 
+文档：[总览](docs/README.md) · [踩坑日记](docs/PITFALLS.md) · [MCP 对接手册](docs/MCP-QUICKSTART.md) · [Agent / DSH 提示词](docs/MCP-PROMPTS.md)
+
 ## 游戏画面
 
 ![卧室与电脑椅互动](docs/screenshots/room.png)
