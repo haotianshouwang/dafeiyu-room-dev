@@ -1,3 +1,4 @@
+import {installStoreLights} from './world/store-lighting.js';
 import {installStoreScene} from './world/store-feature.js';
 import {installAudio} from './audio/playback.js';
 import Fastify from 'fastify';
@@ -24,7 +25,7 @@ export async function buildServer({ databasePath, serveStatic = false, logger = 
   if(worldMode)migrateWorld(db);
   const migrated=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='worlds'").get() && db.prepare('SELECT 1 FROM worlds LIMIT 1').get());
   const worldService=migrated?new WorldService(db,{handlers:{...createRuntimeHandlers(),...createBuildHandlers(),...worldHandlers}}):null;
-  if(worldMode&&worldService)installStoreScene(worldService);
+  if(worldMode&&worldService){installStoreScene(worldService);installStoreLights(worldService);}
   const app=Fastify({logger,bodyLimit:6*1024*1024});
   app.decorate('worldService',worldService);
   const authService=worldService?installAuth(app,db,worldService,auth):null;
