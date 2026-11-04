@@ -45,7 +45,7 @@ export class RoomEditor {
     window.addEventListener('online',()=>Object.values(this.contexts).forEach(ctx=>ctx.sync.flush()));
   }
   updateWorldContexts() {
-    for(const ctx of Object.values(this.contexts))if(!ctx.sync){ctx.defaults=ctx.group.children.filter(o=>o.userData.furnitureType).map(o=>({entityId:o.userData.entityId,type:o.userData.furnitureType,position:o.position.toArray(),rotation:o.rotation.y,scale:o.scale.toArray()}));ctx.history=[];ctx.loading=false;ctx.sync=new WorldLayoutSync({client:this.worldClient,registry:this.registry,sceneId:ctx.sceneId,notify:message=>{ctx.message=message;if(this.context===ctx){this.syncMessage=message;this.refreshState();}},onRollback:()=>this.select(null),onIdentities:ids=>{for(const object of ctx.group.children){const id=ids[object.userData.draftId];if(id)object.userData.entityId=id;}}});try{if(localStorage.getItem(ctx.sync.key)||localStorage.getItem(ctx.sceneId==='bedroom'?STORAGE:`dafeiyu-${ctx.sceneId}-layout-v1`))ctx.message='发现本机旧布局/草稿 · 仅备份，未覆盖世界';}catch{}}
+    for(const ctx of Object.values(this.contexts))if(!ctx.sync){ctx.defaults=ctx.group.children.filter(o=>o.userData.furnitureType).map(o=>({entityId:o.userData.entityId,type:o.userData.furnitureType,position:o.position.toArray(),rotation:o.rotation.y,scale:o.scale.toArray()}));ctx.history=[];ctx.loading=false;ctx.sync=new WorldLayoutSync({client:this.worldClient,registry:this.registry,sceneId:ctx.sceneId,preserveDraftOnError:true,notify:message=>{ctx.message=message;if(this.context===ctx){this.syncMessage=message;this.refreshState();}},onRollback:()=>this.select(null),onIdentities:ids=>{for(const object of ctx.group.children){const id=ids[object.userData.draftId];if(id)object.userData.entityId=id;}}});try{if(localStorage.getItem(ctx.sync.key)||localStorage.getItem(ctx.sceneId==='bedroom'?STORAGE:`dafeiyu-${ctx.sceneId}-layout-v1`))ctx.message='发现本机旧布局/草稿 · 仅备份，未覆盖世界';}catch{}}
     if(this.context)this.setContext(this.context.sceneId);
   }
   setContext(key) {
@@ -117,7 +117,9 @@ export class RoomEditor {
     this.retrySave.onclick=()=>this.sync?.flush();
     this.loadDatabase=document.createElement('button');this.loadDatabase.textContent='读取数据库';this.loadDatabase.hidden=true;
     this.loadDatabase.onclick=()=>{this.checkpoint();this.sync?.useDatabaseVersion();};
-    this.stateBar.append(this.stateText,this.panelToggle,this.retrySave,this.loadDatabase);document.body.append(this.stateBar);
+    this.placeButton=document.createElement('button');this.placeButton.textContent='保存摆放';this.placeButton.onclick=()=>{this.save();void this.sync?.flush();};
+    this.cancelNewButton=document.createElement('button');this.cancelNewButton.textContent='取消新增';this.cancelNewButton.onclick=()=>this.remove();
+    this.stateBar.append(this.stateText,this.placeButton,this.cancelNewButton,this.panelToggle,this.retrySave,this.loadDatabase);document.body.append(this.stateBar);
     this.panel=document.createElement('section');this.panel.className='room-edit-panel';this.panel.hidden=true;
     this.panel.innerHTML='<header><strong>布置卧室</strong><button data-action="undo">撤销</button><button data-action="reset">恢复默认</button><button data-action="export">导出布局</button><button data-action="done">完成</button></header><nav class="room-edit-categories" aria-label="家具分类"></nav><div class="room-edit-scroll-hint">家具目录 · 在此滚轮上下浏览 ↓</div><div class="room-edit-catalog" tabindex="0" aria-label="可滚动家具目录"></div><footer role="status"></footer>';
     document.body.append(this.panel);this.status=this.panel.querySelector('footer');
@@ -150,11 +152,12 @@ export class RoomEditor {
     }document.body.append(this.menu);
   }
   async setActive(value) {
+    if(this.worldClient&&!value){this.finishDrag();this.save();await this.sync.flush();if(this.sync.pending){if(!this.sync.error)this.syncMessage='正在保存，请稍候再完成布置';this.refreshState();return;}}
     if(this.worldClient){try{await this.worldClient.dispatch({kind:'build.editLock',payload:{sceneId:this.context.sceneId,locked:value}});if(value){await this.worldClient.dispatch({kind:'control.takeover',payload:{actorId:this.worldClient.snapshot.actors[0].actorId}});this.lockTimer=setInterval(()=>this.worldClient.dispatch({kind:'build.editLock',payload:{sceneId:this.context.sceneId,locked:true}}).catch(()=>this.setActive(false)),30000);}else{clearInterval(this.lockTimer);await this.sync.flush();}}catch(error){this.status.textContent=`无法切换编辑：${error.message}`;return;}}
     this.active=value;this.panelCollapsed=false;this.panel.hidden=!value || !!this.selected;this.menu.hidden=true;
     this.toggle.textContent=value?'✓ 完成布置':'🪑 布置房间';
     this.toggle.setAttribute('aria-pressed',String(value));this.canvas.style.cursor=value?'grab':'';
-    if(!value){this.finishDrag();this.select(null);this.save();}
+    if(!value){this.finishDrag();this.select(null);if(!this.worldClient)this.save();}
     this.refreshState();
     this.onToggle?.(value);this.status.textContent='点选家具后拖动 · 滚轮每格旋转 15° · 右键菜单 · R 旋转 · Ctrl/Cmd+Z 撤销';
   }
@@ -170,6 +173,9 @@ export class RoomEditor {
     this.stateBar.hidden=!this.active;
     if(this.retrySave){this.retrySave.hidden=this.worldClient?!(this.sync?.pending&&this.sync?.error):!/失败|未连接/.test(this.syncMessage || '');this.retrySave.disabled=!!this.sync?.busy;}
     if(this.loadDatabase)this.loadDatabase.hidden=!this.sync?.conflict;
+    const unsavedNew=!!(this.worldClient&&this.selected&&!this.selected.userData.entityId);
+    if(this.placeButton)this.placeButton.hidden=!unsavedNew;
+    if(this.cancelNewButton)this.cancelNewButton.hidden=!unsavedNew;
     const label=this.selected ? FURNITURE[this.selected.userData.furnitureType].label : '未选中家具';
     this.stateText.replaceChildren();
     const title=document.createElement('strong');title.textContent=`${this.context?.label || '卧室'}编辑 · ${label}`;
@@ -205,7 +211,10 @@ export class RoomEditor {
   }
   add(type) {
     if(this.items().length>=100){this.status.textContent='家具数量已达 100 件';return;}
-    this.checkpoint();const o=createFurniture(type);o.position.set(0,0,.3);this.group.add(o);this.select(o);this.constrain(o);this.save();
+    this.checkpoint();const o=createFurniture(type);o.position.set(0,0,.3);
+    if(this.worldClient&&this.camera&&this.ray){this.ray.setFromCamera(new THREE.Vector2(0,0),this.camera);const point=this.ray.ray.intersectPlane(this.plane,new THREE.Vector3());if(point)o.position.set(point.x,0,point.z);}
+    this.group.add(o);this.select(o);this.constrain(o);
+    if(this.worldClient){this.syncMessage='待放置 · 拖动家具，松开后保存；也可点保存摆放';this.refreshState();}else this.save();
   }
   rotate(angle=Math.PI/2, checkpoint=true){if(!this.selected)return;if(checkpoint)this.checkpoint();this.selected.rotation.y+=angle;this.constrain(this.selected);this.save();}
   duplicate(){if(!this.selected||this.items().length>=100)return;const source=this.selected;this.add(source.userData.furnitureType);this.selected.position.copy(source.position).add(new THREE.Vector3(.4,0,.4));this.selected.rotation.copy(source.rotation);this.selected.scale.copy(source.scale);this.constrain(this.selected);this.save();}

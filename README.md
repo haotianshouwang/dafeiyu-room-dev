@@ -121,3 +121,5 @@ npm run check
 主要依赖 Three.js、Fastify、MCP TypeScript SDK、Zod、Vite、esbuild 与 Playwright；完整版权文本和来源见 [第三方声明](THIRD-PARTY-NOTICES.md)。开发中也参考体验了 [茉莉的小房间 / norsizu](https://github.com/norsizu/moli-room)，其代码与美术许可独立。
 
 欢迎在 Issues 留下问题与建议，或到抖音「破晓手记」评论区交流。
+
+新增家具会先作为预览出现在当前视野中，拖动松开或点击「保存摆放」后提交。遇到重叠、挡路或农田保护校验时，家具会保留并提示原因，可继续移动调整；「取消新增」可移除预览。
