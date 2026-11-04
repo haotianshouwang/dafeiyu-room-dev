@@ -1,3 +1,4 @@
+import {listPortalSlots} from '../server/world/build.js';
 // Real HTTP/OAuth/SDK journey. Isolated temporary SQLite; no browser or host claims.
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -28,7 +29,8 @@ export async function selfCheck(){
   const approved=await fetch(issuer+'/oauth/consent',{method:'POST',headers:{cookie,'x-csrf-token':csrf,'content-type':'application/json'},body:JSON.stringify({consentId,approve:true}),redirect:'manual'});assert.equal(approved.status,302);await transport.finishAuth(new URL(approved.headers.get('location')).searchParams.get('code'));await client.close();await connect();
   assert.equal((await client.listTools()).tools.length,18);const entered=await call('world_enter');assert.equal(entered.actor.actorId,'whale');assert.deepEqual(entered.permissions.scopes,['world:read','actor:control','build:write']);
   const before=await call('world_observe'),protectedBefore=before.entities.filter(e=>e.protected);assert.ok(protectedBefore.length);
-  const ops=[{kind:'scene.create',ref:'room',templateId:'cozy_room_v1',name:'自检阅读室'},{kind:'scene.create',ref:'garden',templateId:'courtyard_v1',name:'自检花园'},{kind:'portal.link',from:{sceneId:'yard',slotId:'north'},to:{sceneId:'garden',slotId:'south'}},{kind:'portal.link',from:{sceneId:'garden',slotId:'east'},to:{sceneId:'room',slotId:'west'}},{kind:'entity.add',ref:'chair',sceneId:'room',type:'chair',position:[-1.5,0,-1.5],rotation:0,scale:[1,1,1]},{kind:'entity.add',ref:'bench',sceneId:'garden',type:'yardBench',position:[-3,0,3],rotation:0,scale:[1,1,1]}];
+  const exitSlot=listPortalSlots(before,'yard').find(s=>!s.occupied&&!s.blocked&&s.reachable)?.slotId;assert.ok(exitSlot,'Initial yard needs a usable portal slot for self-check');
+  const ops=[{kind:'scene.create',ref:'room',templateId:'cozy_room_v1',name:'自检阅读室'},{kind:'scene.create',ref:'garden',templateId:'courtyard_v1',name:'自检花园'},{kind:'portal.link',from:{sceneId:'yard',slotId:exitSlot},to:{sceneId:'garden',slotId:'south'}},{kind:'portal.link',from:{sceneId:'garden',slotId:'east'},to:{sceneId:'room',slotId:'west'}},{kind:'entity.add',ref:'chair',sceneId:'room',type:'chair',position:[-1.5,0,-1.5],rotation:0,scale:[1,1,1]},{kind:'entity.add',ref:'bench',sceneId:'garden',type:'yardBench',position:[-3,0,3],rotation:0,scale:[1,1,1]}];
   const preview=await call('build_preview',{requestId:requestId(),baseRevision:before.layoutRevision,ops});assert.equal((await call('world_observe')).layoutRevision,before.layoutRevision);
   const applied=await call('build_apply',{requestId:requestId(),planId:preview.planId}),ids=applied.createdIds;
   const built=await call('world_observe');assert.deepEqual(built.entities.filter(e=>e.protected),protectedBefore);for(const id of [ids.room,ids.garden])assert.equal(built.scenes.find(s=>s.sceneId===id).status,'active');
