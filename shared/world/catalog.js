@@ -12,7 +12,7 @@ const surfaces={
 };
 function entry(type){
  const [width,depth]=sizes[type];const rug=/rug/i.test(type);const seat=/chair|sofa|bench|bean/i.test(type);const surface=surfaces[type];const actions=seat?['sit']:type==='bed'?['sleep']:type==='yardPool'?['swim','slide']:[];
- return {type,version:1,sceneKinds:type.startsWith('yard')?['outdoor']:['indoor','outdoor'],footprint:{shape:'rectangle',width,depth,blocking:!rug},scale:{min:.5,max:2,uniform:true},placement:type==='smallPlant'?'ground-or-support':'ground',supportRequired:false,actions,anchors:[{anchorId:'approach',kind:'approach',position:[0,0,depth/2+.5]},...(actions.length?[{anchorId:'interaction',kind:actions[0],position:type==='bed'?[.21,.84,.24]:[0,seat?.45:0,0]}]:[]),...(surface?[{anchorId:'surface',kind:'support',position:[0,surface.y,0],bounds:surface.bounds,capacity:1}]:[])],protected:type==='yardFarm',source:{kind:'procedural',license:'MIT'}};
+ return {type,version:1,sceneKinds:type.startsWith('yard')?['outdoor']:['indoor','outdoor'],footprint:{shape:'rectangle',width,depth,blocking:!rug},scale:{min:.5,max:2,uniform:true},placement:type==='smallPlant'?'ground-or-support':'ground',supportRequired:false,actions,anchors:[{anchorId:'approach',kind:'approach',position:[0,0,depth/2+.5]},...(actions.length?[{anchorId:'interaction',kind:actions[0],position:type==='bed'?[.1,.84,.8]:[0,type==='chair'?.54:seat?.45:0,0]}]:[]),...(surface?[{anchorId:'surface',kind:'support',position:[0,surface.y,0],bounds:surface.bounds,capacity:1}]:[])],protected:type==='yardFarm',source:{kind:'procedural',license:'MIT'}};
 }
 const catalog=Object.fromEntries(furnitureTypes.map(t=>[t,entry(t)]));
 export const ASSET_TYPES=Object.freeze([...furnitureTypes]);

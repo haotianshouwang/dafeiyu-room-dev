@@ -10,6 +10,7 @@ import {buildYard} from './world/yard.js';
 import {buildLiving} from './world/living.js';
 import {SceneRegistry} from './world/registry.js';
 import {ActionDispatcher} from './core/action-dispatcher.js';
+import {presentActor} from './core/actor-presentation.js';
 import {PlayerController} from './core/player-controller.js';
 import {ActorTimeline} from './core/actor-timeline.js';
 import {WorldClient} from './core/world-client.js';
@@ -68,8 +69,9 @@ async function action(kind,target,options){
  }catch(error){showMessage(`操作未执行：${error.message}`);}
  finally{if(kind==='cancel')portalPending=false;}
 }
-function interact(kind){if(!actor)return;stopMovement();keys.clear();if(kind==='eat')return action(kind,undefined,{force:true});const candidate=client.snapshot.entities.filter(e=>getCatalogEntry(e.type).actions.includes(kind)).sort((a,b)=>Number(b.sceneId===actor.sceneId)-Number(a.sceneId===actor.sceneId))[0];if(!candidate){showMessage('世界里还没有对应的家具');return;}action(kind,{entityId:candidate.entityId,anchorId:'approach'},{force:true});}
+function interact(kind,target){if(!actor)return;stopMovement();keys.clear();if(kind==='eat')return action(kind,undefined,{force:true});const candidate=client.snapshot.entities.filter(e=>(!target?.entityId||e.entityId===target.entityId)&&getCatalogEntry(e.type).actions.includes(kind)).sort((a,b)=>Number(b.sceneId===actor.sceneId)-Number(a.sceneId===actor.sceneId))[0];if(!candidate){showMessage('世界里还没有对应的家具');return;}action(kind,{entityId:candidate.entityId,anchorId:'approach'},{force:true});}
 game.worldAction=interact;
+game.getFurniture=()=>registry.scenes.get(activeScene)?.furniture.children||[];
 const scenePicker=document.createElement('div');scenePicker.hidden=true;scenePicker.style.cssText='position:fixed;left:24px;top:110px;z-index:60;display:none;gap:8px;background:#faf1e5;padding:14px;border-radius:15px;font:14px system-ui';document.body.append(scenePicker);
 document.getElementById('loc')?.addEventListener('click',()=>{scenePicker.replaceChildren();scenePicker.style.display=scenePicker.style.display==='none'?'grid':'none';for(const [id,cfg]of registry.scenes){if(cfg.data.status!=='active')continue;const button=document.createElement('button');button.textContent=cfg.label;button.onclick=()=>{scenePicker.style.display='none';keys.clear();action('move',{sceneId:id},{force:true});};scenePicker.append(button);}});
 const editable=target=>target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName);
@@ -100,8 +102,7 @@ function updateKeyboard(dt,now){
  if(now-lastInputAt>=100){lastInputAt=now;player.flush().catch(()=>{});}
 }
 function renderActor(dt,t){if(!actor)return;const visual=player.sample()||actorTimeline.sample(performance.now())||actor;const next=visual.form==='swim'?blob:original;if(next!==whale){whale.group.visible=false;whale=next;whale.group.visible=true;game.whale=whale;window.__whale=whale;fx.splash(new THREE.Vector3(...actor.position));}
- const p=new THREE.Vector3(...visual.position);if(visual.pose==='sleeping')p.y+=.28;else if(visual.pose==='seated')p.y+=.4;else if(visual.pose==='swimming'||visual.form==='swim')p.y+=.38;else if(!['climbing','sliding'].includes(visual.pose))p.y=Math.max(p.y,whale.groundY??whale.baseY??1.12);
- renderPosition.copy(p);whale.state=visual.pose==='sleeping'?'sleepArrive':visual.pose==='seated'?'sit':visual.pose==='walking'||visual.pose==='swimming'||visual.pose==='climbing'?'swim':'idle';whale.target.copy(renderPosition);whale.pos.copy(renderPosition);whale.velocity?.set(0,0,0);whale.heading=visual.rotation||0;whale.externalMotion={moving:visual.moving,speed:visual.speed};whale.update(dt,t);whale.pos.copy(renderPosition);whale.target.copy(renderPosition);whale.group.position.copy(renderPosition);whale.group.rotation.y=visual.rotation||0;
+ presentActor(whale,visual,dt,t);renderPosition.copy(whale.group.position);
  if(visual.pose==='sleeping'&&Math.floor(t*2)!==Math.floor((t-dt)*2))fx.zzz(renderPosition.clone().add(new THREE.Vector3(.3,.5,0)));
  if(registry.scenes.get(activeScene)?.template.kind==='outdoor'&&!editor?.active)iso.follow(renderPosition,dt);
 }

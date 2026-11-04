@@ -1,3 +1,4 @@
+import {getCatalogEntry} from '../shared/world/catalog.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clamp, damp } from './core/anim.js';
@@ -101,7 +102,17 @@ export class Interactions {
     const hits = this.ray.intersectObject(this.whale.group, true);
     if (hits.length) { this.pet(); return; }
 
-    // 地面移动由 WASD 控制，左键保留角色和 NPC 交互。
+    // Resolve the clicked mesh back to the exact editable furniture entity.
+    if(this.worldAction&&this.getFurniture){
+      const furnitureHits=this.ray.intersectObjects(this.getFurniture(),true);
+      for(const hit of furnitureHits){let object=hit.object;while(object&&!object.userData.entityId)object=object.parent;
+        const entity=object?.userData.worldEntity;if(!entity)continue;
+        const kind=getCatalogEntry(entity.type).actions[0];
+        if(kind)this.worldAction(kind,{entityId:object.userData.entityId});
+        return; // The nearest furniture occludes objects behind it.
+      }
+    }
+    // Ground movement remains on WASD.
   }
 
   _line(kind) {

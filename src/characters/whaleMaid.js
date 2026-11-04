@@ -43,6 +43,7 @@ export class WhaleMaid {
       this.seatLegRest = ['thighL', 'thighR', 'shinL', 'shinR']
         .filter(key => this.bones[key])
         .map(key => ({ key, bone: this.bones[key], rest: this.bones[key].quaternion.clone() }));
+      this.activityRest=['upperL','upperR','foreL','foreR','handL','handR','head'].filter(key=>this.bones[key]).map(key=>({bone:this.bones[key],rest:this.bones[key].quaternion.clone()}));
       const tail=find('Tail');
       if (tail) {
         this.model.updateWorldMatrix(true,true);
@@ -153,6 +154,21 @@ export class WhaleMaid {
     }
   }
 
+  applyActivityPose(t,lying){
+    if(!this.weightedArms||!this.bones)return;
+    const b=this.bones;
+    if(this.state==='eat'){
+      const scoop=(1+Math.sin(t*5))/2;
+      if(b.upperL)b.upperL.rotation.z+=.35;
+      if(b.foreL)b.foreL.rotation.x-=.8;
+      if(b.upperR)b.upperR.rotation.z-=.55+scoop*.18;
+      if(b.foreR)b.foreR.rotation.x-=.75+scoop*.55;
+      if(b.handR)b.handR.rotation.x+=Math.sin(t*5)*.12;
+      if(b.head)b.head.rotation.x+=.13+Math.sin(t*10)*.035;
+    }
+    if(lying&&b.head)b.head.rotation.x+=.04;
+  }
+
   play(name) {
     if (name === this.currentClip || !this.actions[name]) return;
     const previous = this.actions[this.currentClip];
@@ -191,7 +207,7 @@ export class WhaleMaid {
     } else {
       this.speed = this.externalMotion?.speed || 0;
       if (this.state === 'swim' && !moving) this.state = 'idle';
-      if (this.state === 'eat' && this.food) {
+      if (this.state === 'eat' && this.food && !this.externalMotion) {
         this.chewTime += dt;
         if (this.chewTime > 1.4) { this.food.userData.consumed = true; this.food.userData.dead = true; this.food = null; this.state = 'idle'; }
       }
@@ -210,8 +226,9 @@ export class WhaleMaid {
     } else this._stuck = 0;
     // Sleeping is a provisional lying pose, not a finished bed animation.
     const lying = this.state === 'sleep' && this.sleepArrived;
-    this.pos.y = damp(this.pos.y, lying ? this.sleepPos.y + .15 : this.groundY, 5, dt);
-    this.pivot.rotation.z = damp(this.pivot.rotation.z, lying ? Math.PI / 2 : 0, 5, dt);
+    if(!this.externalMotion)this.pos.y = damp(this.pos.y, lying ? this.sleepPos.y + .15 : this.groundY, 5, dt);
+    this.pivot.rotation.x = damp(this.pivot.rotation.x, lying ? -Math.PI / 2 : 0, 7, dt);
+    this.pivot.rotation.z = damp(this.pivot.rotation.z, 0, 7, dt);
     this.pivot.position.y = this.state === 'pet' ? Math.sin(Math.min(1,this.stateTime/.8)*Math.PI)*.06 : 0;
     if (this.state === 'pet' && this.stateTime > .8) this.state = 'idle';
     this.group.position.copy(this.pos); this.group.rotation.y = this.heading;
@@ -228,7 +245,10 @@ export class WhaleMaid {
       if (this.wasSeated || this.state === 'sit') {
         for (const leg of this.seatLegRest || []) leg.bone.quaternion.copy(leg.rest);
       }
+      if(this.wasActivity||this.state==='eat'||lying){for(const joint of this.activityRest||[])joint.bone.quaternion.copy(joint.rest);}
       this.mixer.update(dt);
+      this.applyActivityPose(time||0,lying);
+      this.wasActivity=this.state==='eat'||lying;
       this.applyHandPose(dt, time || 0, lying);
       this.applyIdleLife(dt, moving, lying);
       this.applyHairMotion(dt, moving, lying);
@@ -248,5 +268,10 @@ export class WhaleMaid {
       }
 
     }
+    if(lying&&this.model){
+      if(!this.wasLying){const pitch=this.pivot.rotation.x;this.pivot.rotation.x=-Math.PI/2;this.group.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(this.model);this.sleepYOffset=box.isEmpty()?0:this.sleepPos.y-box.min.y;this.pivot.rotation.x=pitch;}
+      this.group.position.y+=this.sleepYOffset||0;
+    }
+    this.wasLying=lying;
   }
 }
