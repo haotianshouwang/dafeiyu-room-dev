@@ -4,7 +4,7 @@ export class PlayerController {
  constructor({takeControl,send,onError=()=>{}}){Object.assign(this,{takeControl,send,onError});this.generation=0;this.active=false;this.pending=[];}
  begin(actor){
   if(this.active)return;
-  this.active=true;this.generation++;this.state={...actor,position:[...actor.position],moving:false,speed:0,form:'normal'};
+  this.active=true;this.generation++;this.state={...actor,position:[...(actor.resting?.approachPosition||actor.position)],pose:'idle',resting:null,moving:false,speed:0,form:'normal'};
   this.pending=[];this.sequence=0;this.ack=0;this.lease=null;this.held=false;
   const generation=this.generation;
   this.ready=Promise.resolve(this.takeControl()).then(lease=>{if(generation!==this.generation)return;this.lease=lease;return lease;});
