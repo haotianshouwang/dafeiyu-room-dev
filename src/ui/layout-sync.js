@@ -77,4 +77,4 @@ export class WorldLayoutSync {
   async undo(){if(!this.lastChangeId)return;try{await this.client.dispatch({kind:'build.undo',payload:{changeId:this.lastChangeId}});this.lastChangeId=null;this.registry.applySnapshot(this.client.snapshot);this.notify('已撤销世界建设');}catch(error){this.notify(`撤销未执行：${error.message}`);}}
 }
 
-export function placementErrorMessage(code){return ({SPAWN_BLOCKED:'挡住了出生或入场位置',ENTITY_COLLISION:'与已有家具重叠',ACTOR_BLOCKED:'挡住了角色',PROTECTED_AREA:'占用了受保护的农田区域',PORTAL_BLOCKED:'挡住了门口通道',PATH_BLOCKED:'挡住了场景通路',OUT_OF_BOUNDS:'超出了场景边界',REVISION_CONFLICT:'场景已被其他操作更新，请重试',SCENE_EDIT_LOCKED:'当前场景正在被其他用户编辑'})[code]||code;}
+export function placementErrorMessage(code){return ({STATIC_COLLISION:'与固定建筑或院墙重叠',SPAWN_BLOCKED:'挡住了出生或入场位置',ENTITY_COLLISION:'与已有家具重叠',ACTOR_BLOCKED:'挡住了角色',PROTECTED_AREA:'占用了受保护的农田区域',PORTAL_BLOCKED:'挡住了门口通道',PATH_BLOCKED:'挡住了场景通路',OUT_OF_BOUNDS:'超出了场景边界',REVISION_CONFLICT:'场景已被其他操作更新，请重试',SCENE_EDIT_LOCKED:'当前场景正在被其他用户编辑'})[code]||code;}

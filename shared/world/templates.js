@@ -1,3 +1,4 @@
+import {STREET_HOME} from './street-home.js';
 // All geometry is in scene-local coordinates. Slots drive BOTH visual and navigation openings.
 const rect=(x0,x1,z0,z1)=>({x0,x1,z0,z1});
 function template(id,kind,r){
@@ -5,6 +6,7 @@ function template(id,kind,r){
  return {templateId:id,version:1,kind,groundY:0,bounds:rect(-r,r,-r,r),buildBounds:rect(-r+.2,r-.2,-r+.2,r-.2),maxEntities:100,spawn:[1,0,1],spawnClearance:rect(.5,1.5,.5,1.5),portalAppearance:kind==='indoor'?'door':'gate',portalSlots:slots,regions:[{zoneId:'activity',purpose:'activity',bounds:rect(-r/2,r/2,-r/2,r/2)},{zoneId:'wall',purpose:'wall',bounds:rect(-r+.2,-r+.9,-r+.2,r-.2)},{zoneId:'decoration',purpose:'decoration',bounds:rect(r-.9,r-.2,-r+.2,r-.2)},...slots.map(s=>({zoneId:`entry-${s.slotId}`,purpose:'entry-clearance',bounds:s.clearance})),{zoneId:'passage',purpose:'passage',bounds:rect(-.6,.6,-r,r)}],allowedStyles:['cozy','natural'],protectedRegions:[]};
 }
 const templates={cozy_room_v1:template('cozy_room_v1','indoor',3.6),courtyard_v1:template('courtyard_v1','outdoor',8.5),street_corner_v1:template('street_corner_v1','outdoor',6.5)};
+templates.street_corner_v1.staticColliders=STREET_HOME.colliders;templates.street_corner_v1.legacyDoorNormal=STREET_HOME.inwardNormal;
 templates.street_corner_v1.spawn=[0,0,2.4];templates.street_corner_v1.spawnClearance=rect(-.5,.5,1.9,2.9);
 export const TEMPLATE_IDS=Object.freeze(Object.keys(templates));
 export function getTemplate(id){if(!Object.hasOwn(templates,id))throw new RangeError(`Unknown template: ${id}`);return structuredClone(templates[id]);}

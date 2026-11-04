@@ -1,3 +1,4 @@
+import {buildJapaneseHome} from './japanese-house.js';
 import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 const mats=new Map();
@@ -55,7 +56,6 @@ export function buildStoreStreet(){
  box(g,3.8,.009,.05,0xddd3bb,4,.012,5.55);box(g,.05,.009,1.75,0xddd3bb,2.15,.012,4.7);box(g,.05,.009,1.75,0xddd3bb,5.85,.012,4.7);
  for(const [x,z,w,d] of [[-4.7,1.6,1.8,.65],[1.6,2.3,2,.6],[-1.8,5.8,1,.35],[5.3,1.1,.8,.35]]){const p=new THREE.Mesh(new THREE.CircleGeometry(1,32),new THREE.MeshStandardMaterial({color:0x667b87,roughness:.1,metalness:.55,transparent:true,opacity:.3}));p.rotation.x=-Math.PI/2;p.scale.set(w/2,d/2,1);p.position.set(x,.016,z);g.add(p);}
  for(const x of [-2.8,2.7]){const cover=new THREE.Mesh(new THREE.CylinderGeometry(.17,.17,.012,24),mat(0x171d28));cover.position.set(x,.013,3.3);g.add(cover);}
- // The return entrance sits at the exact navigation trigger.
- const exit=new THREE.Group();exit.position.set(-5.4,0,3.4);box(exit,.1,2.25,.1,0x8e7d80,0,1.12,-.55);box(exit,.1,2.25,.1,0x8e7d80,0,1.12,.55);box(exit,.1,.12,1.2,0xe0c3a2,0,2.25,0);sign(exit,'回客厅',1.05,.3,.07,2.55,0,{rotation:Math.PI/2,bg:'#e9d7b7',fg:'#5f514a'});g.add(exit);
+ g.add(buildJapaneseHome());
  return g;
 }
