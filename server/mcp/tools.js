@@ -1,16 +1,16 @@
+import {selectAuthorizedWorld} from './world-selection.js';
 import {z} from 'zod';
 import {idSchema,vectorSchema,buildOperationSchema} from '../../shared/world/schema.js';
-import {authorizePrincipal} from '../world/service.js';
 import {listPortalSlots} from '../world/build.js';
 import {suggestLayout} from '../world/layout-suggestions.js';
 import {RULES,catalog,projectSnapshot} from './resources.js';
-const id=idSchema,rev=z.number().int().nonnegative(),request={requestId:id},world={worldId:id.optional()},actor={actorId:id},lease={...actor,leaseId:id,leaseVersion:rev},obj=shape=>z.object({...world,...shape}).strict();
+const id=idSchema,rev=z.number().int().nonnegative(),request={requestId:id},world={worldId:id.optional().describe('通常省略：自动进入当前凭证授权的默认世界。首次调用 world_enter {}，使用返回的 worldId；不要猜 main、home 或角色名字。')},actor={actorId:id},lease={...actor,leaseId:id,leaseVersion:rev},obj=shape=>z.object({...world,...shape}).strict();
 const target=z.union([z.object({sceneId:id,position:vectorSchema}).strict(),z.object({entityId:id,anchorId:id}).strict(),z.object({sceneId:id}).strict()]);
 const definitions=[
  ['audio_play','播放智能体已生成的音频；需要 audio:play 授权和主人开启声音。最多4MiB、60秒；结果仅表示设备播放回执，不能证明听见。',{...request,audioBase64:z.string().min(4).max(5592408),mimeType:z.enum(['audio/mpeg','audio/wav','audio/ogg'])}],
  ['audio_get_status','查询本授权的实际播放状态。',{playbackId:id}],
  ['audio_stop','取消本授权音频并删除临时内容。',{...request,playbackId:id}],
- ['world_enter','进入当前授权世界，读取角色、规则与能力，不移动或新建角色。',{}],
+ ['world_enter','进入当前授权世界。首次调用 world_enter {}，省略 worldId 即可；不要猜世界名。返回实际 worldId、角色、规则与能力，不移动或新建角色。',{}],
  ['world_observe','观察场景和物件；detail=portals 返回当前可用门槽。',{sceneId:id.optional(),entityId:id.optional(),detail:z.enum(['summary','entities','portals','map']).optional()}],
  ['world_get_events','按游标读取有序事件；读取不确认消费。',{afterCursor:rev.optional(),limit:z.number().int().min(1).max(500).optional()}],
  ['world_ack_events','确认已处理的事件游标；历史缺口须先处理 world_enter 返回的 recoverySnapshot，再提交其 recoveryToken 和 recoveryCursor。',{...request,cursor:rev,recoveryToken:id.optional()}],
@@ -29,7 +29,7 @@ const definitions=[
 ];
 export const TOOL_DEFINITIONS=definitions.map(([name,description,shape])=>({name,description,schema:obj(shape)}));
 export function createToolCaller(service,{resolvePrincipal,extensions={}}={}){
- return async(name,input)=>{const def=TOOL_DEFINITIONS.find(d=>d.name===name);if(!def)throw Error('UNKNOWN_TOOL');const a=def.schema.parse(input),worldId=a.worldId||'default',p=await resolvePrincipal(worldId);authorizePrincipal(p,worldId,'world:read',undefined,service.clock());
+ return async(name,input)=>{const def=TOOL_DEFINITIONS.find(d=>d.name===name);if(!def)throw Error('UNKNOWN_TOOL');const a=def.schema.parse(input),p=await resolvePrincipal(),worldId=selectAuthorizedWorld(p,a.worldId,service.clock());
  const snap=()=>service.getSnapshot(p,worldId),command=(kind,payload)=>service.execute(p,{worldId,requestId:a.requestId,kind,payload});
  const action=()=>{const act=snap().actions?.[a.actionId];if(!act||!p.actorIds.includes(act.actorId)||(p.role!=='owner'&&act.subjectId!==p.subjectId))throw Error('UNAUTHORIZED');return act;};
  if(extensions[name])return extensions[name]({principal:p,worldId,args:a,service});

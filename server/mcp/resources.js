@@ -1,6 +1,6 @@
 import {listCatalog} from '../../shared/world/catalog.js';
 import {listTemplates} from '../../shared/world/templates.js';
-export const RULES={version:1,coordinates:'场景局部坐标：X/Z 为地面，Y 为竖直，距离米，角度弧度。',camera:'室内水平朝向45度，俯角与相对高度固定；户外只允许水平旋转。镜头规则不可修改。',construction:'最多8场景，每场景100物件，单次20操作。先预览再提交；保护农田与门前通道。',actions:'先取得60秒控制租约；动作返回 actionId 后查询真实终态。主人可随时接管。',audio:'audio:play 为可选授权。智能体提供 MP3/WAV/OGG 音频（base64，最多4MiB/60秒）；主人开启声音后由单一网页播放。audio_get_status 查询实际回执；delivered_not_heard 不代表主人听见。',rulesUri:'world://current/rules'};
+export const RULES={version:1,worldSelection:'首次调用 world_enter {}，省略 worldId 即进入当前授权世界；之后使用返回的实际 worldId，不要猜 main、home 或角色名。WORLD_SELECTION_INVALID 表示世界选择不匹配，按 availableWorldIds 修正；UNAUTHORIZED 才表示需要检查凭证或权限。',coordinates:'场景局部坐标：X/Z 为地面，Y 为竖直，距离米，角度弧度。',camera:'室内水平朝向45度，俯角与相对高度固定；户外只允许水平旋转。镜头规则不可修改。',construction:'最多8场景，每场景100物件，单次20操作。先预览再提交；保护农田与门前通道。',actions:'先取得60秒控制租约；动作返回 actionId 后查询真实终态。主人可随时接管。',audio:'audio:play 为可选授权。智能体提供 MP3/WAV/OGG 音频（base64，最多4MiB/60秒）；主人开启声音后由单一网页播放。audio_get_status 查询实际回执；delivered_not_heard 不代表主人听见。',rulesUri:'world://current/rules'};
 export const catalog=()=>({templates:listTemplates(),assets:listCatalog()});
 // Transport projections deliberately omit internal build plans, deduplication data,
 // other actors' lease credentials and private messages.

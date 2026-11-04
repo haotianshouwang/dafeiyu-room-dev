@@ -55,6 +55,8 @@ npm run dev
 
 默认地址为 `http://127.0.0.1:5200/mcp`；复制内容不含凭证，游戏内可查看和撤销授权。已授权不表示客户端当前在线。
 
+智能体首次调用 `world_enter {}` 即可，省略 `worldId` 会进入当前凭证授权的默认世界，之后使用返回的实际 `worldId`，不要猜世界名。`WORLD_SELECTION_INVALID` 表示世界选择不匹配，可按错误中的 `availableWorldIds` 修正，不需要因此重新授权；凭证过期、撤销或无效才会在连接层返回 401。
+
 世界服务保存状态并执行已接受的动作，后续决策与唤醒由外部宿主负责。QQ 继续作为聊天入口。
 
 部署、权限和 stdio 兼容方式见 [MCP 接入指南](docs/MCP-QUICKSTART.md)，宿主与网络边界见 [兼容说明](docs/MCP-COMPATIBILITY.md)。

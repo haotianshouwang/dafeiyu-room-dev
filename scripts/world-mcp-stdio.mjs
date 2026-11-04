@@ -24,7 +24,7 @@ try{
   saveCodeVerifier:()=>{},codeVerifier:()=>{throw Error('该适配器仅续期已授权凭证。');}
  }:undefined;
  await client.connect(new StreamableHTTPClientTransport(url,authProvider?{authProvider}:{requestInit:{headers:{Authorization:`Bearer ${config.accessToken}`}}}));
- const server=new Server({name:'dafeiyu-world',version:'1.0.0'},{capabilities:{tools:{},resources:{}}});
+ const server=new Server({name:'dafeiyu-world',version:'1.0.0'},{instructions:client.getInstructions(),capabilities:{tools:{},resources:{}}});
  server.setRequestHandler(ListToolsRequestSchema,()=>client.listTools());server.setRequestHandler(CallToolRequestSchema,r=>client.callTool(r.params));server.setRequestHandler(ListResourcesRequestSchema,()=>client.listResources());server.setRequestHandler(ReadResourceRequestSchema,r=>client.readResource(r.params));
  const transport=new StdioServerTransport();let closing=false;const close=async()=>{if(closing)return;closing=true;await client.close();await server.close();};process.on('SIGINT',()=>close().then(()=>process.exit(0)));process.on('SIGTERM',()=>close().then(()=>process.exit(0)));process.stdin.on('end',()=>close().then(()=>process.exit(0)));await server.connect(transport);
 }catch(error){console.error(error.message);process.exit(1);}
