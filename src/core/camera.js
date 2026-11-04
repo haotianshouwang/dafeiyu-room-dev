@@ -1,8 +1,7 @@
 import * as THREE from 'three';
+import { cameraPolicyFor } from '../../shared/world/policies.js';
 import { damp, clamp } from './anim.js';
 
-const ISO_AZ = Math.PI / 4;          // 45°
-const ISO_EL = Math.atan(1 / Math.SQRT2); // 35.264° 真等距
 
 export class IsoCamera {
   constructor() {
@@ -10,19 +9,27 @@ export class IsoCamera {
     this.target = new THREE.Vector3(1.9, 1.05, 0.0);
     this.homeTarget = new THREE.Vector3(1.9, 1.05, 0.0);
     this.homeZoom = 0.98;
-    this.az = ISO_AZ;
-    this.el = ISO_EL;
+    this.az = cameraPolicyFor('cozy_room_v1').az;
+    this.el = cameraPolicyFor('cozy_room_v1').el;
     this.dist = 26;
     this.par = new THREE.Vector2();       // 视差偏移
     this.parTarget = new THREE.Vector2();
     this.drag = 0;                         // 用户拖拽角度
     this.dragTarget = 0;
-    this.rotationLimit = 0.22;
+    this.setProfile('cozy_room_v1');
     this.zoom = 1;
     this.zoomTarget = 1;
     this.baseHalfH = 4.78;
     this.baseHalfW = 5.9;
     this.resize();
+  }
+  setProfile(templateId) {
+    this.policy = cameraPolicyFor(templateId);
+    this.az = this.policy.az;
+    this.el = this.policy.el;
+    this.dist = this.policy.distance;
+    this.rotationLimit = this.policy.horizontalRotation ? Infinity : 0;
+    this.drag = this.dragTarget = 0;
   }
   resize() {
     const aspect = window.innerWidth / window.innerHeight;
@@ -35,6 +42,7 @@ export class IsoCamera {
     const sc = this._view || { target: new THREE.Vector3(-0.05, 1.12, -0.12), zoom: 0.98 };
     const k = aspect < 0.85 ? 0.74 : aspect < 1.25 ? 0.88 : 1.0;
     this.homeTarget.copy(sc.target);
+    this.homeTarget.y = this.policy.targetY;
     this.homeZoom = sc.zoom * k;
     if (!this._inited) { this._inited = true; this.target.copy(this.homeTarget); }
     const c = this.camera;
@@ -56,7 +64,7 @@ export class IsoCamera {
   }
   /** 指针位置：-1~1 */
   setPointer(nx, ny) {
-    this.parTarget.set(nx * 0.34, ny * 0.24);
+    this.parTarget.set(0, 0);
   }
   addDrag(dx) {
     this.dragTarget = clamp(this.dragTarget + dx, -this.rotationLimit, this.rotationLimit);
@@ -67,6 +75,11 @@ export class IsoCamera {
     this.drag = damp(this.drag, this.dragTarget, 4.5, dt);
     this.zoom = damp(this.zoom, this.zoomTarget, 3.5, dt);
 
+    this.az = this.policy.az;
+    this.el = this.policy.el;
+    this.dist = this.policy.distance;
+    this.target.y = this.policy.targetY;
+    if (!this.policy.horizontalRotation) this.drag = this.dragTarget = 0;
     const az = this.az + this.drag;
     const el = this.el;
     const dir = new THREE.Vector3(
@@ -77,9 +90,7 @@ export class IsoCamera {
     const c = this.camera;
     c.position.copy(this.target).addScaledVector(dir, this.dist);
     // 视差：沿相机右/上方向微移
-    const right = new THREE.Vector3(dir.z, 0, -dir.x).normalize();
-    const up = new THREE.Vector3().crossVectors(right, dir).normalize();
-    c.position.addScaledVector(right, this.par.x).addScaledVector(up, this.par.y);
+    // No pointer parallax: camera height and pitch stay engine-owned.
     c.lookAt(this.target);
     c.zoom = this.zoom;
     c.updateProjectionMatrix();

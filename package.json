@@ -14,12 +14,18 @@
     "test:server": "node --test tests/server.test.mjs",
     "test:sync": "node --test tests/layout-sync.test.mjs",
     "dev:server": "node server/start.js --dev",
-    "test:scenes": "node tests/scene-editor.test.mjs"
+    "test:scenes": "node tests/scene-editor.test.mjs",
+    "mcp:stdio": "node scripts/world-mcp-stdio.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "self-check": "node scripts/self-check.mjs",
+    "check": "npm test && npm run build && npm run check:public"
   },
   "dependencies": {
     "@fastify/static": "^8.3.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "fastify": "^5.12.8",
-    "three": "0.170.0"
+    "three": "0.170.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "esbuild": "0.24.0",

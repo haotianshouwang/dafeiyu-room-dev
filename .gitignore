@@ -29,3 +29,6 @@ data/
 *.sqlite-*
 *.db
 *.db-*
+
+# Local implementation reports and scratch artifacts
+.superpowers/

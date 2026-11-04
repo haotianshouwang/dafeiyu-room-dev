@@ -3,7 +3,6 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { clamp, damp } from './core/anim.js';
 import { pushOutside } from './world/nav.js';
 import { P } from './core/palette.js';
-import { characterVoice } from './ui/voice.js';
 
 const LINES = {
   pet: ['唔…再摸一下下嘛。', '别戳啦，痒——', '你是不是又想让我干活。', '哼，今天心情好，勉强给你摸。', '手拿开啦……再放一会儿也行。'],
@@ -36,7 +35,6 @@ export class Interactions {
       if (kind === 'sparkle') this.fx.burst(pos, 6);
     };
     this._bind();
-    this._syncVoiceButton();
     this._syncStats();
     this._emitIdleLine(1.2);
   }
@@ -48,7 +46,7 @@ export class Interactions {
       const btn = e.target.closest('[data-act]');
       if (!btn) return;
       const act = btn.dataset.act;
-      if (act === 'voice') { characterVoice.setEnabled(!characterVoice.enabled); this._syncVoiceButton(); return; }
+      if(this.worldAction&&['feed','sleep'].includes(act)){this.worldAction(act==='feed'?'eat':'sleep');return;}
       if (act === 'pet') this.pet();
       if (act === 'feed') this.feed();
       if (act === 'sleep') this.toggleSleep();
@@ -106,17 +104,10 @@ export class Interactions {
     // 地面移动由 WASD 控制，左键保留角色和 NPC 交互。
   }
 
-  _syncVoiceButton() {
-    const button=document.getElementById('voiceToggle');
-    if(button){button.textContent=characterVoice.enabled?'语音：开':'语音：关';button.setAttribute('aria-pressed',String(characterVoice.enabled));}
-  }
-
   _line(kind) {
-    const clip=characterVoice.clip(kind);
     const arr=LINES[kind];
-    const text=clip?clip.text:arr[Math.floor(Math.random()*arr.length)];
-    this.hud.say(text,this.whale.group.position.clone().add(new THREE.Vector3(0,this.whale.bubbleHeight??.66,0)),clip?clip.duration:3);
-    if(clip)characterVoice.play(kind);
+    const text=arr[Math.floor(Math.random()*arr.length)];
+    this.hud.say(text,this.whale.group.position.clone().add(new THREE.Vector3(0,this.whale.bubbleHeight??.66,0)),3);
   }
 
   _emitIdleLine(delay = 0) {
@@ -134,6 +125,7 @@ export class Interactions {
   }
 
   pet() {
+    if(this.worldAction){this.fx.hearts(this.whale.pos.clone(),5);this._line('pet');return;}
     if (this.whale.state.startsWith('sleep')) { this.toggleSleep(); return; }
     this.whale.pet();
     this.whale.group.scale.setScalar(1.28 * 1.06);

@@ -1,6 +1,5 @@
 # 第三方组件声明（THIRD-PARTY NOTICES）
 
-本说明对应当前 Gitee 胖鲸鱼公开版。网页运行依赖 Three.js，开发构建和测试还使用下述工具。胖鲸鱼、场景和程序化贴图的实现随源码提供；内置角色配音来自项目开发视频的独立演示音频。私人模型、立绘及视频配乐未随本公开仓库分发。README 中的人物版实机截图经项目作者确认用于展示，不包含可下载的人物模型，也不授予模型或截图的独立再利用许可。
 
 ---
 
@@ -52,13 +51,12 @@ THE SOFTWARE.
 
 - 茉莉的小房间：norsizu，https://github.com/norsizu/moli-room 。开发时作为陪伴房间体验与玩法方向的调研参考；本公开仓库不包含该项目文件。其许可不由本仓库授予或修改。
 - Kenney、Poly Haven、ambientCG、Poly Pizza 曾作为素材方向被评估；本次公开文件清单没有从这些素材库分发下载资源。
-- 内置角色配音来自本项目开发视频，网页文件位于 `public/voices/dafeiyu/`，台词和文件映射见 `src/ui/voice-clips.json`。它们不是 Three.js 等第三方代码许可证的一部分。
 
 上述清单依据本次分发文件与开发记录整理，不把“程序化生成”直接等同于已完成全部权利审查。如发现遗漏，可提供具体文件与出处核对补充。
 
 ## 与项目 MIT 许可的边界
 
-项目自身源码使用根目录 LICENSE 中的 MIT 许可，第三方依赖保留原许可。`public/voices/dafeiyu/` 中的配音和 `docs/screenshots/` 中的截图不因代码 MIT 许可自动获得商用或再分发授权；具体范围见 README 的“授权说明”。商业发行前应取得素材授权或替换相应素材，不能仅通过关闭语音播放按钮规避素材打包问题。私人模型不随仓库分发。
+项目自身源码使用根目录 LICENSE 中的 MIT 许可，第三方依赖保留原许可。`docs/screenshots/` 中的截图不因代码 MIT 许可自动获得商用或再分发授权；具体范围见 README 的“授权说明”。商业发行前应取得素材授权或替换相应素材。私人模型不随仓库分发。
 
 
 ## 本地后端新增依赖
@@ -128,3 +126,14 @@ SOFTWARE.
 ```
 
 SQLite 通过 Node.js 内置 `node:sqlite` 调用，不额外分发数据库引擎二进制。Node.js 与其内置组件的声明随用户安装的运行时提供。
+
+## 世界 MCP 与输入校验
+
+| 组件 | 锁定版本 | 许可证 | 用途 |
+| --- | --- | --- | --- |
+| [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) | 1.32.2 | MIT | 服务器、客户端适配、Streamable HTTP、stdio 与 OAuth |
+| [Zod](https://github.com/colinhacks/zod) | 3.25.76 | MIT | 工具和世界命令输入校验 |
+
+以上组件的版权和许可证由 npm 安装包各自 LICENSE 提供；传递依赖以 `package-lock.json` 为准，分别遵循各自声明。
+
+本项目不分发语音合成/识别引擎、模型权重、录音、字体或系统声音。播放用音频由外部智能体提供，临时保留于服务内存，不打包进公开产物；音频提供方负责其内容来源与使用权限。

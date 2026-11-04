@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { validLayout } from '../../shared/layout.js';
-import { LayoutSync } from './layout-sync.js';
+import { LayoutSync, WorldLayoutSync } from './layout-sync.js';
 import { FURNITURE, createFurniture } from '../world/props.js';
 
 export const FURNITURE_CATEGORIES = {
@@ -16,8 +16,9 @@ export const FURNITURE_CATEGORIES = {
 
 const STORAGE = 'dafeiyu-bedroom-layout-v1';
 export class RoomEditor {
-  constructor({ group, scene, camera, canvas, getScene, onToggle, onChange, contexts }) {
+  constructor({ group, scene, camera, canvas, getScene, onToggle, onChange, contexts, worldClient, registry }) {
     Object.assign(this, { group, scene, camera, canvas, getScene, onToggle, onChange });
+    this.worldClient=worldClient;this.registry=registry;
     this.active = false; this.history = []; this.selected = null;
     this.ray = new THREE.Raycaster(); this.plane = new THREE.Plane(new THREE.Vector3(0,1,0),0);
     this.offset = new THREE.Vector3(); this.defaults = this.snapshot();
@@ -28,7 +29,8 @@ export class RoomEditor {
       ctx.defaults=ctx.group.children.filter(o=>o.userData.furnitureType).map(o=>({type:o.userData.furnitureType,position:o.position.toArray(),rotation:o.rotation.y,scale:o.scale.toArray()}));
       ctx.history=[];ctx.loading=true;ctx.storageKey=ctx.sceneId==='bedroom'?STORAGE:`dafeiyu-${ctx.sceneId}-layout-v1`;
     }
-    this.buildUI();this.bind();this.setContext('room');
+    this.buildUI();this.bind();this.setContext(Object.keys(this.contexts)[0]);
+    if(worldClient){this.updateWorldContexts();this.onChange?.();return;}
     for(const ctx of Object.values(this.contexts)) {
       let saved=null;
       try{saved=JSON.parse(localStorage.getItem(ctx.storageKey));if(saved!==null)this.restore(saved,ctx);}catch{saved=null;}
@@ -42,14 +44,18 @@ export class RoomEditor {
     this.onChange?.();
     window.addEventListener('online',()=>Object.values(this.contexts).forEach(ctx=>ctx.sync.flush()));
   }
+  updateWorldContexts() {
+    for(const ctx of Object.values(this.contexts))if(!ctx.sync){ctx.defaults=ctx.group.children.filter(o=>o.userData.furnitureType).map(o=>({entityId:o.userData.entityId,type:o.userData.furnitureType,position:o.position.toArray(),rotation:o.rotation.y,scale:o.scale.toArray()}));ctx.history=[];ctx.loading=false;ctx.sync=new WorldLayoutSync({client:this.worldClient,registry:this.registry,sceneId:ctx.sceneId,notify:message=>{ctx.message=message;if(this.context===ctx){this.syncMessage=message;this.refreshState();}},onRollback:()=>this.select(null),onIdentities:ids=>{for(const object of ctx.group.children){const id=ids[object.userData.draftId];if(id)object.userData.entityId=id;}}});try{if(localStorage.getItem(ctx.sync.key)||localStorage.getItem(ctx.sceneId==='bedroom'?STORAGE:`dafeiyu-${ctx.sceneId}-layout-v1`))ctx.message='发现本机旧布局/草稿 · 仅备份，未覆盖世界';}catch{}}
+    if(this.context)this.setContext(this.context.sceneId);
+  }
   setContext(key) {
     const ctx=this.contexts[key];if(!ctx)return;
     this.context=ctx;this.group=ctx.group;this.defaults=ctx.defaults;this.history=ctx.history;
     this.sync=ctx.sync;this.syncMessage=ctx.message;this.selected=null;this.outline.visible=false;
     this.toggle.disabled=ctx.loading;
-    this.allowedTypes=Object.keys(FURNITURE).filter(type=>ctx.sceneId==='yard'
+    this.allowedTypes=Object.keys(FURNITURE).filter(type=>(ctx.templateId==='courtyard_v1'||ctx.sceneId==='yard')
       ? type.startsWith('yard') || ['plant','smallPlant','lamp','chair','table'].includes(type)
-      : !type.startsWith('yard') && (ctx.sceneId==='living' || !type.startsWith('living')));
+      : !type.startsWith('yard') && (!!this.worldClient || ctx.sceneId==='living' || !type.startsWith('living')));
     this.panel.querySelector('strong').textContent=`布置${ctx.label}`;
     for(const button of this.panel.querySelector('.room-edit-categories').children)button.hidden=button.textContent!=='全部' && !FURNITURE_CATEGORIES[button.textContent].some(type=>this.allowedTypes.includes(type));
     this.showCategory?.('全部');this.refreshState();
@@ -57,26 +63,26 @@ export class RoomEditor {
 
   items() { return this.group.children.filter(o => o.userData.furnitureType); }
   snapshot() { return this.items().map(o => ({ type:o.userData.furnitureType,
-    position:o.position.toArray(), rotation:o.rotation.y, scale:o.scale.toArray() })); }
+    position:o.position.toArray(), rotation:o.rotation.y, scale:o.scale.toArray(),...(this.worldClient?{entityId:o.userData.entityId,draftId:o.userData.draftId??(o.userData.draftId=`draft-${crypto.randomUUID()}`)}:{} ) })); }
   validate(data) {
-    return validLayout(data,this.context?.sceneId || 'bedroom');
+    return validLayout(data,this.context?.templateId==='courtyard_v1'?'yard':this.context?.sceneId || 'bedroom');
   }
   restore(data, ctx=this.context) {
-    if (!validLayout(data,ctx?.sceneId || 'bedroom')) throw new Error('Invalid layout');
+    if (!validLayout(data,ctx?.templateId==='courtyard_v1'?'yard':ctx?.sceneId || 'bedroom')) throw new Error('Invalid layout');
     const target=ctx?.group || this.group;
     if(!ctx || ctx===this.context)this.select(null);
     for(const o of target.children.filter(o=>o.userData.furnitureType))target.remove(o);
     for (const entry of data) {
       const o=createFurniture(entry.type); o.position.fromArray(entry.position);
-      o.rotation.y=entry.rotation; o.scale.fromArray(entry.scale); target.add(o);
+      o.userData.entityId=entry.entityId;o.userData.draftId=entry.draftId;o.rotation.y=entry.rotation; o.scale.fromArray(entry.scale); target.add(o);
     }
     this.onChange?.();
   }
-  checkpoint() { this.history.push(this.snapshot()); if(this.history.length>30)this.history.shift(); }
+  checkpoint() { if(this.worldClient)this.registry.scenes.get(this.context.sceneId).draft=true;this.history.push(this.snapshot()); if(this.history.length>30)this.history.shift(); }
   save() {
     this.onChange?.();
     this.sync?.enqueue(this.snapshot());
-    try { localStorage.setItem(this.context?.storageKey || STORAGE,JSON.stringify(this.snapshot())); this.status.textContent='布局已保存在本机 · 拖动移动，滚轮旋转家具 · 右键打开菜单'; }
+    try { localStorage.setItem(this.context?.storageKey || STORAGE,JSON.stringify(this.snapshot())); this.status.textContent=this.worldClient?'编辑草稿已备份 · 正在提交世界校验':'布局已保存在本机 · 拖动移动，滚轮旋转家具 · 右键打开菜单'; }
     catch { this.status.textContent='浏览器无法保存，请导出布局备份。'; }
   }
   buildUI() {
@@ -143,7 +149,8 @@ export class RoomEditor {
       const button=document.createElement('button');button.textContent=label;button.onclick=()=>{action();this.menu.hidden=true;};this.menu.append(button);
     }document.body.append(this.menu);
   }
-  setActive(value) {
+  async setActive(value) {
+    if(this.worldClient){try{await this.worldClient.dispatch({kind:'build.editLock',payload:{sceneId:this.context.sceneId,locked:value}});if(value){await this.worldClient.dispatch({kind:'control.takeover',payload:{actorId:this.worldClient.snapshot.actors[0].actorId}});this.lockTimer=setInterval(()=>this.worldClient.dispatch({kind:'build.editLock',payload:{sceneId:this.context.sceneId,locked:true}}).catch(()=>this.setActive(false)),30000);}else{clearInterval(this.lockTimer);await this.sync.flush();}}catch(error){this.status.textContent=`无法切换编辑：${error.message}`;return;}}
     this.active=value;this.panelCollapsed=false;this.panel.hidden=!value || !!this.selected;this.menu.hidden=true;
     this.toggle.textContent=value?'✓ 完成布置':'🪑 布置房间';
     this.toggle.setAttribute('aria-pressed',String(value));this.canvas.style.cursor=value?'grab':'';
@@ -161,7 +168,7 @@ export class RoomEditor {
     if(this.panel)this.panel.hidden=!this.active || !!this.selected || !!this.panelCollapsed;
     if(!this.stateBar)return;
     this.stateBar.hidden=!this.active;
-    if(this.retrySave)this.retrySave.hidden=!/失败|未连接/.test(this.syncMessage || '');
+    if(this.retrySave){this.retrySave.hidden=this.worldClient?!(this.sync?.pending&&this.sync?.error):!/失败|未连接/.test(this.syncMessage || '');this.retrySave.disabled=!!this.sync?.busy;}
     if(this.loadDatabase)this.loadDatabase.hidden=!this.sync?.conflict;
     const label=this.selected ? FURNITURE[this.selected.userData.furnitureType].label : '未选中家具';
     this.stateText.replaceChildren();
@@ -182,7 +189,7 @@ export class RoomEditor {
   pick(e) {
     this.ground(e);this.group.updateMatrixWorld(true);
     const hits=this.ray.intersectObjects(this.items(),true);
-    for(const hit of hits){let o=hit.object;while(o&&o.parent!==this.group)o=o.parent;if(o?.userData.furnitureType)return o;}
+    for(const hit of hits){let o=hit.object;while(o&&o.parent!==this.group)o=o.parent;if(o?.userData.furnitureType&&!o.userData.protected)return o;}
     return null;
   }
   constrain(o) {
@@ -203,7 +210,7 @@ export class RoomEditor {
   rotate(angle=Math.PI/2, checkpoint=true){if(!this.selected)return;if(checkpoint)this.checkpoint();this.selected.rotation.y+=angle;this.constrain(this.selected);this.save();}
   duplicate(){if(!this.selected||this.items().length>=100)return;const source=this.selected;this.add(source.userData.furnitureType);this.selected.position.copy(source.position).add(new THREE.Vector3(.4,0,.4));this.selected.rotation.copy(source.rotation);this.selected.scale.copy(source.scale);this.constrain(this.selected);this.save();}
   remove(){if(!this.selected)return;this.checkpoint();this.group.remove(this.selected);this.select(null);this.save();}
-  undo(){const previous=this.history.pop();if(previous){this.restore(previous);this.save();}}
+  undo(){if(this.worldClient){this.sync.undo();return;}const previous=this.history.pop();if(previous){this.restore(previous);this.save();}}
   finishDrag(){if(this.dragging){this.dragging=false;this.save();}this.canvas.style.cursor=this.active?'grab':'';}
   bind() {
     const consume=e=>{e.preventDefault();e.stopImmediatePropagation();};
