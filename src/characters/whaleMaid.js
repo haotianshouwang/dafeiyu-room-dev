@@ -179,17 +179,18 @@ export class WhaleMaid {
     this.stateTime += dt;
     const delta = new THREE.Vector3().subVectors(this.target, this.pos);
     const distance = Math.hypot(delta.x, delta.z);
-    const moving = ['swim', 'eat', 'sleep'].includes(this.state) && distance > .045;
+    const localMoving = !this.externalMotion && ['swim', 'eat', 'sleep'].includes(this.state) && distance > .045;
+    const moving = this.externalMotion ? this.externalMotion.moving : localMoving;
     const startX = this.pos.x, startZ = this.pos.z;
-    if (moving) {
+    if (localMoving) {
       const step = Math.min(distance, this.speedMax * dt);
       this.pos.x += delta.x / distance * step; this.pos.z += delta.z / distance * step;
       const desired = Math.atan2(delta.x, delta.z);
       this.heading += Math.atan2(Math.sin(desired - this.heading), Math.cos(desired - this.heading)) * Math.min(1,dt*8);
       this.speed = step / Math.max(dt, .00001);
     } else {
-      this.speed = 0;
-      if (this.state === 'swim') this.state = 'idle';
+      this.speed = this.externalMotion?.speed || 0;
+      if (this.state === 'swim' && !moving) this.state = 'idle';
       if (this.state === 'eat' && this.food) {
         this.chewTime += dt;
         if (this.chewTime > 1.4) { this.food.userData.consumed = true; this.food.userData.dead = true; this.food = null; this.state = 'idle'; }
@@ -202,7 +203,7 @@ export class WhaleMaid {
       this.pos.z = clamp(this.pos.z,this.bounds.z0,this.bounds.z1);
     }
     // 被墙卡住时自动放弃目标，避免一直走
-    if (moving) {
+    if (localMoving) {
       const advanced = Math.hypot(this.pos.x - startX, this.pos.z - startZ);
       this._stuck = advanced < this.speedMax * dt * 0.3 ? (this._stuck || 0) + dt : 0;
       if (this._stuck > 1.4) { this._stuck = 0; this.target.copy(this.pos); this.state = 'idle'; }

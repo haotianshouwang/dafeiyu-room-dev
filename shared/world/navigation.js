@@ -28,6 +28,8 @@ export function findPath(snapshot,sceneId,start,goal){
  if(Math.abs(goal[1]-groundY)>1e-6)throw Error('INVALID_GROUND_HEIGHT');
  if(!walkable(snapshot,sceneId,goal))throw Error('DESTINATION_BLOCKED');
  if(!walkable(snapshot,sceneId,start))throw Error('PATH_START_BLOCKED');
+ // Keyboard steering must not snap to A* grid nodes when the direct edge is clear.
+ if(segmentWalkable(snapshot,sceneId,start,goal))return [goal.slice()];
  const step=.25,key=p=>`${p[0]},${p[1]}`,point=p=>[p[0]*step,groundY,p[1]*step];
  const a=[Math.round(start[0]/step),Math.round(start[2]/step)],b=[Math.round(goal[0]/step),Math.round(goal[2]/step)],open=[],cost=new Map(),prev=new Map();
  // Attach the exact start only through collision-free edges, including off-grid starts.

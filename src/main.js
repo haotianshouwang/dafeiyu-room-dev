@@ -10,6 +10,7 @@ import {buildYard} from './world/yard.js';
 import {buildLiving} from './world/living.js';
 import {SceneRegistry} from './world/registry.js';
 import {ActionDispatcher} from './core/action-dispatcher.js';
+import {ActorTimeline} from './core/actor-timeline.js';
 import {WorldClient} from './core/world-client.js';
 import {ownerSession} from './ui/owner-session.js';
 import {AgentConnect} from './ui/agent-connect.js';
@@ -42,7 +43,7 @@ const original=mode==='whale'?new Whale():mode==='paper'?new WhalePaper():new Wh
 let whale=original;const blob=new Whale();blob.group.visible=false;scene.add(original.group,blob.group);original.group.scale.setScalar(1.28);blob.group.scale.setScalar(1.28);
 original.ready?.catch(()=>showMessage('角色模型加载失败，可使用 ?character=whale 查看默认鲸鱼'));
 const fx=new FX(scene),hud=new HUD(),game=new Interactions({scene,camera,iso,whale,fx,props,hud,lights});
-const client=new WorldClient();let editor=null,activeScene=null,actor=null,lease=null,takeover=null,lastInputAt=0,lastPortalAt=0;
+const client=new WorldClient({pollMs:100}),actorTimeline=new ActorTimeline();let editor=null,activeScene=null,actor=null,lease=null,takeover=null,lastInputAt=0,lastPortalAt=0;
 const keys=new Set(),goal=new THREE.Vector3(),renderPosition=new THREE.Vector3();
 const status=document.createElement('div');status.id='world-sync-status';status.setAttribute('role','status');status.style.cssText='position:fixed;left:20px;bottom:20px;z-index:32;background:#faf1e5e8;border-radius:12px;padding:8px 12px;color:#51454a;font:13px system-ui;max-width:70vw';status.textContent='正在连接世界…';document.body.append(status);
 function showMessage(message){status.textContent=message;}
@@ -50,7 +51,7 @@ client.onStatus(value=>{if(value==='connected')showMessage('世界已连接 · W
 function showScene(id){const cfg=registry.scenes.get(id);if(!cfg)return;activeScene=id;registry.show(id);iso.setProfile(cfg.data.templateId);iso.setView(cfg.view.target,cfg.view.zoom);iso.target.copy(iso.homeTarget);iso.zoom=iso.homeZoom;iso.zoomTarget=iso.homeZoom;iso.drag=iso.dragTarget=0;iso.par.set(0,0);iso.parTarget.set(0,0);game.setScene(cfg);whale.bounds=cfg.bounds;whale.colliders=null;editor?.setContext(id);const loc=document.getElementById('loc');if(loc)loc.textContent=`${cfg.label} · 选择目的地`;lastPortalAt=performance.now();}
 client.onSnapshot(snapshot=>{
  registry.applySnapshot(snapshot);const next=snapshot.actors.find(a=>a.actorId==='whale')||snapshot.actors[0];if(!next)return;
- const changed=actor?.sceneId!==next.sceneId;actor=next;
+ const changed=actor?.sceneId!==next.sceneId;actor=next;actorTimeline.push(next,performance.now());
  if(editor){const missing=Object.values(registry.contexts).some(c=>!c.sync);if(missing)editor.updateWorldContexts();}
  if(changed){renderPosition.fromArray(next.position);showScene(next.sceneId);}
  if(lease&&(next.controller?.leaseId!==lease.leaseId||next.controller?.leaseVersion!==lease.leaseVersion))lease=null;
@@ -80,8 +81,9 @@ function updateKeyboard(dt,now){if(agentConnect.panel){stopMovement();return;}co
  for(const distance of [.8,.5,.25]){goal.set(actor.position[0]+dx/length*distance,0,actor.position[2]+dz/length*distance);if(walkable(snapshot,actor.sceneId,goal.toArray())&&segmentWalkable(snapshot,actor.sceneId,[actor.position[0],0,actor.position[2]],goal.toArray())){action('move',{sceneId:actor.sceneId,position:goal.toArray()});return;}}
 }
 function renderActor(dt,t){if(!actor)return;const next=actor.form==='swim'?blob:original;if(next!==whale){whale.group.visible=false;whale=next;whale.group.visible=true;game.whale=whale;window.__whale=whale;fx.splash(new THREE.Vector3(...actor.position));}
- const p=new THREE.Vector3(...actor.position);if(actor.pose==='sleeping')p.y+=.28;else if(actor.pose==='seated')p.y+=.4;else if(actor.pose==='swimming'||actor.form==='swim')p.y+=.38;else if(!['climbing','sliding'].includes(actor.pose))p.y=Math.max(p.y,whale.groundY??whale.baseY??1.12);
- renderPosition.lerp(p,1-Math.exp(-15*dt));whale.state=actor.pose==='sleeping'?'sleepArrive':actor.pose==='seated'?'sit':actor.pose==='walking'||actor.pose==='swimming'||actor.pose==='climbing'?'swim':'idle';whale.target.copy(renderPosition);whale.pos.copy(renderPosition);whale.velocity?.set(0,0,0);whale.heading=actor.rotation||0;whale.update(dt,t);whale.pos.copy(renderPosition);whale.target.copy(renderPosition);whale.group.position.copy(renderPosition);whale.group.rotation.y=actor.rotation||0;
+ const visual=actorTimeline.sample(performance.now())||actor;
+ const p=new THREE.Vector3(...visual.position);if(actor.pose==='sleeping')p.y+=.28;else if(actor.pose==='seated')p.y+=.4;else if(actor.pose==='swimming'||actor.form==='swim')p.y+=.38;else if(!['climbing','sliding'].includes(actor.pose))p.y=Math.max(p.y,whale.groundY??whale.baseY??1.12);
+ renderPosition.copy(p);whale.state=actor.pose==='sleeping'?'sleepArrive':actor.pose==='seated'?'sit':actor.pose==='walking'||actor.pose==='swimming'||actor.pose==='climbing'?'swim':'idle';whale.target.copy(renderPosition);whale.pos.copy(renderPosition);whale.velocity?.set(0,0,0);whale.heading=visual.rotation||0;whale.externalMotion={moving:visual.moving,speed:visual.speed};whale.update(dt,t);whale.pos.copy(renderPosition);whale.target.copy(renderPosition);whale.group.position.copy(renderPosition);whale.group.rotation.y=visual.rotation||0;
  if(actor.pose==='sleeping'&&Math.floor(t*2)!==Math.floor((t-dt)*2))fx.zzz(renderPosition.clone().add(new THREE.Vector3(.3,.5,0)));
  if(registry.scenes.get(activeScene)?.template.kind==='outdoor'&&!editor?.active)iso.follow(renderPosition,dt);
 }
