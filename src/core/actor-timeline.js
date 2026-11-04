@@ -11,6 +11,9 @@ export class ActorTimeline {
     this.samples.push(value);
     while(this.samples.length>2&&this.samples[1].time<time-2000)this.samples.shift();
   }
+  // Seed the current render time with the final acknowledged keyboard position.
+  // Otherwise releasing local prediction exposes buffered pre-doorway samples.
+  handoff(actor,now){this.samples=[];this.push(actor,now-this.delayMs);}
   sample(now) {
     if(!this.samples.length)return null;
     const time=now-this.delayMs;

@@ -66,7 +66,7 @@ async function control(force=false){if(takeover)return takeover;if(!force&&lease
 const dispatcher=new ActionDispatcher(async(kind,target,{force=false}={})=>{if(!actor||client.connectionStatus!=='connected')return;try{const token=await control(force);const current=client.snapshot.actors.find(a=>a.actorId===actor.actorId);if(kind!=='cancel'&&current.actionId&&!(kind==='move'&&client.snapshot.actions[current.actionId]?.kind==='move')){await client.dispatch({kind:'action.submit',payload:{actorId:actor.actorId,leaseId:token.leaseId,leaseVersion:token.leaseVersion,kind:'cancel'}});}return await client.dispatch({kind:'action.submit',payload:{actorId:actor.actorId,leaseId:token.leaseId,leaseVersion:token.leaseVersion,kind,...(target?{target}:{})}});}catch(error){showMessage(`操作未执行：${error.message}`);}});
 const player=new PlayerController({takeControl:()=>control(true),send:payload=>client.dispatch({kind:'actor.input',payload},{refresh:false}),onError:error=>{keys.clear();showMessage(`移动未同步：${error.message}`);}});
 async function action(kind,target,options){
- try{if(player.active){player.stop();await player.drain();player.release();}
+ try{if(player.active){player.stop();await player.drain();await client.refreshState();const settled=client.snapshot.actors.find(a=>a.actorId===actor.actorId);if(settled)actorTimeline.handoff(settled,performance.now());player.release();}
   return await dispatcher.submit(kind,target,options);
  }catch(error){showMessage(`操作未执行：${error.message}`);}
  finally{if(kind==='cancel')portalPending=false;}
