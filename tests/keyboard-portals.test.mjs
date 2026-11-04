@@ -41,7 +41,7 @@ test('legacy west boundary uses its world normal',async()=>{
  assert.equal((await run('KeyS')).length,0);
  assert.equal((await run('KeyW'))[0]?.target.sceneId,'yard');
 });
-test('actual keyup queues cancellation while an outward portal move is in flight',async()=>{
+test('releasing WASD does not cancel an accepted doorway transition',async()=>{
  const snapshot={scenes:[{sceneId:'a',templateId:'cozy_room_v1'},{sceneId:'b',templateId:'cozy_room_v1'}],entities:[],portals:[{from:{sceneId:'a',slotId:'north'},to:{sceneId:'b',slotId:'south'},bidirectional:true}]};
  const {context}=await harness(snapshot,[0,0,-2.2],0,[]);
  const calls=[];let finish;
@@ -52,7 +52,7 @@ test('actual keyup queues cancellation while an outward portal move is in flight
  listeners.keyup({code:'KeyD'});
  assert.equal(context.keys.size,0);assert.equal(calls.length,1);assert.equal(calls[0].target.sceneId,'b');
  finish();await context.dispatcher.running;
- assert.deepEqual(calls.map(call=>call.kind),['move','cancel']);
+ assert.deepEqual(calls.map(call=>call.kind),['move']);
 });
 
 test('opposing movement keys stop and flush an already moving player',async()=>{const snapshot={scenes:[{sceneId:'a',templateId:'cozy_room_v1'}],entities:[],portals:[]};const {context}=await harness(snapshot,[0,0,0],0,[]);context.player.active=true;context.player.held=true;context.keys=new Set(['KeyW','KeyS']);context.updateKeyboard(.016,4000);assert.equal(context.player.stopped,true);assert.equal(context.player.held,false);});

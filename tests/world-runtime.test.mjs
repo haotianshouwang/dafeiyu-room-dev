@@ -32,3 +32,15 @@ test('one rice bowl restores 50 fullness and ten seconds of actual sleep fills e
   else assert.ok(Math.abs(end.actors[0].needs.hunger-Math.max(0,start.hunger-50))<1e-8);
  }finally{s.db.close();}}
 });
+test('slide completes in the water, survives idle ticks and permits swimming to shore',()=>{
+ const s=setup();try{
+  s.service.transactRuntime('default',({snapshot})=>{snapshot.entities=[...snapshot.entities.filter(e=>e.protected),{entityId:'pool-test',sceneId:'yard',type:'yardPool',position:[0,0,0],rotation:0,scale:[1,1,1]}];Object.assign(snapshot.actors[0],{sceneId:'yard',position:[-5,0,0]});});
+  const result=s.run('action.submit',{actorId:'whale',leaseId:s.lease.leaseId,leaseVersion:s.lease.leaseVersion,kind:'slide',target:{entityId:'pool-test',anchorId:'approach'}});
+  for(let i=0;i<160&&s.snapshot().actions[result.actionId].status==='running';i++)s.tick();
+  let a=s.snapshot().actors[0];assert.equal(s.snapshot().actions[result.actionId].status,'completed');assert.equal(a.form,'swim');assert.equal(a.pose,'swimming');assert.ok(a.position[0]>-2.4&&a.position[0]<2.4);
+  const landed=[...a.position];for(let i=0;i<10;i++)s.tick();a=s.snapshot().actors[0];assert.equal(a.form,'swim');assert.deepEqual(a.position,landed);
+  const lease=s.run('control.takeover',{actorId:'whale'});let sequence=0;
+  for(let i=0;i<30;i++){s.tick();s.run('actor.input',{actorId:'whale',leaseId:lease.leaseId,leaseVersion:lease.leaseVersion,frames:[{sequence:++sequence,dtMs:50,direction:[1,0]},{sequence:++sequence,dtMs:50,direction:[1,0]}]});}
+  a=s.snapshot().actors[0];assert.ok(a.position[0]>2.4);assert.equal(a.form,'normal');
+ }finally{s.db.close();}
+});

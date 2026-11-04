@@ -2,12 +2,12 @@ import {getTemplate} from './templates.js';
 import {getCatalogEntry} from './catalog.js';
 export const distance=(a,b)=>Math.hypot(a[0]-b[0],a[2]-b[2]);
 export function anchor(entity,id){const a=getCatalogEntry(entity.type).anchors.find(a=>a.anchorId===id);if(!a)throw Error('ANCHOR_NOT_FOUND');const [x,y,z]=a.position.map((v,i)=>v*entity.scale[i]);const c=Math.cos(entity.rotation),s=Math.sin(entity.rotation);return [entity.position[0]+x*c+z*s,entity.position[1]+y,entity.position[2]-x*s+z*c];}
-export function walkable(snapshot,sceneId,p){const scene=snapshot.scenes.find(s=>s.sceneId===sceneId);if(!scene)throw Error('SCENE_NOT_FOUND');const b=getTemplate(scene.templateId).bounds;if(p[0]<b.x0+.15||p[0]>b.x1-.15||p[2]<b.z0+.15||p[2]>b.z1-.15)return false;return !snapshot.entities.some(e=>{if(e.sceneId!==sceneId)return false;const f=getCatalogEntry(e.type).footprint;if(!f.blocking||e.supportEntityId)return false;const dx=p[0]-e.position[0],dz=p[2]-e.position[2],c=Math.cos(e.rotation),s=Math.sin(e.rotation);return Math.abs(dx*c-dz*s)<f.width*e.scale[0]/2+.18&&Math.abs(dx*s+dz*c)<f.depth*e.scale[2]/2+.18;});}
+export function walkable(snapshot,sceneId,p){const scene=snapshot.scenes.find(s=>s.sceneId===sceneId);if(!scene)throw Error('SCENE_NOT_FOUND');const b=getTemplate(scene.templateId).bounds;if(p[0]<b.x0+.15||p[0]>b.x1-.15||p[2]<b.z0+.15||p[2]>b.z1-.15)return false;return !snapshot.entities.some(e=>{if(e.sceneId!==sceneId)return false;const f=getCatalogEntry(e.type).footprint;if(!f.blocking||e.type==='yardPool'||e.supportEntityId)return false;const dx=p[0]-e.position[0],dz=p[2]-e.position[2],c=Math.cos(e.rotation),s=Math.sin(e.rotation);return Math.abs(dx*c-dz*s)<f.width*e.scale[0]/2+.18&&Math.abs(dx*s+dz*c)<f.depth*e.scale[2]/2+.18;});}
 // Exact slab intersection against every inflated, rotated furniture rectangle.
 export function segmentWalkable(snapshot,sceneId,start,end){
  if(!walkable(snapshot,sceneId,start)||!walkable(snapshot,sceneId,end))return false;
  return !snapshot.entities.some(entity=>{
-  if(entity.sceneId!==sceneId||entity.supportEntityId)return false;
+  if(entity.sceneId!==sceneId||entity.type==='yardPool'||entity.supportEntityId)return false;
   const footprint=getCatalogEntry(entity.type).footprint;if(!footprint.blocking)return false;
   const c=Math.cos(entity.rotation),s=Math.sin(entity.rotation);
   const local=p=>{const x=p[0]-entity.position[0],z=p[2]-entity.position[2];return [x*c-z*s,x*s+z*c];};

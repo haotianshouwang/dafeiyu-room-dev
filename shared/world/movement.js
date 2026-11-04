@@ -1,3 +1,4 @@
+import {waterPose} from './water.js';
 import {segmentWalkable} from './navigation.js';
 import {getTemplate} from './templates.js';
 export const PLAYER_SPEED=2.82;
@@ -15,5 +16,5 @@ export function advancePlayer(snapshot,actor,direction,dtMs){
   if(Math.hypot(position[0]-start[0],position[2]-start[2])>1e-9)rotation=Math.atan2(position[0]-start[0],position[2]-start[2]);
  }
  const speed=dt?Math.hypot(position[0]-start[0],position[2]-start[2])/dt:0;
- return {...actor,position,rotation,speed,moving:speed>.001,pose:speed>.001?'walking':'idle',form:'normal'};
+ const next={...actor,position,rotation,speed,moving:speed>.001};return {...next,...waterPose(snapshot,next)};
 }
