@@ -33,6 +33,7 @@ import {getCatalogEntry} from '../shared/world/catalog.js';
 setupBackdrop();
 const R=createRenderer(document.getElementById('app')),scene=new THREE.Scene(),iso=new IsoCamera(),camera=iso.camera;
 setupEnvironment(R.renderer,scene);const lights=setupLights(scene,{windowPos:new THREE.Vector3(.05,1.6,-3.4)});
+const lightDefaults=Object.fromEntries(Object.entries(lights).map(([key,light])=>[key,light.intensity]));
 const room=buildRoom(),props=buildProps(),yard=buildYard(),living=buildLiving();
 const roomRoot=new THREE.Group();roomRoot.add(room.group,props.group);
 const registry=new SceneRegistry({scene,createFurniture,legacy:{
@@ -52,7 +53,7 @@ const keys=new Set(),goal=new THREE.Vector3(),renderPosition=new THREE.Vector3()
 const status=document.createElement('div');status.id='world-sync-status';status.setAttribute('role','status');status.style.cssText='position:fixed;left:20px;bottom:20px;z-index:32;background:#faf1e5e8;border-radius:12px;padding:8px 12px;color:#51454a;font:13px system-ui;max-width:70vw';status.textContent='正在连接世界…';document.body.append(status);
 function showMessage(message){status.textContent=message;}
 client.onStatus(value=>{if(value==='connected')showMessage('世界已连接 · WASD 接管移动 · 点击地点可选择目的场景');else{keys.clear();player.release();lease=null;showMessage(value==='unauthorized'?'主人会话已失效，请刷新页面重新连接':'世界离线 · 草稿已保留，正在重连');}});
-function showScene(id){const cfg=registry.scenes.get(id);if(!cfg)return;activeScene=id;registry.show(id);iso.setProfile(cfg.data.templateId);iso.setView(cfg.view.target,cfg.view.zoom);iso.target.copy(iso.homeTarget);iso.zoom=iso.homeZoom;iso.zoomTarget=iso.homeZoom;iso.drag=iso.dragTarget=0;iso.par.set(0,0);iso.parTarget.set(0,0);game.setScene(cfg);whale.bounds=cfg.bounds;whale.colliders=null;editor?.setContext(id);const loc=document.getElementById('loc');if(loc)loc.textContent=`${cfg.label} · 选择目的地`;lastPortalAt=performance.now();}
+function showScene(id){const cfg=registry.scenes.get(id);if(!cfg)return;activeScene=id;registry.show(id);const night=cfg.data.templateId==='street_corner_v1';scene.background=night?new THREE.Color(0x190e2b):null;for(const [key,light]of Object.entries(lights))light.intensity=lightDefaults[key]*(night?({sun:.12,hemi:.42,fill:.55}[key]||0):1);iso.setProfile(cfg.data.templateId);iso.setView(cfg.view.target,cfg.view.zoom);iso.target.copy(iso.homeTarget);iso.zoom=iso.homeZoom;iso.zoomTarget=iso.homeZoom;iso.drag=iso.dragTarget=0;iso.par.set(0,0);iso.parTarget.set(0,0);game.setScene(cfg);whale.bounds=cfg.bounds;whale.colliders=null;editor?.setContext(id);const loc=document.getElementById('loc');if(loc)loc.textContent=`${cfg.label} · 选择目的地`;lastPortalAt=performance.now();}
 client.onSnapshot(snapshot=>{
  registry.applySnapshot(snapshot);const next=snapshot.actors.find(a=>a.actorId==='whale')||snapshot.actors[0];if(!next)return;
  const changed=actor?.sceneId!==next.sceneId;actor=next;player.reconcile(next);actorTimeline.push(next,performance.now());

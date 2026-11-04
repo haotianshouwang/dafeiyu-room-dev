@@ -1,3 +1,4 @@
+import {STORE_FURNITURE} from './convenience-store.js';
 import {OUTDOOR_FURNITURE} from './outdoor-furniture.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -597,7 +598,7 @@ function makeHangingPlant() {
 }
 
 export const FURNITURE = {
-  ...OUTDOOR_FURNITURE,
+  ...OUTDOOR_FURNITURE,...STORE_FURNITURE,
   bed: { label: '床', icon: '🛏️', make: makeBed },
   desk: { label: '电脑桌', icon: '🖥️', make: makeDesk },
   chair: { label: '椅子', icon: '🪑', make: makeChair },

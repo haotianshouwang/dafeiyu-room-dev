@@ -414,6 +414,83 @@
           ]
         }
       ]
+    },
+    {
+      "sceneId": "convenience-store",
+      "name": "街角便利店",
+      "templateId": "street_corner_v1",
+      "entities": [
+        {
+          "type": "shopBuilding",
+          "position": [
+            0.4,
+            0,
+            -1.9
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "type": "shopVending",
+          "position": [
+            4.25,
+            0,
+            -0.35
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "type": "shopLamp",
+          "position": [
+            -4.1,
+            0,
+            -4.8
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "type": "shopLamp",
+          "position": [
+            5.35,
+            0,
+            2.1
+          ],
+          "rotation": 3.141592653589793,
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "type": "shopCar",
+          "position": [
+            3.8,
+            0,
+            4.7
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      ]
     }
   ],
   "portals": [
@@ -436,15 +513,21 @@
       "toSceneId": "bedroom"
     },
     {
-      "portalId": "legacy-living-yard",
-      "kind": "legacy",
-      "fromSceneId": "living",
-      "toSceneId": "yard"
-    },
-    {
       "portalId": "legacy-bedroom-living",
       "kind": "legacy",
       "fromSceneId": "bedroom",
+      "toSceneId": "living"
+    },
+    {
+      "portalId": "legacy-living-store",
+      "kind": "legacy",
+      "fromSceneId": "living",
+      "toSceneId": "convenience-store"
+    },
+    {
+      "portalId": "legacy-store-living",
+      "kind": "legacy",
+      "fromSceneId": "convenience-store",
       "toSceneId": "living"
     }
   ]

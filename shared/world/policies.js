@@ -6,7 +6,7 @@ const indoor=Object.freeze({...common,id:'indoor_fixed_v1',horizontalRotation:fa
 const outdoor=Object.freeze({...common,id:'outdoor_orbit_v1',horizontalRotation:true});
 export function cameraPolicyFor(templateId){
  if(['cozy_room_v1','bedroom','room','living'].includes(templateId))return indoor;
- if(['courtyard_v1','yard'].includes(templateId))return outdoor;
+ if(['courtyard_v1','yard','street_corner_v1','convenience-store'].includes(templateId))return outdoor;
  throw new RangeError(`Unknown template: ${templateId}`);
 }
 export const canonicalSceneId=id=>id==='room'?'bedroom':id;

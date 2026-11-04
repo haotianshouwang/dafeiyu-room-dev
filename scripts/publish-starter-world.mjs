@@ -17,6 +17,6 @@ try{
  console.log(`已更新发布默认布局：${starter.scenes.map(s=>`${s.name} ${s.entities.length} 件家具`).join('、')}。`);
  console.log('运行存档未修改；未导出人物状态、会话、授权、事件和操作记录。');
  const skipped=snapshot.scenes.filter(s=>!STARTER_SCENES.includes(s.sceneId)).length;
- if(skipped)console.log(`另有 ${skipped} 个运行场景未发布；此命令只发布卧室、客厅和院子。`);
+ if(skipped)console.log(`另有 ${skipped} 个运行场景未发布；此命令只发布卧室、客厅、院子和便利店。`);
  console.log('请检查配置差异并提交代码后再发布仓库。');
 }finally{db.close();}

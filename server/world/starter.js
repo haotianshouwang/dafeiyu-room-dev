@@ -1,6 +1,6 @@
 import {validLayout} from '../../shared/layout.js';
 import {getTemplate} from '../../shared/world/templates.js';
-export const STARTER_SCENES=['bedroom','living','yard'];
+export const STARTER_SCENES=['bedroom','living','yard','convenience-store'];
 // Explicit release operation only. Runtime/MCP handlers never call this exporter.
 export function createStarterWorld(snapshot){
  const scenes=STARTER_SCENES.map(sceneId=>{

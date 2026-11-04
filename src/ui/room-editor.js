@@ -1,3 +1,5 @@
+import {getCatalogEntry} from '../../shared/world/catalog.js';
+import {getTemplate} from '../../shared/world/templates.js';
 import * as THREE from 'three';
 import { validLayout } from '../../shared/layout.js';
 import { LayoutSync, WorldLayoutSync } from './layout-sync.js';
@@ -5,6 +7,7 @@ import { FURNITURE, createFurniture } from '../world/props.js';
 
 export const FURNITURE_CATEGORIES = {
   '全部': Object.keys(FURNITURE),
+  '街景': ['shopBuilding','shopVending','shopLamp','shopCar'],
   '睡眠': ['bed','nightstand'],
   '桌椅': ['desk','chair','table'],
   '收纳': ['shelf'],
@@ -53,7 +56,7 @@ export class RoomEditor {
     this.context=ctx;this.group=ctx.group;this.defaults=ctx.defaults;this.history=ctx.history;
     this.sync=ctx.sync;this.syncMessage=ctx.message;this.selected=null;this.outline.visible=false;
     this.toggle.disabled=ctx.loading;
-    this.allowedTypes=Object.keys(FURNITURE).filter(type=>(ctx.templateId==='courtyard_v1'||ctx.sceneId==='yard')
+    this.allowedTypes=Object.keys(FURNITURE).filter(type=>this.worldClient?getCatalogEntry(type).sceneKinds.includes(getTemplate(ctx.templateId).kind):(ctx.templateId==='courtyard_v1'||ctx.sceneId==='yard')
       ? type.startsWith('yard') || ['plant','smallPlant','lamp','chair','table'].includes(type)
       : !type.startsWith('yard') && (!!this.worldClient || ctx.sceneId==='living' || !type.startsWith('living')));
     this.panel.querySelector('strong').textContent=`布置${ctx.label}`;
@@ -65,10 +68,10 @@ export class RoomEditor {
   snapshot() { return this.items().map(o => ({ type:o.userData.furnitureType,
     position:o.position.toArray(), rotation:o.rotation.y, scale:o.scale.toArray(),...(this.worldClient?{entityId:o.userData.entityId,draftId:o.userData.draftId??(o.userData.draftId=`draft-${crypto.randomUUID()}`)}:{} ) })); }
   validate(data) {
-    return validLayout(data,this.context?.templateId==='courtyard_v1'?'yard':this.context?.sceneId || 'bedroom');
+    return validLayout(data,this.context?.templateId&&getTemplate(this.context.templateId).kind==='outdoor'?'yard':this.context?.sceneId || 'bedroom');
   }
   restore(data, ctx=this.context) {
-    if (!validLayout(data,ctx?.templateId==='courtyard_v1'?'yard':ctx?.sceneId || 'bedroom')) throw new Error('Invalid layout');
+    if (!validLayout(data,ctx?.templateId&&getTemplate(ctx.templateId).kind==='outdoor'?'yard':ctx?.sceneId || 'bedroom')) throw new Error('Invalid layout');
     const target=ctx?.group || this.group;
     if(!ctx || ctx===this.context)this.select(null);
     for(const o of target.children.filter(o=>o.userData.furnitureType))target.remove(o);
