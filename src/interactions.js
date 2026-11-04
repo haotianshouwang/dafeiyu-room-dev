@@ -107,7 +107,8 @@ export class Interactions {
       const furnitureHits=this.ray.intersectObjects(this.getFurniture(),true);
       for(const hit of furnitureHits){let object=hit.object;while(object&&!object.userData.entityId)object=object.parent;
         const entity=object?.userData.worldEntity;if(!entity)continue;
-        const kind=getCatalogEntry(entity.type).actions[0];
+        let part=hit.object,requested;while(part&&part!==object){requested??=part.userData.actionKind;part=part.parent;}
+        const kind=requested||getCatalogEntry(entity.type).actions[0];
         if(kind)this.worldAction(kind,{entityId:object.userData.entityId});
         return; // The nearest furniture occludes objects behind it.
       }
@@ -116,6 +117,7 @@ export class Interactions {
   }
 
   _line(kind) {
+    this.onVoice?.(kind);
     const arr=LINES[kind];
     const text=arr[Math.floor(Math.random()*arr.length)];
     this.hud.say(text,this.whale.group.position.clone().add(new THREE.Vector3(0,this.whale.bubbleHeight??.66,0)),3);

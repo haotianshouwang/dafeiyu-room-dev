@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 const manifest=JSON.parse(fs.readFileSync(new URL('../resources/character/manifest.json',import.meta.url),'utf8'));
-const approved=new Map(manifest.files.map(f=>[f.path,f]));
+const audioManifest=JSON.parse(fs.readFileSync(new URL('../resources/audio/manifest.json',import.meta.url),'utf8'));
+const approved=new Map([...manifest.files,...audioManifest.files.map(f=>({...f,runtime:true}))].map(f=>[f.path,f]));
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
@@ -16,6 +17,7 @@ export function blockedPublicFile(file){
 }
 function walk(dir){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(dir,e.name)):[path.join(dir,e.name)]);}
 export function checkPublic(){
+ for(const entry of audioManifest.files){if(!/^resources\/audio\/[a-z0-9-]+\.mp3$/.test(entry.path)||createHash('sha256').update(fs.readFileSync(entry.path)).digest('hex')!==entry.sha256)throw Error('Invalid approved audio: '+entry.path);}
  for(const entry of manifest.files){
   if(!/^resources\/character\/(models\/[^/]+\.(glb|blend)|characters\/whale-maid-paper\.png|notes\/[^/]+\.txt)$/.test(entry.path)||/(before-author|secrets?|tokens?|credentials?)/i.test(entry.path))throw Error('Invalid approved resource: '+entry.path);
   if(createHash('sha256').update(fs.readFileSync(entry.path)).digest('hex')!==entry.sha256)throw Error('Resource digest mismatch: '+entry.path);
@@ -31,6 +33,6 @@ export function checkPublic(){
   if(/\.(js|html|json|css)$/.test(file)&&/\/Volumes\/|\/Users\/|__private\/models\//.test(fs.readFileSync(file,'utf8')))throw Error('Private path in build: '+file);
  }
  for(const entry of manifest.files.filter(f=>f.runtime))if(!fs.existsSync(path.join('dist',entry.path)))throw Error('Missing runtime resource: '+entry.path);
- console.log('PASS: tracked files and production build exclude scratch, credentials, unapproved character files, voice/model/font assets and local paths');
+ console.log('PASS: tracked files and production build exclude scratch, credentials, unapproved character/audio files, model weights/fonts and local paths');
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)checkPublic();

@@ -1,0 +1,32 @@
+{
+  "files": [
+    {
+      "path": "resources/audio/feed.mp3",
+      "sha256": "772908fd41059844b67e69020de6e34ff6f2d7043af60d91f033545b4e2afe6d"
+    },
+    {
+      "path": "resources/audio/friends.mp3",
+      "sha256": "5272920cd5838bbb1a51c226162ee0b421e4b13997ec8cb8056cbc5ccd916365"
+    },
+    {
+      "path": "resources/audio/garden-theme.mp3",
+      "sha256": "88cb510a87d815422941a944a945c4f1d56529f7535a773de7041e06bc45a6c4"
+    },
+    {
+      "path": "resources/audio/opening.mp3",
+      "sha256": "e8241350c6acf7db4e950d815c19350ad8d79f52deed707c9f3f4e11d929b2b9"
+    },
+    {
+      "path": "resources/audio/pet.mp3",
+      "sha256": "26060b5d97602fa5110dc7f9064e572ca5739017282352c6c595e3f9e84f8383"
+    },
+    {
+      "path": "resources/audio/pool.mp3",
+      "sha256": "21d71e9d4ab45dd1fb352212131bd7bcf60f7b0f781fb733992f939da49a7c5e"
+    },
+    {
+      "path": "resources/audio/sleep.mp3",
+      "sha256": "96f296d8961dade3d0f34549e7f9ecdc8facb5f57a7456aeeb31726ebf79bc7f"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import {LocalSound} from './core/local-sound.js';
 import {mountAudioPlayer} from './core/audio-playback.js';
 import * as THREE from 'three';
 import {createRenderer} from './core/renderer.js';
@@ -45,6 +46,7 @@ const original=mode==='whale'?new Whale():mode==='paper'?new WhalePaper():new Wh
 let whale=original;const blob=new Whale();blob.group.visible=false;scene.add(original.group,blob.group);original.group.scale.setScalar(1.28);blob.group.scale.setScalar(1.28);
 original.ready?.catch(()=>showMessage('角色模型加载失败，可使用 ?character=whale 查看默认鲸鱼'));
 const fx=new FX(scene),hud=new HUD(),game=new Interactions({scene,camera,iso,whale,fx,props,hud,lights});
+const localSound=new LocalSound();game.onVoice=kind=>localSound.play(kind);
 const client=new WorldClient({pollMs:100}),actorTimeline=new ActorTimeline();let editor=null,activeScene=null,actor=null,lease=null,takeover=null,lastInputAt=0,lastPortalAt=0,portalPending=false;
 const keys=new Set(),goal=new THREE.Vector3(),renderPosition=new THREE.Vector3();
 const status=document.createElement('div');status.id='world-sync-status';status.setAttribute('role','status');status.style.cssText='position:fixed;left:20px;bottom:20px;z-index:32;background:#faf1e5e8;border-radius:12px;padding:8px 12px;color:#51454a;font:13px system-ui;max-width:70vw';status.textContent='正在连接世界…';document.body.append(status);
@@ -69,7 +71,7 @@ async function action(kind,target,options){
  }catch(error){showMessage(`操作未执行：${error.message}`);}
  finally{if(kind==='cancel')portalPending=false;}
 }
-function interact(kind,target){if(!actor)return;stopMovement();keys.clear();if(kind==='eat')return action(kind,undefined,{force:true});const candidate=client.snapshot.entities.filter(e=>(!target?.entityId||e.entityId===target.entityId)&&getCatalogEntry(e.type).actions.includes(kind)).sort((a,b)=>Number(b.sceneId===actor.sceneId)-Number(a.sceneId===actor.sceneId))[0];if(!candidate){showMessage('世界里还没有对应的家具');return;}action(kind,{entityId:candidate.entityId,anchorId:'approach'},{force:true});}
+function interact(kind,target){if(!actor)return;stopMovement();keys.clear();if(kind==='eat'){localSound.play(kind);return action(kind,undefined,{force:true});}const candidate=client.snapshot.entities.filter(e=>(!target?.entityId||e.entityId===target.entityId)&&getCatalogEntry(e.type).actions.includes(kind)).sort((a,b)=>Number(b.sceneId===actor.sceneId)-Number(a.sceneId===actor.sceneId))[0];if(!candidate){showMessage('世界里还没有对应的家具');return;}action(kind,{entityId:candidate.entityId,anchorId:'approach'},{force:true}).then(result=>{if(result)localSound.play(kind);});}
 game.worldAction=interact;
 game.getFurniture=()=>registry.scenes.get(activeScene)?.furniture.children||[];
 const scenePicker=document.createElement('div');scenePicker.hidden=true;scenePicker.style.cssText='position:fixed;left:24px;top:110px;z-index:60;display:none;gap:8px;background:#faf1e5;padding:14px;border-radius:15px;font:14px system-ui';document.body.append(scenePicker);
@@ -108,7 +110,7 @@ function renderActor(dt,t){if(!actor)return;const visual=player.sample()||actorT
 }
 R.setScene(scene,camera);const clock=new THREE.Clock();let time=0,shadowTick=0;lights.sun.shadow.autoUpdate=false;
 function frame(){const dt=Math.min(.05,clock.getDelta());time+=dt;updateKeyboard(dt,performance.now());registry.update(dt,time);renderActor(dt,time);iso.update(dt);fx.update(dt,time);hud.updateBubble(dt,camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0)lights.sun.shadow.needsUpdate=true;R.composer.render();requestAnimationFrame(frame);}frame();
-async function start(){const session=await ownerSession.ensure();client.csrfToken=session.csrfToken;mountAudioPlayer(client);await client.connect('default');editor=new RoomEditor({group:registry.contexts[activeScene].group,scene,camera,canvas,getScene:()=>activeScene,contexts:registry.contexts,worldClient:client,registry,onToggle:active=>{game.editing=active;stopMovement();if(player.active){player.stop();player.drain().then(()=>player.release()).catch(()=>{});}keys.clear();if(!active)iso.target.copy(iso.homeTarget);},onChange:()=>yard.refreshLandscape?.()});editor.setContext(activeScene);window.__editor=editor;document.getElementById('loading')?.classList.add('gone');for(const id of ['title','hint','status','actions'])document.getElementById(id)?.classList.add('in');showMessage('世界已连接 · WASD 接管移动');}
+async function start(){const session=await ownerSession.ensure();client.csrfToken=session.csrfToken;mountAudioPlayer(client,localSound);await client.connect('default');editor=new RoomEditor({group:registry.contexts[activeScene].group,scene,camera,canvas,getScene:()=>activeScene,contexts:registry.contexts,worldClient:client,registry,onToggle:active=>{game.editing=active;stopMovement();if(player.active){player.stop();player.drain().then(()=>player.release()).catch(()=>{});}keys.clear();if(!active)iso.target.copy(iso.homeTarget);},onChange:()=>yard.refreshLandscape?.()});editor.setContext(activeScene);window.__editor=editor;document.getElementById('loading')?.classList.add('gone');for(const id of ['title','hint','status','actions'])document.getElementById(id)?.classList.add('in');showMessage('世界已连接 · WASD 接管移动');}
 // Loading overlay must never hide the owner pairing dialog or block recovery.
 document.getElementById('loadBar').style.width='100%';document.getElementById('loadText').textContent='正在连接世界';start().catch(error=>{document.getElementById('loading')?.classList.add('gone');showMessage(`连接失败：${error.message} · 请刷新重试`);});
 Object.assign(window,{__renderer:R.renderer,__R:R,__lights:lights,__iso:iso,__whale:whale,__scene:scene,__game:game,__blob:blob,__maid:original,__worldClient:client,__registry:registry,__ownerSession:ownerSession,__roomDebug:()=>({whale:whale.pos.toArray(),state:whale.state,sceneId:activeScene,zoom:iso.zoom,info:{calls:R.renderer.info.render.calls,tris:R.renderer.info.render.triangles}})});

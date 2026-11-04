@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 export function makePoolSlide() {
-  const group=new THREE.Group();group.name='pool-slide';
+  const group=new THREE.Group();group.name='pool-slide';group.userData.actionKind='slide';
   const aqua=new THREE.MeshStandardMaterial({color:0x78cbd2,roughness:.46,side:THREE.DoubleSide});
   const cream=new THREE.MeshStandardMaterial({color:0xffe6b3,roughness:.65});
   const steel=new THREE.MeshStandardMaterial({color:0xe4eeec,roughness:.4,metalness:.25});
