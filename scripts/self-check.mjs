@@ -14,7 +14,7 @@ export async function selfCheck(){
  const directory=await mkdtemp(path.join(tmpdir(),'world-journey-'));
  const reservation=createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const port=reservation.address().port;await new Promise(r=>reservation.close(r));
  const issuer=`http://127.0.0.1:${port}`,endpoint=new URL(issuer+'/mcp');let app,client,now=Date.now(),sequence=0;
- const start=async()=>{app=await buildServer({databasePath:path.join(directory,'journey.sqlite'),worldMode:true,startRuntime:false,auth:{issuer,bootstrapCode:'isolated-journey',onBootstrap(){}}});app.worldService.clock=()=>now;await app.listen({host:'127.0.0.1',port});};
+ const start=async()=>{app=await buildServer({databasePath:path.join(directory,'journey.sqlite'),worldMode:true,startRuntime:false,auth:{issuer,localAccess:true}});app.worldService.clock=()=>now;await app.listen({host:'127.0.0.1',port});};
  let registration,tokens,verifier,authorization;
  const provider={redirectUrl:'http://127.0.0.1:9999/callback',clientMetadata:{client_name:'self-check',redirect_uris:['http://127.0.0.1:9999/callback'],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']},clientInformation:()=>registration,saveClientInformation:c=>registration=c,tokens:()=>tokens,saveTokens:t=>tokens=t,saveCodeVerifier:v=>verifier=v,codeVerifier:()=>verifier,redirectToAuthorization:u=>authorization=u};
  const connect=async()=>{client=new Client({name:'world-journey',version:'1'});await client.connect(new StreamableHTTPClientTransport(endpoint,{authProvider:provider}));};
@@ -22,7 +22,7 @@ export async function selfCheck(){
  const requestId=()=>`journey-${++sequence}`;
  const tickUntil=async actionId=>{const runtime=new WorldRuntime(app.worldService);for(let i=0;i<590;i++){now+=100;runtime.tick();const state=app.worldService.readSnapshot('default').actions[actionId];if(state.status!=='running'){assert.equal(state.status,'completed',JSON.stringify(state));return state;}}throw Error('Action failed to finish within lease');};
  try{
-  await start();const paired=await fetch(issuer+'/api/auth/pair',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:'isolated-journey'})});assert.equal(paired.status,200);const cookie=paired.headers.get('set-cookie').split(';')[0],csrf=(await paired.json()).csrfToken;
+  await start();const paired=await fetch(issuer+'/api/auth/local-session',{method:'POST',headers:{'content-type':'application/json',origin:issuer},body:'{}'});assert.equal(paired.status,200);const cookie=paired.headers.get('set-cookie').split(';')[0],csrf=(await paired.json()).csrfToken;
   client=new Client({name:'world-journey',version:'1'});const transport=new StreamableHTTPClientTransport(endpoint,{authProvider:provider});await assert.rejects(()=>client.connect(transport));assert.ok(authorization);
   const pending=await fetch(authorization,{headers:{cookie}});assert.equal(pending.status,200);const consentId=(await pending.text()).match(/name="consentId" value="([^"]+)"/)[1];
   const approved=await fetch(issuer+'/oauth/consent',{method:'POST',headers:{cookie,'x-csrf-token':csrf,'content-type':'application/json'},body:JSON.stringify({consentId,approve:true}),redirect:'manual'});assert.equal(approved.status,302);await transport.finishAuth(new URL(approved.headers.get('location')).searchParams.get('code'));await client.close();await connect();

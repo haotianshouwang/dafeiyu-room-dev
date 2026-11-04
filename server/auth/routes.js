@@ -6,14 +6,13 @@ function redirectAllowed(uri){try{const u=new URL(uri);return !u.hash&&!u.userna
 export function installAuth(app,db,service,options={}){
  const issuer=(options.issuer||'http://127.0.0.1:5200').replace(/\/$/,'');const origin=new URL(issuer);if(origin.pathname!=='/'||origin.search||origin.hash||origin.username||origin.password||!(origin.protocol==='https:'||origin.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(origin.hostname)))throw Error('INVALID_ISSUER');
  const store=new GrantStore(db,service,{...options,issuer});const owner=createOwnerSessions(store,{...options,issuer});
- const failure=(reply,error)=>reply.code(error.message==='CSRF_REQUIRED'?403:error.message==='UNAUTHORIZED'||error.message==='LOCAL_PAIRING_ONLY'?401:400).send({error:error.message});
+ const failure=(reply,error)=>reply.code(error.message==='CSRF_REQUIRED'?403:error.message==='UNAUTHORIZED'?401:400).send({error:error.message});
  const wrap=fn=>async(req,reply)=>{try{return await fn(req,reply);}catch(e){return failure(reply,e);}};
  const management=fn=>wrap((req,reply)=>{const p=owner.resolve(req,{write:!['GET','HEAD'].includes(req.method)});return fn(req,reply,p);});
  function resolvePrincipal(req){if(req.headers.authorization){const match=/^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization);if(!match)throw Error('UNAUTHORIZED');return store.authorize(match[1],'world:read',req.params?.id||'default');}return owner.resolve(req,{write:!['GET','HEAD'].includes(req.method)});}
  app.addContentTypeParser('application/x-www-form-urlencoded',{parseAs:'string'},(_req,body,done)=>done(null,Object.fromEntries(new URLSearchParams(body))));
  app.get('/api/auth/status',async(_req,reply)=>{reply.header('cache-control','no-store');return {localEntryAvailable:owner.localEntryAvailable};});
  app.post('/api/auth/local-session',wrap((req,reply)=>owner.localSession(req,reply)));
- app.post('/api/auth/pair',wrap((req,reply)=>owner.pair(req,reply)));
  app.get('/api/auth/session',management((_req,_reply,p)=>({role:p.role,subjectId:p.subjectId,worldIds:p.worldIds,actorIds:p.actorIds,scopes:p.scopes,csrfToken:p.csrfToken})));
  app.post('/api/auth/logout',management((req,reply)=>{const raw=(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('world_owner='))?.slice(12);if(raw)store.remove('session',hash(raw));reply.header('set-cookie','world_owner=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return {status:'logged_out'};}));
  app.get('/api/auth/grants',management(()=>({grants:store.list('grant')})));

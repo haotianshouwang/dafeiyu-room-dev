@@ -3,7 +3,7 @@ const scopeNames={'world:read':'观察世界','actor:control':'角色行动','bu
 export function connectionSummary(data){
  if(!data||data.health?.service!=='ready')return '世界服务离线，请确认游戏服务已启动。';
  if(data.health.protocol==='incompatible')return 'MCP 协议不兼容，请更新客户端或使用高级 stdio 适配器。';
- if(data.health.authorization==='owner_required')return '主人配对失效或尚未完成，请重新配对。';
+ if(data.health.authorization==='owner_required')return '主人会话已失效，请打开本机游戏重新连接。';
  return '服务已启动 · 协议待客户端验证';
 }
 export async function copyEndpoint(data,clipboard=globalThis.navigator?.clipboard){
@@ -21,13 +21,13 @@ export class AgentConnect {
  async open(){
   if(this.panel){this.panel.querySelector('[data-close]').focus();return;}
   const d=this.document,panel=d.createElement('div');panel.className='agent-connect-backdrop';
-  panel.innerHTML=`<section class="agent-connect-card" role="dialog" aria-modal="true" aria-labelledby="agent-connect-title" tabindex="-1"><header><div><span class="agent-eyebrow">让世界多一个伙伴</span><h2 id="agent-connect-title">连接智能体</h2></div><button class="agent-icon" data-close aria-label="关闭连接面板">×</button></header><p class="agent-intro">复制地址，添加到支持 MCP 的客户端，在打开的授权页确认一次，就能进入这个世界。</p><label class="agent-label" for="agent-endpoint">MCP 地址</label><div class="agent-address"><input id="agent-endpoint" readonly value="正在读取…" spellcheck="false"><button class="btn" data-copy disabled>复制地址</button></div><p class="agent-reach" data-reach></p><div class="agent-health" role="status" data-status>正在检查服务…</div><div class="agent-section-heading"><h3>已授权的伙伴</h3><button class="agent-link" data-refresh>刷新状态</button></div><p class="agent-muted">授权表示可以访问世界，不代表智能体此刻在线。</p><div data-agents></div><button class="btn" data-pair hidden>完成主人配对</button><details><summary>接入说明与高级选项</summary><p>默认授权：观察世界、角色行动、场景建设。智能体从工具说明获取规则，无需额外填写游戏提示词。</p><p>仅支持 stdio 的客户端：使用本项目适配器 <code>npm run mcp:stdio -- --config &lt;凭证文件&gt;</code>。凭证文件由主人单独签发，权限设为 0600；不能把令牌放进 MCP 地址。详见仓库 <code>docs/MCP-QUICKSTART.md</code>。</p><p>关闭网页后，服务仍可完成已接受的动作；自主决策和唤醒由你的智能体客户端负责。</p></details></section>`;
+  panel.innerHTML=`<section class="agent-connect-card" role="dialog" aria-modal="true" aria-labelledby="agent-connect-title" tabindex="-1"><header><div><span class="agent-eyebrow">让世界多一个伙伴</span><h2 id="agent-connect-title">连接智能体</h2></div><button class="agent-icon" data-close aria-label="关闭连接面板">×</button></header><p class="agent-intro">复制地址，添加到支持 MCP 的客户端，在打开的授权页确认一次，就能进入这个世界。</p><label class="agent-label" for="agent-endpoint">MCP 地址</label><div class="agent-address"><input id="agent-endpoint" readonly value="正在读取…" spellcheck="false"><button class="btn" data-copy disabled>复制地址</button></div><p class="agent-reach" data-reach></p><div class="agent-health" role="status" data-status>正在检查服务…</div><div class="agent-section-heading"><h3>已授权的伙伴</h3><button class="agent-link" data-refresh>刷新状态</button></div><p class="agent-muted">授权表示可以访问世界，不代表智能体此刻在线。</p><div data-agents></div><button class="btn" data-connect hidden>连接本机游戏</button><details><summary>接入说明与高级选项</summary><p>默认授权：观察世界、角色行动、场景建设。智能体从工具说明获取规则，无需额外填写游戏提示词。</p><p>仅支持 stdio 的客户端：使用本项目适配器 <code>npm run mcp:stdio -- --config &lt;凭证文件&gt;</code>。凭证文件由主人单独签发，权限设为 0600；不能把令牌放进 MCP 地址。详见仓库 <code>docs/MCP-QUICKSTART.md</code>。</p><p>关闭网页后，服务仍可完成已接受的动作；自主决策和唤醒由你的智能体客户端负责。</p></details></section>`;
   this.panel=panel;d.body.append(panel);const card=panel.querySelector('section');
   const close=()=>{panel.remove();this.panel=null;d.removeEventListener('keydown',this.onKey);this.button.focus();};
   panel.querySelector('[data-close]').onclick=close;panel.onclick=e=>{if(e.target===panel)close();};
   this.onKey=e=>{if(e.key==='Escape'){e.stopPropagation();close();}if(e.key==='Tab'){const all=[...panel.querySelectorAll('button:not([hidden]):not(:disabled),input,summary')],first=all[0],last=all.at(-1);if(e.shiftKey&&d.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&d.activeElement===last){e.preventDefault();first.focus();}}};d.addEventListener('keydown',this.onKey);card.focus();
   panel.querySelector('[data-refresh]').onclick=()=>this.refresh();
-  panel.querySelector('[data-pair]').onclick=async()=>{await this.session.ensure();if(this.panel)await this.refresh();};
+  panel.querySelector('[data-connect]').onclick=async()=>{await this.session.ensure();if(this.panel)await this.refresh();};
   panel.querySelector('[data-copy]').onclick=async()=>{try{await copyEndpoint(this.data,this.clipboard);panel.querySelector('[data-status]').textContent='地址已复制 · 在客户端添加 MCP 连接后确认授权';}catch(e){panel.querySelector('[data-status]').textContent=e.message;panel.querySelector('input').select();}};
   await this.refresh();
  }
@@ -36,13 +36,13 @@ export class AgentConnect {
   try{
    const r=await this.request('/api/integrations/mcp',{credentials:'same-origin',cache:'no-store'});if(!r.ok)throw Error('offline');const data=await r.json();if(this.panel!==panel)return;this.data=data;
    panel.querySelector('input').value=data.endpoint;panel.querySelector('[data-copy]').disabled=false;panel.querySelector('[data-reach]').textContent=data.reachability.message;
-   panel.querySelector('[data-status]').textContent=connectionSummary(data);panel.querySelector('[data-pair]').hidden=data.health.authorization==='owner';
+   panel.querySelector('[data-status]').textContent=connectionSummary(data);panel.querySelector('[data-connect]').hidden=data.health.authorization==='owner';
    const agents=panel.querySelector('[data-agents]');agents.replaceChildren();
-   if(!data.connectedAgents.length){const empty=this.document.createElement('p');empty.className='agent-empty';empty.textContent=data.health.authorization==='owner'?'还没有伙伴，复制上面的地址开始连接。':'完成主人配对后，可查看和管理授权。';agents.append(empty);}
+   if(!data.connectedAgents.length){const empty=this.document.createElement('p');empty.className='agent-empty';empty.textContent=data.health.authorization==='owner'?'还没有伙伴，复制上面的地址开始连接。':'连接本机游戏后，可查看和管理授权。';agents.append(empty);}
    for(const g of data.connectedAgents){
     const row=this.document.createElement('div');row.className='agent-grant';const info=this.document.createElement('div'),name=this.document.createElement('strong'),detail=this.document.createElement('p'),badge=this.document.createElement('span');
     name.textContent=g.clientName;badge.className='agent-badge';badge.textContent={authorized:'已授权',revoked:'已撤销',expired:'已过期'}[g.status]||'状态未知';detail.textContent=g.scopes.map(s=>scopeNames[s]||s).join(' · ');info.append(name,badge,detail);row.append(info);
-    if(g.status==='authorized'){const revoke=this.document.createElement('button');revoke.className='agent-link';revoke.textContent='撤销授权';revoke.onclick=async()=>{revoke.disabled=true;try{const session=await this.session.read();const r=await this.request('/api/auth/grants/'+encodeURIComponent(g.grantId)+'/revoke',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-csrf-token':session.csrfToken},body:'{}'});if(!r.ok)throw Error(r.status===401?'主人会话已失效，请重新配对。':'撤销失败，请刷新后重试。');await this.refresh();}catch(e){panel.querySelector('[data-status]').textContent=e.message;revoke.disabled=false;}};row.append(revoke);}agents.append(row);
+    if(g.status==='authorized'){const revoke=this.document.createElement('button');revoke.className='agent-link';revoke.textContent='撤销授权';revoke.onclick=async()=>{revoke.disabled=true;try{const session=await this.session.read();const r=await this.request('/api/auth/grants/'+encodeURIComponent(g.grantId)+'/revoke',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-csrf-token':session.csrfToken},body:'{}'});if(!r.ok)throw Error(r.status===401?'主人会话已失效，请打开本机游戏重新连接。':'撤销失败，请刷新后重试。');await this.refresh();}catch(e){panel.querySelector('[data-status]').textContent=e.message;revoke.disabled=false;}};row.append(revoke);}agents.append(row);
    }
   }catch{if(this.panel===panel){panel.querySelector('[data-status]').textContent=connectionSummary(null);panel.querySelector('[data-copy]').disabled=true;}}
  }
