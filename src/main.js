@@ -57,8 +57,8 @@ client.onSnapshot(snapshot=>{
  registry.applySnapshot(snapshot);const next=snapshot.actors.find(a=>a.actorId==='whale')||snapshot.actors[0];if(!next)return;
  const changed=actor?.sceneId!==next.sceneId;actor=next;player.reconcile(next);actorTimeline.push(next,performance.now());
  if(editor){const missing=Object.values(registry.contexts).some(c=>!c.sync);if(missing)editor.updateWorldContexts();}
+ if(changed){if(portalPending)keys.clear();renderPosition.fromArray(next.position);showScene(next.sceneId);}
  if(portalPending&&!player.active&&!next.actionId&&!dispatcher.busy)portalPending=false;
- if(changed){portalPending=false;renderPosition.fromArray(next.position);showScene(next.sceneId);}
  if(lease&&(next.controller?.leaseId!==lease.leaseId||next.controller?.leaseVersion!==lease.leaseVersion))lease=null;
  const need=next.needs||{};game.stats.food=100-(need.hunger??54);game.stats.mood=need.happiness??72;game.stats.energy=need.energy??80;game._syncStats();
 });
@@ -77,7 +77,7 @@ game.getFurniture=()=>registry.scenes.get(activeScene)?.furniture.children||[];
 const scenePicker=document.createElement('div');scenePicker.hidden=true;scenePicker.style.cssText='position:fixed;left:24px;top:110px;z-index:60;display:none;gap:8px;background:#faf1e5;padding:14px;border-radius:15px;font:14px system-ui';document.body.append(scenePicker);
 document.getElementById('loc')?.addEventListener('click',()=>{scenePicker.replaceChildren();scenePicker.style.display=scenePicker.style.display==='none'?'grid':'none';for(const [id,cfg]of registry.scenes){if(cfg.data.status!=='active')continue;const button=document.createElement('button');button.textContent=cfg.label;button.onclick=()=>{scenePicker.style.display='none';keys.clear();action('move',{sceneId:id},{force:true});};scenePicker.append(button);}});
 const editable=target=>target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName);
-window.addEventListener('keydown',e=>{if(agentConnect.panel||editable(e.target)||!['KeyW','KeyA','KeyS','KeyD'].includes(e.code))return;e.preventDefault();keys.add(e.code);});
+window.addEventListener('keydown',e=>{if(e.repeat||agentConnect.panel||editable(e.target)||!['KeyW','KeyA','KeyS','KeyD'].includes(e.code))return;e.preventDefault();keys.add(e.code);});
 window.addEventListener('keyup',e=>{const wasMovement=keys.delete(e.code);if(wasMovement&&!keys.size&&!editor?.active){player.stop();player.flush().catch(()=>{});}});
 function stopMovement(){const moving=keys.size>0;keys.clear();if(moving&&!editor?.active){player.stop();player.flush().catch(()=>{});}}window.addEventListener('blur',stopMovement);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMovement();});
 const pointer=new THREE.Vector2();window.addEventListener('pointermove',e=>{pointer.set(e.clientX/window.innerWidth*2-1,-e.clientY/window.innerHeight*2+1);iso.setPointer(pointer.x,pointer.y);});
@@ -103,7 +103,7 @@ function updateKeyboard(dt,now){
  }
  if(now-lastInputAt>=100){lastInputAt=now;player.flush().catch(()=>{});}
 }
-function renderActor(dt,t){if(!actor)return;const visual=player.sample()||actorTimeline.sample(performance.now())||actor;const next=visual.form==='swim'?blob:original;if(next!==whale){whale.group.visible=false;whale=next;whale.group.visible=true;game.whale=whale;window.__whale=whale;fx.splash(new THREE.Vector3(...actor.position));}
+function renderActor(dt,t){if(!actor)return;const visual=player.sample()||actorTimeline.sample(performance.now())||actor;const next=visual.form==='swim'?blob:original;if(next!==whale){whale.group.visible=false;whale=next;whale.group.visible=true;game.whale=whale;window.__whale=whale;if(next===blob)localSound.play('pool');fx.splash(new THREE.Vector3(...actor.position));}
  presentActor(whale,visual,dt,t);const seatOffset=registry.seatOffset(visual);if(seatOffset)whale.group.position.add(seatOffset);renderPosition.copy(whale.group.position);
  if(visual.pose==='sleeping'&&Math.floor(t*2)!==Math.floor((t-dt)*2))fx.zzz(renderPosition.clone().add(new THREE.Vector3(.3,.5,0)));
  if(registry.scenes.get(activeScene)?.template.kind==='outdoor'&&!editor?.active)iso.follow(renderPosition,dt);

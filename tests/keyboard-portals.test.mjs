@@ -56,3 +56,17 @@ test('releasing WASD does not cancel an accepted doorway transition',async()=>{
 });
 
 test('opposing movement keys stop and flush an already moving player',async()=>{const snapshot={scenes:[{sceneId:'a',templateId:'cozy_room_v1'}],entities:[],portals:[]};const {context}=await harness(snapshot,[0,0,0],0,[]);context.player.active=true;context.player.held=true;context.keys=new Set(['KeyW','KeyS']);context.updateKeyboard(.016,4000);assert.equal(context.player.stopped,true);assert.equal(context.player.held,false);});
+
+test('scene arrival clears held keys but retains portal protection until the move completes',()=>{
+ const handlers=[];const snapshot={actors:[{actorId:'whale',sceneId:'b',position:[0,0,0],actionId:'crossing'}],entities:[]};
+ const context={client:{onSnapshot:fn=>handlers.push(fn)},registry:{applySnapshot(){},contexts:{}},actor:{sceneId:'a'},player:{active:false,reconcile(){}},actorTimeline:{push(){}},editor:null,portalPending:true,keys:new Set(['KeyW']),renderPosition:{fromArray(){}},showScene(){},lease:null,dispatcher:{busy:false},performance:{now:()=>0},game:{stats:{},_syncStats(){}}};
+ vm.createContext(context);vm.runInContext(source.slice(source.indexOf('client.onSnapshot('),source.indexOf('async function control(')),context);
+ handlers[0](snapshot);assert.equal(context.keys.size,0);assert.equal(context.portalPending,true);
+ handlers[0]({...snapshot,actors:[{...snapshot.actors[0],actionId:null}]});assert.equal(context.portalPending,false);
+});
+test('OS key repeat cannot re-arm movement after a scene transition clears held keys',()=>{
+ let keydown;const context={window:{addEventListener:(_name,fn)=>keydown=fn},agentConnect:{},editable:()=>false,keys:new Set()};vm.createContext(context);
+ vm.runInContext(source.slice(source.indexOf("window.addEventListener('keydown'"),source.indexOf("window.addEventListener('keyup'")),context);
+ keydown({code:'KeyW',repeat:true,preventDefault(){}});assert.equal(context.keys.size,0);
+ keydown({code:'KeyW',repeat:false,preventDefault(){}});assert.equal(context.keys.has('KeyW'),true);
+});
