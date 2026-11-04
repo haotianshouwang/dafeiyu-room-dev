@@ -5,11 +5,13 @@ import {readFileSync} from 'node:fs';
 import * as THREE from 'three';
 import {portalEnds,walkable,segmentWalkable} from '../shared/world/navigation.js';
 import {portalInwardNormal} from '../src/core/keyboard-portals.js';
+import {advancePlayer} from '../shared/world/movement.js';
 import {ActionDispatcher} from '../src/core/action-dispatcher.js';
 const source=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
 const handler=source.slice(source.indexOf('function directions('),source.indexOf('function renderActor('));
 async function harness(snapshot,position,az,keys){
- const sent=[];const context={actor:{sceneId:'a',position},iso:{az,drag:0},keys:new Set(keys),agentConnect:{},editor:null,lastInputAt:0,lastPortalAt:0,client:{snapshot},goal:new THREE.Vector3(),portalEnds,portalInwardNormal,walkable,segmentWalkable,stopMovement(){},dispatcher:new ActionDispatcher(async(kind,target)=>sent.push({kind,target}))};
+ const sent=[];const context={actor:{sceneId:'a',position},iso:{az,drag:0},keys:new Set(keys),agentConnect:{},editor:null,lastInputAt:0,lastPortalAt:0,portalPending:false,client:{snapshot,connectionStatus:'connected'},goal:new THREE.Vector3(),portalEnds,portalInwardNormal,walkable,segmentWalkable,stopMovement(){},dispatcher:new ActionDispatcher(async(kind,target)=>sent.push({kind,target}))};
+ context.player={active:false,begin(a){this.active=true;this.state={...a,position:[...a.position]};},step(s,d,dt){this.state=advancePlayer(s,this.state,d,dt*1000);},sample(){return this.state;},flush:async()=>{},stop(){this.held=false;this.stopped=true;},release(){this.active=false;}};
  context.action=(...args)=>context.dispatcher.submit(...args);
  vm.createContext(context);vm.runInContext(handler,context);context.updateKeyboard(.016,3000);await context.dispatcher.running;
  return {sent,context};
@@ -23,12 +25,12 @@ for(const [slot,position,inward,tangent,outward] of [
  // At a quarter-turn camera rotation the WASD mapping advances by one key.
  const rotate={KeyA:'KeyS',KeyS:'KeyD',KeyD:'KeyW',KeyW:'KeyA'};
  const key=k=>az?rotate[k]:k;
- for(const input of [inward,tangent]){const {sent}=await harness(snapshot,position,az,[key(input)]);assert.equal(sent[0]?.target.sceneId,'a');assert.ok(sent[0].target.position);}
+ for(const input of [inward,tangent]){const {sent}=await harness(snapshot,position,az,[key(input)]);assert.equal(sent.length,0);assert.equal((await harness(snapshot,position,az,[key(input)])).context.player.sample().sceneId,'a');}
  const {sent}=await harness(snapshot,position,az,[key(outward)]);assert.equal(sent[0]?.target.sceneId,'b');assert.equal(sent[0].target.position,undefined);
  // Reverse endpoint after arrival: moving into the room must never bounce back.
  const opposite={north:'south',south:'north',east:'west',west:'east'};
  const reversed={...snapshot,portals:[{from:{sceneId:'b',slotId:opposite[slot]},to:{sceneId:'a',slotId:slot},bidirectional:true}]};
- assert.equal((await harness(reversed,position,az,[key(inward)])).sent[0]?.target.sceneId,'a');
+ assert.equal((await harness(reversed,position,az,[key(inward)])).sent.length,0);
  assert.equal((await harness(reversed,position,az,[key(outward)])).sent[0]?.target.sceneId,'b');
 });
 test('legacy west boundary uses its world normal',async()=>{
@@ -36,7 +38,7 @@ test('legacy west boundary uses its world normal',async()=>{
  // Preserve actual legacy endpoint IDs.
  snapshot.scenes[0].sceneId='bedroom';snapshot.scenes[1].sceneId='yard';
  const run=async key=>{const h=await harness({...snapshot,portals:[]},[-3.02,0,1.05],0,[]);h.context.actor.sceneId='bedroom';h.context.client.snapshot=snapshot;h.context.keys.add(key);h.context.updateKeyboard(.016,4000);await h.context.dispatcher.running;return h.sent;};
- assert.equal((await run('KeyS'))[0]?.target.sceneId,'bedroom');
+ assert.equal((await run('KeyS')).length,0);
  assert.equal((await run('KeyW'))[0]?.target.sceneId,'yard');
 });
 test('actual keyup queues cancellation while an outward portal move is in flight',async()=>{
@@ -52,3 +54,5 @@ test('actual keyup queues cancellation while an outward portal move is in flight
  finish();await context.dispatcher.running;
  assert.deepEqual(calls.map(call=>call.kind),['move','cancel']);
 });
+
+test('opposing movement keys stop and flush an already moving player',async()=>{const snapshot={scenes:[{sceneId:'a',templateId:'cozy_room_v1'}],entities:[],portals:[]};const {context}=await harness(snapshot,[0,0,0],0,[]);context.player.active=true;context.player.held=true;context.keys=new Set(['KeyW','KeyS']);context.updateKeyboard(.016,4000);assert.equal(context.player.stopped,true);assert.equal(context.player.held,false);});

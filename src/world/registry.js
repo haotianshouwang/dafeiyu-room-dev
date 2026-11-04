@@ -16,7 +16,12 @@ function shell(template,openSlots){
 }
 export class SceneRegistry {
  constructor({scene,createFurniture,legacy={}}){Object.assign(this,{scene,createFurniture,legacy});this.scenes=new Map();this.entities=new Map();this.contexts={};}
- applySnapshot(snapshot){this.snapshot=snapshot;const present=new Set(snapshot.scenes.map(s=>s.sceneId));for(const [id,cfg] of this.scenes)if(!present.has(id)){this.scene.remove(cfg.root);this.scenes.delete(id);delete this.contexts[id];}
+ applySnapshot(snapshot){
+  // Runtime state polls share the same layout arrays: don't recompute furniture
+  // bounds and garden transforms on the rendering thread for every movement ack.
+  const draft=[...this.scenes.values()].some(cfg=>cfg.draft);
+  if(!draft&&!this.hadDraft&&this.snapshot&&snapshot.scenes===this.snapshot.scenes&&snapshot.entities===this.snapshot.entities&&snapshot.portals===this.snapshot.portals){this.snapshot=snapshot;return this;}
+  this.hadDraft=draft;this.snapshot=snapshot;const present=new Set(snapshot.scenes.map(s=>s.sceneId));for(const [id,cfg] of this.scenes)if(!present.has(id)){this.scene.remove(cfg.root);this.scenes.delete(id);delete this.contexts[id];}
   for(const data of snapshot.scenes){let cfg=this.scenes.get(data.sceneId);const template=getTemplate(data.templateId);if(!cfg){const old=this.legacy[data.sceneId];const root=old?.root||new THREE.Group(),furniture=old?.furniture||new THREE.Group(),portals=new THREE.Group();if(!old)root.add(furniture);root.add(portals);this.scene.add(root);root.visible=false;cfg={...old,root,furniture,portals,bounds:template.bounds,view:old?.view||{target:new THREE.Vector3(0,1,0),zoom:template.kind==='outdoor'?.7:1},spawn:new THREE.Vector3(...template.spawn)};this.scenes.set(data.sceneId,cfg);
    // Keep scenery and animation objects, adopt furniture roots by occurrence below.
    cfg.unclaimed=furniture.children.filter(o=>o.userData.furnitureType);this.contexts[data.sceneId]={group:furniture,sceneId:data.sceneId,label:data.name,bounds:template.buildBounds,templateId:data.templateId};

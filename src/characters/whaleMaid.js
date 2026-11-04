@@ -219,9 +219,10 @@ export class WhaleMaid {
     this.play(moving ? (run ? 'Running' : 'Walking') : 'Idle');
     if (this.mixer) {
       // 动作播放速度跟着位移速度走，避免“滑步”
+      const animationSpeed = this.externalMotion ? this.speed : this.speedMax;
       const base = run
-        ? Math.min(1.9, Math.max(1.0, this.speedMax / 2.1))
-        : Math.min(1.9, Math.max(1.0, this.speedMax / 1.25));
+        ? Math.min(1.9, Math.max(1.0, animationSpeed / 2.1))
+        : Math.min(1.9, Math.max(1.0, animationSpeed / 1.25));
       this.mixer.timeScale = lying ? .2 : base;
       // 清掉上一帧的程序坐姿，让没有动画轨道的腿骨也能正确复原。
       if (this.wasSeated || this.state === 'sit') {

@@ -2,7 +2,7 @@ import {installConsumers,recordDelivery,confirmEvents,resumeConsumer,snapshotRec
 import {randomUUID} from 'node:crypto';
 import {validateCommand} from '../../shared/world/schema.js';
 import {appendEvent,readEvents,projectEventPage} from './events.js';
-const scopeFor=kind=>kind.startsWith('build.')?'build:write':kind.startsWith('control.')||kind.startsWith('action.')?'actor:control':'world:read';
+const scopeFor=kind=>kind.startsWith('build.')?'build:write':kind.startsWith('control.')||kind.startsWith('action.')||kind==='actor.input'?'actor:control':'world:read';
 // Trusted adapter-only principal: {subjectId,worldIds,actorIds,scopes,role,
 // expiresAt?,revoked?}. Never construct this object from command/request JSON.
 export function authorizePrincipal(principal,worldId,scope,actorId,now=Date.now()){
