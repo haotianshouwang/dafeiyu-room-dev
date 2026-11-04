@@ -1,6 +1,6 @@
 // The historical browser name is an alias, never a second persistent scene.
 export const normalizeSceneId = id => id === 'room' ? 'bedroom' : id;
-export const furnitureTypes = ['bed','desk','chair','shelf','lamp','bean','table','plant','smallPlant','nightstand','rug','livingSofa','livingTable','livingChair','livingShelf','livingLamp','livingPlant','livingRug','yardPool','yardFarm','yardTree','yardBench','yardLantern','yardFlowers','yardCan'];
+export const furnitureTypes = ['bed','desk','chair','shelf','lamp','bean','table','plant','smallPlant','nightstand','rug','livingSofa','livingTable','livingChair','livingShelf','livingLamp','livingPlant','livingRug','yardPool','yardFarm','yardTree','yardBench','yardLantern','yardFlowers','yardCan','yardSwing','yardPicnicTable','yardUmbrella','yardFlowerBox','yardRoseArch','yardBirdBath'];
 export function validLayout(data, scene='bedroom') {
   scene=normalizeSceneId(scene);
   const limit=scene==='yard'?9:3.6;

@@ -1,6 +1,7 @@
+import {animateOutdoorFurniture} from './outdoor-furniture.js';
 import * as THREE from 'three';
 import {getTemplate} from '../../shared/world/templates.js';
-import {portalEnds} from '../../shared/world/navigation.js';
+import {portalEnds,anchor} from '../../shared/world/navigation.js';
 
 const box=(w,h,d,color)=>new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color,roughness:.85}));
 function shell(template,openSlots){
@@ -61,5 +62,13 @@ export class SceneRegistry {
  }
  applyChanges(events){for(const event of events)if(event.snapshot)this.applySnapshot(event.snapshot);}
  show(sceneId){for(const[id,cfg]of this.scenes)cfg.root.visible=id===sceneId;}
- update(dt,t){for(const cfg of this.scenes.values())if(cfg.root.visible)cfg.update?.(dt,t);}
+ seatOffset(actor){
+  const entityId=actor.resting?.entityId||this.snapshot?.actions?.[actor.actionId]?.entityId;
+  const object=this.entities.get(entityId),marker=object?.getObjectByName('swing-seat-contact');
+  if(actor.pose!=='seated'||!marker)return null;
+  object.updateWorldMatrix(true,true);
+  return marker.getWorldPosition(new THREE.Vector3()).sub(new THREE.Vector3(...anchor(object.userData.worldEntity,'interaction')));
+ }
+ update(dt,t){for(const cfg of this.scenes.values())if(cfg.root.visible){cfg.update?.(dt,t);for(const object of cfg.furniture.children){if(object.userData.furnitureType!=='yardSwing')continue;const id=object.userData.entityId;const occupied=this.snapshot?.actors.some(a=>a.pose==='seated'&&(a.resting?.entityId===id||this.snapshot.actions?.[a.actionId]?.entityId===id));animateOutdoorFurniture(object,t,occupied);}}}
+
 }

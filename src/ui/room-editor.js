@@ -11,7 +11,7 @@ export const FURNITURE_CATEGORIES = {
   '休闲': ['bean','rug'],
   '灯饰绿植': ['lamp','plant','smallPlant'],
   '客厅家具': ['livingSofa','livingTable','livingChair','livingShelf','livingLamp','livingPlant','livingRug'],
-  '户外': ['yardPool','yardFarm','yardTree','yardBench','yardLantern','yardFlowers','yardCan'],
+  '户外': ['yardPool','yardFarm','yardTree','yardBench','yardLantern','yardFlowers','yardCan','yardSwing','yardPicnicTable','yardUmbrella','yardFlowerBox','yardRoseArch','yardBirdBath'],
 };
 
 const STORAGE = 'dafeiyu-bedroom-layout-v1';

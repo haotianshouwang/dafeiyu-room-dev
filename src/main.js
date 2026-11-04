@@ -102,12 +102,12 @@ function updateKeyboard(dt,now){
  if(now-lastInputAt>=100){lastInputAt=now;player.flush().catch(()=>{});}
 }
 function renderActor(dt,t){if(!actor)return;const visual=player.sample()||actorTimeline.sample(performance.now())||actor;const next=visual.form==='swim'?blob:original;if(next!==whale){whale.group.visible=false;whale=next;whale.group.visible=true;game.whale=whale;window.__whale=whale;fx.splash(new THREE.Vector3(...actor.position));}
- presentActor(whale,visual,dt,t);renderPosition.copy(whale.group.position);
+ presentActor(whale,visual,dt,t);const seatOffset=registry.seatOffset(visual);if(seatOffset)whale.group.position.add(seatOffset);renderPosition.copy(whale.group.position);
  if(visual.pose==='sleeping'&&Math.floor(t*2)!==Math.floor((t-dt)*2))fx.zzz(renderPosition.clone().add(new THREE.Vector3(.3,.5,0)));
  if(registry.scenes.get(activeScene)?.template.kind==='outdoor'&&!editor?.active)iso.follow(renderPosition,dt);
 }
 R.setScene(scene,camera);const clock=new THREE.Clock();let time=0,shadowTick=0;lights.sun.shadow.autoUpdate=false;
-function frame(){const dt=Math.min(.05,clock.getDelta());time+=dt;updateKeyboard(dt,performance.now());renderActor(dt,time);registry.update(dt,time);iso.update(dt);fx.update(dt,time);hud.updateBubble(dt,camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0)lights.sun.shadow.needsUpdate=true;R.composer.render();requestAnimationFrame(frame);}frame();
+function frame(){const dt=Math.min(.05,clock.getDelta());time+=dt;updateKeyboard(dt,performance.now());registry.update(dt,time);renderActor(dt,time);iso.update(dt);fx.update(dt,time);hud.updateBubble(dt,camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0)lights.sun.shadow.needsUpdate=true;R.composer.render();requestAnimationFrame(frame);}frame();
 async function start(){const session=await ownerSession.ensure();client.csrfToken=session.csrfToken;mountAudioPlayer(client);await client.connect('default');editor=new RoomEditor({group:registry.contexts[activeScene].group,scene,camera,canvas,getScene:()=>activeScene,contexts:registry.contexts,worldClient:client,registry,onToggle:active=>{game.editing=active;stopMovement();if(player.active){player.stop();player.drain().then(()=>player.release()).catch(()=>{});}keys.clear();if(!active)iso.target.copy(iso.homeTarget);},onChange:()=>yard.refreshLandscape?.()});editor.setContext(activeScene);window.__editor=editor;document.getElementById('loading')?.classList.add('gone');for(const id of ['title','hint','status','actions'])document.getElementById(id)?.classList.add('in');showMessage('世界已连接 · WASD 接管移动');}
 // Loading overlay must never hide the owner pairing dialog or block recovery.
 document.getElementById('loadBar').style.width='100%';document.getElementById('loadText').textContent='正在连接世界';start().catch(error=>{document.getElementById('loading')?.classList.add('gone');showMessage(`连接失败：${error.message} · 请刷新重试`);});
