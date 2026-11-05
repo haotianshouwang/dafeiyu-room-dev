@@ -1,3 +1,10 @@
+import {installAuthorBeach} from './world/author-beach.js';
+import {appendAuthorScenes} from './world/author-pack.js';
+import {installLocalPackRoutes,recoverLocalPack} from './local-pack-import.js';
+import {registerAuthorScene,checkpointAuthorScenes} from '../shared/world/author-scenes.js';
+import {registerLocalTemplate,checkpointTemplates} from '../shared/world/templates.js';
+import {registerLocalAssets,checkpointCatalog} from '../shared/world/catalog.js';
+import {readLocalAssets,installLocalAssetRoutes} from './local-assets.js';
 import {installStreetHomeEntrance} from './world/street-home-feature.js';
 import {installStoreLights} from './world/store-lighting.js';
 import {installStoreScene} from './world/store-feature.js';
@@ -17,20 +24,53 @@ import {projectSnapshot} from './mcp/resources.js';
 import {createRuntimeHandlers,WorldRuntime} from './world/runtime.js';
 import {createBuildHandlers} from './world/build.js';
 
-export async function buildServer({ databasePath, serveStatic = false, logger = false, worldMode = false, resolvePrincipal, worldHandlers = {}, auth = {}, mcpExtensions = {}, startRuntime = true } = {}) {
+export async function buildServer({ databasePath, serveStatic = false, logger = false, worldMode = false, resolvePrincipal, worldHandlers = {}, auth = {}, mcpExtensions = {}, startRuntime = true, localAssetDir, localPackOptions = {} } = {}) {
   const root=fileURLToPath(new URL('../',import.meta.url));
+  const assetDirectory=localAssetDir===undefined?(databasePath!==':memory:'?path.join(root,'.cache/town-assets'):null):localAssetDir;
   const filename=databasePath || path.join(root,'data','game.sqlite');
   if(filename!==':memory:')mkdirSync(path.dirname(filename),{recursive:true});
   const db=new DatabaseSync(filename);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS layouts (id TEXT PRIMARY KEY, layout TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL)');
+  const cachedImport=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='local_asset_catalog'").get()?db.prepare('SELECT manifest FROM local_asset_catalog WHERE id=1').get():null;
+  recoverLocalPack(assetDirectory,cachedImport?JSON.parse(cachedImport.manifest).importJobId:undefined);
+  const localManifest=readLocalAssets(assetDirectory);
+  if(assetDirectory||db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='local_asset_catalog'").get()){
+    db.exec('CREATE TABLE IF NOT EXISTS local_asset_catalog (id INTEGER PRIMARY KEY, manifest TEXT NOT NULL)');
+    const saved=db.prepare('SELECT manifest FROM local_asset_catalog WHERE id=1').get();
+    const stored=saved?JSON.parse(saved.manifest):{};const previous=stored.assets||[];
+    localManifest.authorScenes=[...new Map([...(stored.authorScenes||[]),...(localManifest.authorScenes||[])].map(scene=>[scene.id,scene])).values()];
+    for(const data of localManifest.authorScenes||[]){registerAuthorScene(data);registerLocalAssets({assets:data.authorAssets||[]});if(data.template)registerLocalTemplate(data.template);}
+    const available=new Set(localManifest.assets.map(a=>a.type));
+    localManifest.unavailable=previous.filter(a=>!available.has(a.type));
+    registerLocalAssets({assets:localManifest.unavailable});
+    if(localManifest.assets.length)db.prepare('INSERT OR REPLACE INTO local_asset_catalog VALUES (1,?)').run(JSON.stringify({assets:[...localManifest.assets,...localManifest.unavailable],authorScenes:localManifest.authorScenes||[],...(stored.importJobId?{importJobId:stored.importJobId}:{})}));
+  }
   if(worldMode)migrateWorld(db);
   const migrated=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='worlds'").get() && db.prepare('SELECT 1 FROM worlds LIMIT 1').get());
   const worldService=migrated?new WorldService(db,{handlers:{...createRuntimeHandlers(),...createBuildHandlers(),...worldHandlers}}):null;
-  if(worldMode&&worldService){installStoreScene(worldService);installStoreLights(worldService);installStreetHomeEntrance(worldService);}
+  if(worldMode&&worldService){installStoreScene(worldService);installStoreLights(worldService);installStreetHomeEntrance(worldService);installAuthorBeach(worldService,localManifest);}
   const app=Fastify({logger,bodyLimit:6*1024*1024});
   app.decorate('worldService',worldService);
   const authService=worldService?installAuth(app,db,worldService,auth):null;
   app.decorate('auth',authService);
+  installLocalAssetRoutes(app,assetDirectory,localManifest);
+  installLocalPackRoutes(app,{directory:assetDirectory,manifest:localManifest,importerOptions:localPackOptions,
+    activate:(directory,importJobId)=>{
+      const restore=[checkpointCatalog(),checkpointTemplates(),checkpointAuthorScenes()];
+      try{
+      const fresh=readLocalAssets(directory);
+      db.exec('CREATE TABLE IF NOT EXISTS local_asset_catalog (id INTEGER PRIMARY KEY, manifest TEXT NOT NULL)');
+      const result=worldService.transactRuntime('default',({snapshot,emit})=>{
+        const scenes=appendAuthorScenes(snapshot,fresh);
+        db.prepare('INSERT OR REPLACE INTO local_asset_catalog VALUES (1,?)').run(JSON.stringify({assets:fresh.assets,authorScenes:fresh.authorScenes,importJobId}));
+        if(scenes.some(s=>s.status==='added'))emit('world.local_pack_installed',{packId:'cartoon-town',scenes});
+        return {models:fresh.assets.length,scenes};
+      });
+      Object.keys(localManifest).forEach(key=>delete localManifest[key]);Object.assign(localManifest,fresh);
+      return result;
+      }catch(error){for(const undo of restore)undo();throw error;}
+    },rollback:()=>{readLocalAssets(assetDirectory);},
+  });
   if(authService){const audio=installAudio(app,authService);app.decorate('audioPlayback',audio);mcpExtensions={audio_play:({principal,worldId,args})=>audio.play(principal,worldId,args),audio_get_status:({principal,worldId,args})=>audio.public(audio.get(principal,worldId,args.playbackId)),audio_stop:({principal,worldId,args})=>audio.stop(principal,worldId,args.playbackId),...mcpExtensions};installMcp(app,worldService,authService,{extensions:mcpExtensions});installMcpIntegration(app,authService);}
   const runtime=worldService&&startRuntime?new WorldRuntime(worldService).start():null;
   app.addHook('onClose',async()=>runtime?.stop());

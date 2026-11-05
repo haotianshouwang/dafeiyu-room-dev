@@ -5,7 +5,7 @@ import {listPortalSlots} from '../world/build.js';
 import {suggestLayout} from '../world/layout-suggestions.js';
 import {RULES,catalog,projectSnapshot} from './resources.js';
 const id=idSchema,rev=z.number().int().nonnegative(),request={requestId:id},world={worldId:id.optional().describe('通常省略：自动进入当前凭证授权的默认世界。首次调用 world_enter {}，使用返回的 worldId；不要猜 main、home 或角色名字。')},actor={actorId:id},lease={...actor,leaseId:id,leaseVersion:rev},obj=shape=>z.object({...world,...shape}).strict();
-const target=z.union([z.object({sceneId:id,position:vectorSchema}).strict(),z.object({entityId:id,anchorId:id}).strict(),z.object({sceneId:id}).strict()]);
+const target=z.union([z.object({sceneId:id,groundPosition:z.tuple([z.number().finite(),z.number().finite()])}).strict(),z.object({sceneId:id,landmarkId:id}).strict(),z.object({sceneId:id,position:vectorSchema}).strict(),z.object({entityId:id,anchorId:id}).strict(),z.object({sceneId:id}).strict()]);
 const definitions=[
  ['audio_play','播放智能体已生成的音频；需要 audio:play 授权和主人开启声音。最多4MiB、60秒；结果仅表示设备播放回执，不能证明听见。',{...request,audioBase64:z.string().min(4).max(5592408),mimeType:z.enum(['audio/mpeg','audio/wav','audio/ogg'])}],
  ['audio_get_status','查询本授权的实际播放状态。',{playbackId:id}],
@@ -18,7 +18,8 @@ const definitions=[
  ['layout_suggest','按区域与用途生成候选 ops；不会修改世界。',{sceneId:id,purpose:z.string().max(80).optional(),zoneId:id.optional(),preferences:z.union([z.array(id).max(6),z.object({types:z.array(id).max(6)}).strict()]).optional()}],
  ['actor_take_control','取得指定已授权角色60秒控制租约，不能抢占他人。',{...actor,...request}],
  ['actor_release_control','归还租约，并取消该角色未完成动作。',{...lease,...request}],
- ['actor_move','地面坐标为[X,Y,Z]米，Y须在地面；提交寻路动作后查询 actionId。',{...lease,...request,target}],
+ ['actor_move','支持 groundPosition:[X,Z] 自动采样地面、landmarkId 地标，兼容 position:[X,Y,Z]；指定sceneId，提交后查询 actionId。',{...lease,...request,target}],
+ ['actor_jump','原地或朝1.6米内目标跳跃，落地后完成；不可二段跳。',{...lease,...request,target:target.optional()}],
  ['actor_interact','走到物件交互点再坐、睡、游泳、滑梯或吃白饭。',{...lease,...request,verb:z.enum(['sit','sleep','swim','slide','eat']),targetId:id.optional()}],
  ['action_get','读取属于本授权主体的动作真实状态、阶段与结果。',{actionId:id}],
  ['action_cancel','取消本授权主体正在执行的动作。',{actionId:id,...request}],
@@ -43,6 +44,7 @@ export function createToolCaller(service,{resolvePrincipal,extensions={}}={}){
  case 'actor_take_control':return command('control.acquire',{actorId:a.actorId});
  case 'actor_release_control':return command('control.release',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion});
  case 'actor_move':return command('action.submit',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,kind:'move',target:a.target});
+ case 'actor_jump':return command('action.submit',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,kind:'jump',target:a.target});
  case 'actor_interact':return command('action.submit',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,kind:a.verb,...a.targetId?{target:{entityId:a.targetId,anchorId:'approach'}}:{}});
  case 'action_get':return {worldId,...action()};
  case 'action_cancel':{const act=action(),actor=snap().actors.find(a=>a.actorId===act.actorId),l=actor.controller||act;return command('action.cancel',{actorId:actor.actorId,actionId:act.actionId,leaseId:l.leaseId,leaseVersion:l.leaseVersion});}

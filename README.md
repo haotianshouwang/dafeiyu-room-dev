@@ -83,3 +83,5 @@ npm run self-check  # MCP 授权与世界操作流程自检
 主要使用 Three.js、Fastify、MCP TypeScript SDK、Zod、Vite 等开源组件；详细来源与版权文本见 **[第三方声明](THIRD-PARTY-NOTICES.md)**。开发中也参考体验了 [茉莉的小房间 / norsizu](https://github.com/norsizu/moli-room)，其许可独立。
 
 欢迎在仓库的问题反馈（Issues）中提建议，或到抖音「破晓手记」交流。
+
+公开初始世界包含卧室、客厅、院子和便利店。点游戏右上角「本地素材」可导入自行取得合法授权的 Cartoon Town – Low Poly Assets 1.0，启用中文模型目录及作者原布局小镇与海滩。素材包不随项目提供，请自行查找；工具准备、兼容边界与导入说明见 [可选本地素材包](docs/LOCAL-ASSETS.md)。

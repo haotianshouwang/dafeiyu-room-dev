@@ -215,3 +215,13 @@ npm run mcp:stdio -- --config /secure/world-mcp.json
 用 `audio_get_status {playbackId}` 查回执，`audio_stop {requestId, playbackId}` 停止。网页 `started`/`finished` 及 `delivered_not_heard` 不能证明人听见。音频只在内存短暂保存，不进入世界存档。没有录音、ASR、TTS 或本地语音模型。
 
 `127.0.0.1` 仅指客户端所在机器。同机地址不能直接给另一台机器或远程容器使用。远程部署需 HTTPS、反向代理、正确的 `WORLD_PUBLIC_URL` 及额外的主人身份认证方案；当前远程主人登录尚未开箱即用。不要通过暴露内部端口或删除授权检查来解决。详见[兼容边界](MCP-COMPATIBILITY.md)。
+
+## 本地作者小镇与海滩
+
+有用户自带本地素材时，可安装 `town-demo`（模板 `local_author_town_v1`）与 `beach-demo`。公开初始世界仅有四个免费场景，不包含私有素材或作者布局。旧手建海边经用户明确迁移后不会自动恢复。
+
+- 先 `world_observe` 获取实际场景、模板及地标。Town 地标包括 square、shops、bridge、upper、coast、pier；支持 `actor_move` 的 `target: {sceneId:"town-demo", landmarkId:"bridge"}`，或 `groundPosition:[x,z]` 自动解析真实高度。
+- `actor_jump` 使用控制租约，支持原地或1.6米以内落点；用 `action_get` 等待终态，水中不能起跳。
+- 普通场景100物件，本地Town按模板 `maxEntities:1000` 校验；213个模型在目录中，实例专用隐藏类型只用于保留/编辑原摆设。
+- Town 全774原网格逐步加载并完整保留，不随镜头距离隐藏细节；离开场景再释放。服务器导航不依赖加载进度。
+- 原地形、桥面和阶梯固定。原摆设可编辑，预览自动按共享地面吸附。陆地/水面切换、桥侧限制与浏览器操作一致。

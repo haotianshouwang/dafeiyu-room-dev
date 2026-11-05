@@ -10,9 +10,10 @@ export function blockedPublicFile(file){
  const p=file.replaceAll('\\','/');
  if(approved.has(p))return false;
  if(p.startsWith('resources/character/')&&p!=='resources/character/manifest.json')return true;
- return /\.(glb|gltf|blend\d*|pem|key|sqlite(?:-wal|-shm)?|db(?:-wal|-shm)?|bin|gguf|onnx|safetensors|pt|pth|wav|mp3|ogg|webm|m4a|woff2?|ttf|otf)$/i.test(p)
-  || /(^|\/)(data|模型|assets|shots|qa|scratch|temp|tmp|\.superpowers|\.cache|voices|models|recordings)(\/|$)/i.test(p)
+ return /\.(unitypackage|fbx|prefab|unity|glb|gltf|blend\d*|pem|key|sqlite(?:-wal|-shm)?|db(?:-wal|-shm)?|bin|gguf|onnx|safetensors|pt|pth|wav|mp3|ogg|webm|m4a|woff2?|ttf|otf)$/i.test(p)
+  || /(^|\/)(data|模型|assets|shots|qa|scratch|temp|tmp|\.superpowers|\.cache|\.town-import-jobs|voices|models|recordings)(\/|$)/i.test(p)
   || /(^|\/)(\.env[^/]*|character\.local\.json|(?:credentials?|tokens?|secrets?)(?:[._-][^/]*)?)(\/|$)/i.test(p)
+  || /(^|\/)town-[a-z0-9-]+\.png$/i.test(p)
   || /^public\/characters(\/|$)/.test(p);
 }
 function walk(dir){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(dir,e.name)):[path.join(dir,e.name)]);}
@@ -30,6 +31,7 @@ export function checkPublic(){
   const entry=approved.get(relative);
   if(entry){if(!entry.runtime||createHash('sha256').update(fs.readFileSync(file)).digest('hex')!==entry.sha256)throw Error('Unexpected build resource: '+file);continue;}
   if(blockedPublicFile(file.replace(/^dist\/assets\//,'dist/'))||file.includes('/characters/'))throw Error('Private build asset: '+file);
+  if(/\.(json)$/.test(file)&&/\"type\"\s*:\s*\"town-/.test(fs.readFileSync(file,'utf8')))throw Error('Local layout in build: '+file);
   if(/\.(js|html|json|css)$/.test(file)&&/\/Volumes\/|\/Users\/|__private\/models\//.test(fs.readFileSync(file,'utf8')))throw Error('Private path in build: '+file);
  }
  for(const entry of manifest.files.filter(f=>f.runtime))if(!fs.existsSync(path.join('dist',entry.path)))throw Error('Missing runtime resource: '+entry.path);

@@ -1,3 +1,4 @@
+import {surfaceAt} from '../../shared/world/coastal.js';
 import {getTemplate} from '../../shared/world/templates.js';
 import {getCatalogEntry} from '../../shared/world/catalog.js';
 import {validateSpatial,corners} from './spatial.js';
@@ -10,7 +11,7 @@ export function suggestLayout(snapshot,{sceneId,purpose='reading',zoneId,prefere
   for(let index=0;index<types.length;index++){const type=types[index];let found;
    // Search around the semantic region centre, then nearby free positions on a 25 cm grid.
    const cx=(zone.bounds.x0+zone.bounds.x1)/2,cz=(zone.bounds.z0+zone.bounds.z1)/2,points=[];
-   for(let x=Math.ceil(t.buildBounds.x0*4)/4;x<=t.buildBounds.x1;x+=.25)for(let z=Math.ceil(t.buildBounds.z0*4)/4;z<=t.buildBounds.z1;z+=.25)points.push([x,0,z]);
+   for(let x=Math.ceil(t.buildBounds.x0*4)/4;x<=t.buildBounds.x1;x+=.25)for(let z=Math.ceil(t.buildBounds.z0*4)/4;z<=t.buildBounds.z1;z+=.25)points.push([x,surfaceAt(t,x,z)?.height??0,z]);
    points.sort((a,b)=>(Math.hypot(a[0]-cx,a[2]-cz)-Math.hypot(b[0]-cx,b[2]-cz))||a[0]-b[0]||a[2]-b[2]);
    for(const position of points){const op={kind:'entity.add',ref:`suggest-${variant}-${index}`,sceneId,type,position,rotation:variant*Math.PI/12,scale:[1,1,1]},entity={...op,entityId:op.ref};delete entity.kind;delete entity.ref;
     // Explicit zone requests keep the complete asset inside that region. Default wall

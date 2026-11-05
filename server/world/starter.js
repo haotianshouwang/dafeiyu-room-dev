@@ -3,6 +3,7 @@ import {getTemplate} from '../../shared/world/templates.js';
 export const STARTER_SCENES=['bedroom','living','yard','convenience-store'];
 // Explicit release operation only. Runtime/MCP handlers never call this exporter.
 export function createStarterWorld(snapshot){
+ if(snapshot.entities.some(e=>e.type.startsWith("town-"))||snapshot.scenes.some(s=>s.templateId?.startsWith("local_")))throw Error("LOCAL_ASSETS_NOT_PUBLISHABLE");
  const scenes=STARTER_SCENES.map(sceneId=>{
   const scene=snapshot.scenes.find(s=>s.sceneId===sceneId&&s.status==='active');
   if(!scene)throw Error(`STARTER_SCENE_MISSING:${sceneId}`);

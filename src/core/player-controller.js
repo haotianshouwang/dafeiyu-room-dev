@@ -10,11 +10,11 @@ export class PlayerController {
   this.ready=Promise.resolve(this.takeControl()).then(lease=>{if(generation!==this.generation)return;this.lease=lease;return lease;});
   this.ready.catch(error=>this.fail(error,generation));
  }
- step(snapshot,direction,dt){
+ step(snapshot,direction,dt,jump=false){
   if(!this.active)return;
   this.snapshot=snapshot;this.held=!!Math.hypot(...direction);
-  const input={sequence:++this.sequence,dtMs:Math.min(50,Math.max(0,dt*1000)),direction};
-  this.state=advancePlayer(snapshot,this.state,direction,input.dtMs);this.pending.push(input);
+  const input={sequence:++this.sequence,dtMs:Math.min(50,Math.max(0,dt*1000)),direction,...jump?{jump:true}:{}};
+  this.state=advancePlayer(snapshot,this.state,direction,input.dtMs,input.jump);this.pending.push(input);
   // A disconnected tab must not accumulate an unbounded speculative world.
   if(this.pending.reduce((sum,f)=>sum+f.dtMs,0)>1000)this.fail(Error('移动同步超时，请重试'),this.generation);
  }
@@ -30,7 +30,7 @@ export class PlayerController {
   if(ack===this.ack)return;
   this.ack=ack;this.pending=this.pending.filter(input=>input.sequence>ack);
   this.state={...actor,position:[...actor.position]};
-  for(const input of this.pending)this.state=advancePlayer(this.snapshot,this.state,input.direction,input.dtMs);
+  for(const input of this.pending)this.state=advancePlayer(this.snapshot,this.state,input.direction,input.dtMs,input.jump);
   if(!this.held)this.state={...this.state,moving:false,speed:0,pose:this.state.form==='swim'?'swimming':'idle'};
  }
  sample(){return this.active?this.state:null;}

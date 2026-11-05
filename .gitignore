@@ -44,3 +44,13 @@ data/
 # Approved redistributable character assets; exact inventory checked by check:public
 !resources/character/models/*.glb
 !resources/character/models/*.blend
+# User-supplied Unity packages and derived local content never ship.
+*.unitypackage
+*.fbx
+*.prefab
+*.unity
+*.local-layout.json
+
+# Optional local pack jobs, including uploads and rollback copies
+.town-import-jobs/
+!docs/LOCAL-ASSETS.md

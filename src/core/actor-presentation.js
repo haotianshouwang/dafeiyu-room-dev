@@ -11,9 +11,9 @@ export function presentActor(character,visual,dt,time){
  const activity=`${visual.actionId||''}:${state}`;
  if(character.worldActivity!==activity){character.worldActivity=activity;character.stateTime=0;}
  character.state=state;
- const position=new THREE.Vector3(...visual.position);
+ const position=new THREE.Vector3(...visual.position);position.y+=visual.airHeight||0;
  if(visual.pose==='swimming'||visual.form==='swim')position.y+=.38;
- else if(!['sleeping','seated','climbing','sliding'].includes(visual.pose))position.y=Math.max(position.y,character.groundY??character.baseY??1.12);
+ else if(!['sleeping','seated','climbing','sliding'].includes(visual.pose))position.y=position.y+(character.groundY??character.baseY??1.12);
  character.sleepPos??=new THREE.Vector3();character.sleepPos.copy(position);character.sleepArrived=state==='sleep';
  character.seatHeight=visual.position[1];
  character.pos.copy(position);character.target.copy(position);character.velocity?.set(0,0,0);

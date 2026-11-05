@@ -1,3 +1,9 @@
+import {mountLocalPackImport,hasImportRefreshDraft} from './local-pack-import.js';
+import {appendCatalogPreview} from './catalog-preview.js';
+import {releaseLocalAssets} from '../world/local-assets.js';
+import {LOCAL_CATEGORIES,listCatalog} from '../../shared/world/catalog.js';
+import {surfaceAt} from '../../shared/world/coastal.js';
+import {authorHeightRange} from '../../shared/world/author-scenes.js';
 import {getCatalogEntry} from '../../shared/world/catalog.js';
 import {getTemplate} from '../../shared/world/templates.js';
 import * as THREE from 'three';
@@ -7,7 +13,7 @@ import { FURNITURE, createFurniture } from '../world/props.js';
 
 export const FURNITURE_CATEGORIES = {
   '全部': Object.keys(FURNITURE),
-  '街景': ['shopBuilding','shopVending','shopLamp','shopCar'],
+  '街景': ['coastalHouse','shopBuilding','shopVending','shopLamp','shopCar'],
   '睡眠': ['bed','nightstand'],
   '桌椅': ['desk','chair','table'],
   '收纳': ['shelf'],
@@ -32,7 +38,9 @@ export class RoomEditor {
       ctx.defaults=ctx.group.children.filter(o=>o.userData.furnitureType).map(o=>({type:o.userData.furnitureType,position:o.position.toArray(),rotation:o.rotation.y,scale:o.scale.toArray()}));
       ctx.history=[];ctx.loading=true;ctx.storageKey=ctx.sceneId==='bedroom'?STORAGE:`dafeiyu-${ctx.sceneId}-layout-v1`;
     }
+    for(const name of Object.values(LOCAL_CATEGORIES))FURNITURE_CATEGORIES[name]=listCatalog().filter(e=>e.category===name&&!e.editorHidden).map(e=>e.type);
     this.buildUI();this.bind();this.setContext(Object.keys(this.contexts)[0]);
+    mountLocalPackImport({onOpen:()=>this.onToggle?.(true),onClose:()=>this.onToggle?.(this.active),hasDraft:()=>hasImportRefreshDraft(this)});
     if(worldClient){this.updateWorldContexts();this.onChange?.();return;}
     for(const ctx of Object.values(this.contexts)) {
       let saved=null;
@@ -48,6 +56,7 @@ export class RoomEditor {
     window.addEventListener('online',()=>Object.values(this.contexts).forEach(ctx=>ctx.sync.flush()));
   }
   updateWorldContexts() {
+    for(const name of Object.values(LOCAL_CATEGORIES))FURNITURE_CATEGORIES[name]=listCatalog().filter(e=>e.category===name&&!e.editorHidden).map(e=>e.type);
     for(const ctx of Object.values(this.contexts))if(!ctx.sync){ctx.defaults=ctx.group.children.filter(o=>o.userData.furnitureType).map(o=>({entityId:o.userData.entityId,type:o.userData.furnitureType,position:o.position.toArray(),rotation:o.rotation.y,scale:o.scale.toArray()}));ctx.history=[];ctx.loading=false;ctx.sync=new WorldLayoutSync({client:this.worldClient,registry:this.registry,sceneId:ctx.sceneId,preserveDraftOnError:true,notify:message=>{ctx.message=message;if(this.context===ctx){this.syncMessage=message;this.refreshState();}},onRollback:()=>this.select(null),onIdentities:ids=>{for(const object of ctx.group.children){const id=ids[object.userData.draftId];if(id)object.userData.entityId=id;}}});try{if(localStorage.getItem(ctx.sync.key)||localStorage.getItem(ctx.sceneId==='bedroom'?STORAGE:`dafeiyu-${ctx.sceneId}-layout-v1`))ctx.message='发现本机旧布局/草稿 · 仅备份，未覆盖世界';}catch{}}
     if(this.context)this.setContext(this.context.sceneId);
   }
@@ -56,25 +65,28 @@ export class RoomEditor {
     this.context=ctx;this.group=ctx.group;this.defaults=ctx.defaults;this.history=ctx.history;
     this.sync=ctx.sync;this.syncMessage=ctx.message;this.selected=null;this.outline.visible=false;
     this.toggle.disabled=ctx.loading;
-    this.allowedTypes=Object.keys(FURNITURE).filter(type=>this.worldClient?getCatalogEntry(type).sceneKinds.includes(getTemplate(ctx.templateId).kind):(ctx.templateId==='courtyard_v1'||ctx.sceneId==='yard')
+    this.allowedTypes=Object.keys(FURNITURE).filter(type=>!getCatalogEntry(type).editorHidden).filter(type=>this.worldClient?getCatalogEntry(type).sceneKinds.includes(getTemplate(ctx.templateId).kind):(ctx.templateId==='courtyard_v1'||ctx.sceneId==='yard')
       ? type.startsWith('yard') || ['plant','smallPlant','lamp','chair','table'].includes(type)
       : !type.startsWith('yard') && (!!this.worldClient || ctx.sceneId==='living' || !type.startsWith('living')));
     this.panel.querySelector('strong').textContent=`布置${ctx.label}`;
     for(const button of this.panel.querySelector('.room-edit-categories').children)button.hidden=button.textContent!=='全部' && !FURNITURE_CATEGORIES[button.textContent].some(type=>this.allowedTypes.includes(type));
-    this.showCategory?.('全部');this.refreshState();
+    const category=this.currentCategory||'全部';
+    const available=category==='全部'||FURNITURE_CATEGORIES[category]?.some(type=>this.allowedTypes.includes(type));
+    this.showCategory?.(available?category:'全部',available);this.refreshState();
   }
 
   items() { return this.group.children.filter(o => o.userData.furnitureType); }
-  snapshot() { return this.items().map(o => ({ type:o.userData.furnitureType,
-    position:o.position.toArray(), rotation:o.rotation.y, scale:o.scale.toArray(),...(this.worldClient?{entityId:o.userData.entityId,draftId:o.userData.draftId??(o.userData.draftId=`draft-${crypto.randomUUID()}`)}:{} ) })); }
+  snapshot() { const visible=this.items().map(o => ({ type:o.userData.furnitureType,
+    position:o.position.toArray(), rotation:o.rotation.y, scale:o.scale.toArray(),...(this.worldClient?{entityId:o.userData.entityId,draftId:o.userData.draftId??(o.userData.draftId=`draft-${crypto.randomUUID()}`)}:{} ) }));
+    if(this.worldClient&&this.context?.templateId&&getTemplate(this.context.templateId).progressiveEntities){const ids=new Set(visible.map(e=>e.entityId));for(const e of this.worldClient.snapshot.entities)if(e.sceneId===this.context.sceneId&&!ids.has(e.entityId)&&!this.registry.entities.has(e.entityId))visible.push(structuredClone(e));}return visible; }
   validate(data) {
-    return validLayout(data,this.context?.templateId&&getTemplate(this.context.templateId).kind==='outdoor'?'yard':this.context?.sceneId || 'bedroom');
+    if((this.context?.templateId==='coastal_town_v1'||this.context?.templateId?.startsWith('local_')))return Array.isArray(data)&&data.every(o=>o.position.every(Number.isFinite));return validLayout(data,this.context?.templateId&&getTemplate(this.context.templateId).kind==='outdoor'?'yard':this.context?.sceneId || 'bedroom');
   }
   restore(data, ctx=this.context) {
-    if (!validLayout(data,ctx?.templateId&&getTemplate(ctx.templateId).kind==='outdoor'?'yard':ctx?.sceneId || 'bedroom')) throw new Error('Invalid layout');
+    if (ctx?.templateId!=='coastal_town_v1'&&!ctx?.templateId?.startsWith('local_')&&!validLayout(data,ctx?.templateId&&getTemplate(ctx.templateId).kind==='outdoor'?'yard':ctx?.sceneId || 'bedroom')) throw new Error('Invalid layout');
     const target=ctx?.group || this.group;
     if(!ctx || ctx===this.context)this.select(null);
-    for(const o of target.children.filter(o=>o.userData.furnitureType))target.remove(o);
+    for(const o of target.children.filter(o=>o.userData.furnitureType)){releaseLocalAssets(o);target.remove(o);}
     for (const entry of data) {
       const o=createFurniture(entry.type); o.position.fromArray(entry.position);
       o.userData.entityId=entry.entityId;o.userData.draftId=entry.draftId;o.rotation.y=entry.rotation; o.scale.fromArray(entry.scale); target.add(o);
@@ -101,11 +113,11 @@ export class RoomEditor {
       .room-edit-panel header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.room-edit-panel strong{margin-right:auto}
       .room-edit-categories{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
       .room-edit-categories button[aria-pressed="true"]{background:#d8b790;border-color:#9c744e}
-      .room-edit-catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:8px;max-height:155px;overflow-y:scroll;overscroll-behavior:contain;scrollbar-gutter:stable;padding:4px 10px 8px 0;scrollbar-width:auto;scrollbar-color:#a17c56 #e8d9c6}
+      .room-edit-catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:min(34vh,300px);overflow-y:scroll;overscroll-behavior:contain;scrollbar-gutter:stable;padding:4px 10px 8px 0;scrollbar-width:auto;scrollbar-color:#a17c56 #e8d9c6}
       .room-edit-catalog::-webkit-scrollbar{width:10px}.room-edit-catalog::-webkit-scrollbar-track{background:#e8d9c6;border-radius:8px}.room-edit-catalog::-webkit-scrollbar-thumb{background:#a17c56;border-radius:8px}
       .room-edit-scroll-hint{font-size:12px;color:#776a68;margin:4px 0}
       .room-edit-panel button,.room-edit-menu button,.room-edit-toggle{border:1px solid #bfae9d;background:#fff9ee;color:#51454a;padding:9px 13px;border-radius:12px;cursor:pointer;font:inherit}
-      .room-edit-catalog button{flex:0 0 76px;display:grid;gap:5px;justify-items:center}.room-edit-catalog span{font-size:25px}
+      .room-edit-catalog button{flex:0 0 76px;display:grid;gap:5px;justify-items:center}.room-edit-catalog .catalog-icon{font-size:25px}.room-edit-catalog .catalog-preview{width:88px;height:88px;object-fit:contain;border-radius:8px;background:#f7f2e9}.room-edit-catalog .catalog-label{font-size:12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;min-height:2.8em}.room-edit-catalog .catalog-missing{display:grid;place-items:center;font-size:12px;color:#89745f}
       .room-edit-panel footer{font-size:12px;color:#776a68;margin-top:8px}.room-edit-menu{position:fixed;z-index:50;padding:6px;display:grid;gap:4px;border-radius:14px;background:#faf1e5;box-shadow:0 8px 28px #0005}.room-edit-menu button{text-align:left}
       .room-edit-panel button:hover,.room-edit-menu button:hover{background:#f3dcc0}.room-edit-panel button:focus-visible,.room-edit-toggle:focus-visible{outline:3px solid #b1834a}
     `; document.head.append(style);
@@ -123,21 +135,25 @@ export class RoomEditor {
     this.loadDatabase=document.createElement('button');this.loadDatabase.textContent='读取数据库';this.loadDatabase.hidden=true;
     this.loadDatabase.onclick=()=>{this.checkpoint();this.sync?.useDatabaseVersion();};
     this.placeButton=document.createElement('button');this.placeButton.textContent='保存摆放';this.placeButton.onclick=()=>{this.save();void this.sync?.flush();};
+    this.smallerButton=document.createElement('button');this.smallerButton.textContent='缩小';this.smallerButton.onclick=()=>this.resize(.9);
+    this.largerButton=document.createElement('button');this.largerButton.textContent='放大';this.largerButton.onclick=()=>this.resize(1.1);
     this.cancelNewButton=document.createElement('button');this.cancelNewButton.textContent='取消新增';this.cancelNewButton.onclick=()=>this.remove();
-    this.stateBar.append(this.stateText,this.placeButton,this.cancelNewButton,this.panelToggle,this.retrySave,this.loadDatabase);document.body.append(this.stateBar);
+    this.stateBar.append(this.stateText,this.smallerButton,this.largerButton,this.placeButton,this.cancelNewButton,this.panelToggle,this.retrySave,this.loadDatabase);document.body.append(this.stateBar);
     this.panel=document.createElement('section');this.panel.className='room-edit-panel';this.panel.hidden=true;
     this.panel.innerHTML='<header><strong>布置卧室</strong><button data-action="undo">撤销</button><button data-action="reset">恢复默认</button><button data-action="export">导出布局</button><button data-action="done">完成</button></header><nav class="room-edit-categories" aria-label="家具分类"></nav><div class="room-edit-scroll-hint">家具目录 · 在此滚轮上下浏览 ↓</div><div class="room-edit-catalog" tabindex="0" aria-label="可滚动家具目录"></div><footer role="status"></footer>';
     document.body.append(this.panel);this.status=this.panel.querySelector('footer');
     const catalog=this.panel.querySelector('.room-edit-catalog');
     const categories=this.panel.querySelector('.room-edit-categories');
-    const showCategory=(name)=>{
-      catalog.replaceChildren();catalog.scrollTop=0;
+    const showCategory=(name,preserve=false)=>{
+      const scroll=preserve?catalog.scrollTop:0;this.currentCategory=name;
+      catalog.replaceChildren();
       for(const button of categories.children) button.setAttribute('aria-pressed',String(button.textContent===name));
       for(const type of (name==='全部'?Object.keys(FURNITURE):FURNITURE_CATEGORIES[name]).filter(type=>(this.allowedTypes || Object.keys(FURNITURE)).includes(type))) {
         const meta=FURNITURE[type],button=document.createElement('button');
-        button.innerHTML=`<span>${meta.icon}</span>${meta.label}`;
-        button.onclick=()=>this.add(type);catalog.append(button);
+        appendCatalogPreview(button,meta);
+        button.onclick=()=>this.add(type);button.title=type;catalog.append(button);
       }
+      catalog.scrollTop=scroll;
     };
     for(const name of Object.keys(FURNITURE_CATEGORIES)) {
       const button=document.createElement('button');button.textContent=name;
@@ -193,6 +209,7 @@ export class RoomEditor {
     this.stateBar.hidden=!this.active;
     if(this.retrySave){this.retrySave.hidden=this.worldClient?!(this.sync?.pending&&this.sync?.error):!/失败|未连接/.test(this.syncMessage || '');this.retrySave.disabled=!!this.sync?.busy;}
     if(this.loadDatabase)this.loadDatabase.hidden=!this.sync?.conflict;
+    if(this.smallerButton)this.smallerButton.hidden=this.largerButton.hidden=!this.selected?.userData.furnitureType?.startsWith('town-');
     const unsavedNew=!!(this.worldClient&&this.selected&&!this.selected.userData.entityId);
     if(this.placeButton)this.placeButton.hidden=!unsavedNew;
     if(this.cancelNewButton)this.cancelNewButton.hidden=!unsavedNew;
@@ -201,8 +218,8 @@ export class RoomEditor {
     const title=document.createElement('strong');title.textContent=`${this.context?.label || '卧室'}编辑 · ${label}`;
     const help=document.createElement('small');help.textContent=this.selected
       ? 'WASD 平移镜头 · 拖动摆放 · 滚轮旋转 · 右键菜单 · 点空白取消选中'
-      : 'WASD 平移镜头 · 左键拖空白旋转镜头 · 角色已暂停 · Esc 完成';
-    const saved=document.createElement('small');saved.textContent=this.syncMessage||'正在连接数据库…';
+      : 'WASD 平移镜头 · 左键拖空白旋转镜头 · 户外滚轮拉近/拉远 · 角色已暂停 · Esc 完成';
+    const saved=document.createElement('small');saved.textContent=(this.selected&&getCatalogEntry(this.selected.userData.furnitureType).localCategory==='Floor'?'景观地形仅作装饰，不提供可行走的叠层表面。 ':'')+(this.selected?.userData.assetState==='loading'?'模型加载中 · 选中及摆放位置已保留。 ':['failed','missing'].includes(this.selected?.userData.assetState)?'模型文件缺失或加载失败 · 可删除此占位。 ':'')+(this.syncMessage||'正在连接数据库…');
     this.stateText.append(title,help,saved);
     this.panelToggle.textContent=this.panel.hidden?'展开家具栏':'收起家具栏';
     this.panelToggle.setAttribute('aria-expanded',String(!this.panel.hidden));
@@ -210,7 +227,7 @@ export class RoomEditor {
   ground(e) {
     const rect=this.canvas.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1),this.camera);
-    return this.ray.ray.intersectPlane(this.plane,new THREE.Vector3());
+    if((this.context?.templateId==='coastal_town_v1'||this.context?.templateId?.startsWith('local_'))){const template=getTemplate(this.context.templateId),range=authorHeightRange(template.authorSceneId)||[-2,4],ray=this.ray.ray;if(ray.direction.y>=0)return null;const down=-ray.direction.y,start=Math.max(0,(ray.origin.y-range[1]-.1)/down),end=(ray.origin.y-range[0]+.1)/down;for(let t=start;t<=end;t+=.04){const p=ray.at(t,new THREE.Vector3()),s=surfaceAt(template,p.x,p.z);if(s&&p.y<=s.height)return new THREE.Vector3(p.x,s.height,p.z);}return null;}return this.ray.ray.intersectPlane(this.plane,new THREE.Vector3());
   }
   pick(e) {
     this.ground(e);this.group.updateMatrixWorld(true);
@@ -227,18 +244,20 @@ export class RoomEditor {
       if(b.min[axis]<bounds[axis+'0'])o.position[axis]+=bounds[axis+'0']-b.min[axis];
       if(b.max[axis]>bounds[axis+'1'])o.position[axis]-=b.max[axis]-bounds[axis+'1'];
     }
-    this.outline.setFromObject(o);
+    if((this.context?.templateId==='coastal_town_v1'||this.context?.templateId?.startsWith('local_'))){const surface=surfaceAt(getTemplate(this.context.templateId),o.position.x,o.position.z);if(surface)o.position.y=surface.height+(getCatalogEntry(o.userData.furnitureType).authorOffsetY||0);}this.outline.setFromObject(o);
   }
   add(type) {
-    if(this.items().length>=100){this.status.textContent='家具数量已达 100 件';return;}
-    this.checkpoint();const o=createFurniture(type);o.position.set(0,0,.3);
+    if(this.snapshot().length>=(this.context?.templateId?getTemplate(this.context.templateId).maxEntities||100:100)){this.status.textContent='家具数量已达当前场景上限';return;}
+    this.checkpoint();const o=createFurniture(type);o.addEventListener('assetstate',()=>{if(this.selected===o){this.outline.setFromObject(o);this.refreshState();}});o.position.set(0,0,.3);
     if(this.worldClient&&this.camera&&this.ray){this.ray.setFromCamera(new THREE.Vector2(0,0),this.camera);const point=this.ray.ray.intersectPlane(this.plane,new THREE.Vector3());if(point)o.position.set(point.x,0,point.z);}
+    if(type.startsWith('town-')){const f=getCatalogEntry(type).footprint;o.scale.setScalar(Math.min(1,3.2/Math.max(f.width,f.depth)));}
     this.group.add(o);this.select(o);this.constrain(o);
     if(this.worldClient){this.syncMessage='待放置 · 拖动家具，松开后保存；也可点保存摆放';this.refreshState();}else this.save();
   }
+  resize(factor){if(!this.selected)return;this.checkpoint();const limits=getCatalogEntry(this.selected.userData.furnitureType).scale;this.selected.scale.setScalar(Math.max(limits.min,Math.min(limits.max,this.selected.scale.x*factor)));this.constrain(this.selected);this.save();this.refreshState();}
   rotate(angle=Math.PI/2, checkpoint=true){if(!this.selected)return;if(checkpoint)this.checkpoint();this.selected.rotation.y+=angle;this.constrain(this.selected);this.save();}
-  duplicate(){if(!this.selected||this.items().length>=100)return;const source=this.selected;this.add(source.userData.furnitureType);this.selected.position.copy(source.position).add(new THREE.Vector3(.4,0,.4));this.selected.rotation.copy(source.rotation);this.selected.scale.copy(source.scale);this.constrain(this.selected);this.save();}
-  remove(){if(!this.selected)return;this.checkpoint();this.group.remove(this.selected);this.select(null);this.save();}
+  duplicate(){if(!this.selected||this.snapshot().length>=(this.context?.templateId?getTemplate(this.context.templateId).maxEntities||100:100))return;const source=this.selected;this.add(source.userData.furnitureType);this.selected.position.copy(source.position).add(new THREE.Vector3(.4,0,.4));this.selected.rotation.copy(source.rotation);this.selected.scale.copy(source.scale);this.constrain(this.selected);this.save();}
+  remove(){if(!this.selected)return;this.checkpoint();releaseLocalAssets(this.selected);this.group.remove(this.selected);this.select(null);this.save();}
   undo(){if(this.worldClient){this.sync.undo();return;}const previous=this.history.pop();if(previous){this.restore(previous);this.save();}}
   finishDrag(){if(this.dragging){this.dragging=false;this.save();}this.canvas.style.cursor=this.active?'grab':'';}
   bind() {

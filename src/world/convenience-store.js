@@ -37,17 +37,17 @@ function building(){
  box(g,6.45,.18,4.4,0x45424c,0,3.47,0);for(const x of [-3.12,3.12])box(g,.1,.22,4.3,0x56525c,x,3.65,0);for(const z of [-2.1,2.1])box(g,6.25,.22,.1,0x56525c,0,3.65,z);
  box(g,1.6,.48,1.05,0x737780,.6,3.84,-.55);for(let i=0;i<6;i++)box(g,1.3,.025,.025,0x3c444e,.6,3.73+i*.05,0);
  for(const x of [-2.65,2.65]){cylinder(g,.025,.6,0x303840,x,3.97,-1.55);box(g,.08,.08,.08,0x56616c,x,4.27,-1.55);}box(g,5.3,.035,.035,0x303840,0,4.22,-1.55);
- const warm=new THREE.PointLight(0xffd39a,14,7,2);warm.position.set(0,1.9,1.5);g.add(warm);
- const spill=new THREE.PointLight(0x8ddcba,7,5,2);spill.position.set(.6,2.7,2.45);g.add(spill);
+ const warm=new THREE.PointLight(0xffd39a,3,7,2);warm.position.set(0,1.9,1.5);g.add(warm);
+ const spill=new THREE.PointLight(0x8ddcba,1,5,2);spill.position.set(.6,2.7,2.45);g.add(spill);
  return g;
 }
-function vending(){const g=new THREE.Group();box(g,1.02,2.18,.8,0xcbd7da,0,1.09,0);box(g,.84,1.55,.04,0xe8f5ef,0,1.3,.425,true);for(let row=0;row<4;row++)for(let col=0;col<5;col++){const color=[0x7dc6df,0xe89983,0xe6cc78,0xa3cbaa,0xa6a2ce][col];cylinder(g,.05,.2,color,(col-2)*.145,.84+row*.3,.47);}box(g,.38,.09,.05,0x26333e,0,.28,.44);sign(g,'DRINKS',.8,.2,0,2,.455,{bg:'#45758f',fg:'#fff6e1'});const light=new THREE.PointLight(0x9dd8ff,4,3,2);light.position.set(0,1.2,.7);g.add(light);return g;}
-function lamp(){const g=new THREE.Group();cylinder(g,.13,.16,0x4a4c57,0,.08,0);cylinder(g,.045,4.8,0x51535d,0,2.45,0);box(g,1.05,.065,.065,0x51535d,.48,4.8,0);box(g,.48,.1,.28,0xffdda0,.95,4.76,0,true);const light=new THREE.PointLight(0xffce8f,16,9,2);light.position.set(.95,4.55,0);g.add(light);for(const child of g.children)child.position.x-=.5;return g;}
+function vending(){const g=new THREE.Group();box(g,1.02,2.18,.8,0xcbd7da,0,1.09,0);box(g,.84,1.55,.04,0xe8f5ef,0,1.3,.425,true);for(let row=0;row<4;row++)for(let col=0;col<5;col++){const color=[0x7dc6df,0xe89983,0xe6cc78,0xa3cbaa,0xa6a2ce][col];cylinder(g,.05,.2,color,(col-2)*.145,.84+row*.3,.47);}box(g,.38,.09,.05,0x26333e,0,.28,.44);sign(g,'DRINKS',.8,.2,0,2,.455,{bg:'#45758f',fg:'#fff6e1'});const light=new THREE.PointLight(0x9dd8ff,.8,3,2);light.position.set(0,1.2,.7);g.add(light);return g;}
+function lamp(){const g=new THREE.Group();cylinder(g,.13,.16,0x4a4c57,0,.08,0);cylinder(g,.045,4.8,0x51535d,0,2.45,0);box(g,1.05,.065,.065,0x51535d,.48,4.8,0);box(g,.48,.1,.28,0xffdda0,.95,4.76,0,true);const light=new THREE.PointLight(0xffce8f,0,9,2);light.position.set(.95,4.55,0);g.add(light);for(const child of g.children)child.position.x-=.5;return g;}
 function car(){const g=new THREE.Group();box(g,2.25,.5,1.05,0x34475e,0,.52,0);box(g,1.35,.52,.94,0x2f4257,-.15,.96,0);box(g,1.15,.36,.95,0x243646,-.15,1,0);for(const x of [-.7,.7])for(const z of [-.52,.52]){const wheel=cylinder(g,.22,.13,0x232530,x,.29,z);wheel.rotation.x=Math.PI/2;}for(const z of [-.32,.32]){box(g,.04,.14,.2,0xffcd95,1.14,.61,z,true);box(g,.04,.13,.18,0xe95475,-1.14,.61,z,true);}return g;}
 export const STORE_FURNITURE={shopBuilding:{label:'便利店',icon:'🏪',make:building},shopVending:{label:'自动售货机',icon:'🥤',make:vending},shopLamp:{label:'街道路灯',icon:'💡',make:lamp},shopCar:{label:'小汽车',icon:'🚙',make:car}};
 export function buildStoreStreet(){
  const g=new THREE.Group();g.name='store-street-shell';
- const floor=box(g,13,.28,13,0x2a2b37,0,-.18,0);floor.material=new THREE.MeshStandardMaterial({color:0x272935,roughness:.28,metalness:.25});
+ const floor=box(g,13,.28,13,0x2a2b37,0,-.18,0);floor.material=new THREE.MeshStandardMaterial({color:0x687176,roughness:.88,metalness:.02});
  box(g,9,.11,6.3,0x65616b,.7,-.005,-2);box(g,9,.07,.1,0xc7a16c,.7,.07,1.18);
  // Fine sidewalk tiles and parking space paint.
  for(let i=0;i<12;i++)box(g,.012,.006,6.2,0x55535e,-3.45+i*.75,.055,-2);

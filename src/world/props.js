@@ -1,3 +1,6 @@
+import {makeLocalAsset} from './local-assets.js';
+import {makeCoastalBench,makeCoastalLantern} from './coastal-props.js';
+import {makeCoastalHouse} from './coastal.js';
 import {STORE_FURNITURE} from './convenience-store.js';
 import {OUTDOOR_FURNITURE} from './outdoor-furniture.js';
 import * as THREE from 'three';
@@ -597,7 +600,7 @@ function makeHangingPlant() {
   return g;
 }
 
-export const FURNITURE = {
+export const FURNITURE = {yardBench:{label:'长椅',icon:'🪑',make:makeCoastalBench},yardLantern:{label:'石灯笼',icon:'🏮',make:makeCoastalLantern},coastalHouse:{label:'海边小屋',icon:'🏠',make:makeCoastalHouse},
   ...OUTDOOR_FURNITURE,...STORE_FURNITURE,
   bed: { label: '床', icon: '🛏️', make: makeBed },
   desk: { label: '电脑桌', icon: '🖥️', make: makeDesk },
@@ -625,7 +628,9 @@ export function markFurniture(object, type) {
   }
   return object;
 }
+export function registerLocalFurniture(entries){for(const e of entries)FURNITURE[e.type]={label:e.label,thumbnailURL:e.thumbnailURL,local:true,icon:{Buildings:'🏠',Trees:'🌳',Roads:'🛤️',Floor:'⛰️',Flowers:'🌷',Animals:'🐈',Laterns:'🏮'}[e.localCategory]||'🧩',make:()=>makeLocalAsset(e.type)};}
 export function createFurniture(type) {
+  if(type.startsWith('town-')&&!FURNITURE[type]){FURNITURE[type]={label:'本地素材缺失',icon:'🧩',make:()=>makeLocalAsset(type)};}
   if (!Object.hasOwn(FURNITURE, type)) throw new Error('Unknown furniture');
   return markFurniture(FURNITURE[type].make(), type);
 }

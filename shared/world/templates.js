@@ -1,3 +1,4 @@
+import {COASTAL_ZONES,COASTAL_LANDMARKS} from './coastal.js';
 import {STREET_HOME} from './street-home.js';
 // All geometry is in scene-local coordinates. Slots drive BOTH visual and navigation openings.
 const rect=(x0,x1,z0,z1)=>({x0,x1,z0,z1});
@@ -8,6 +9,15 @@ function template(id,kind,r){
 const templates={cozy_room_v1:template('cozy_room_v1','indoor',3.6),courtyard_v1:template('courtyard_v1','outdoor',8.5),street_corner_v1:template('street_corner_v1','outdoor',6.5)};
 templates.street_corner_v1.staticColliders=STREET_HOME.colliders;templates.street_corner_v1.legacyDoorNormal=STREET_HOME.inwardNormal;
 templates.street_corner_v1.spawn=[0,0,2.4];templates.street_corner_v1.spawnClearance=rect(-.5,.5,1.9,2.9);
-export const TEMPLATE_IDS=Object.freeze(Object.keys(templates));
+templates.coastal_town_v1=template('coastal_town_v1','outdoor',12);
+Object.assign(templates.coastal_town_v1,{spawn:[-10,2,-2],spawnClearance:rect(-10.5,-9.5,-2.5,-1.5),regions:COASTAL_ZONES,landmarks:COASTAL_LANDMARKS});
+templates.coastal_town_v1.portalSlots=[{slotId:'west',side:'west',position:[-12,2,-2],inwardNormal:[1,0,0],width:3,landing:[-10,2,-2],trigger:rect(-12,-10,-3.5,-.5),clearance:rect(-12,-9,-3.5,-.5)}];
+export const TEMPLATE_IDS=Object.keys(templates);
 export function getTemplate(id){if(!Object.hasOwn(templates,id))throw new RangeError(`Unknown template: ${id}`);return structuredClone(templates[id]);}
 export function listTemplates(){return TEMPLATE_IDS.map(getTemplate);}
+export function checkpointTemplates(){const saved={...templates},ids=[...TEMPLATE_IDS];return()=>{for(const key of Object.keys(templates))delete templates[key];Object.assign(templates,saved);TEMPLATE_IDS.splice(0,TEMPLATE_IDS.length,...ids);};}
+
+export function registerLocalTemplate(definition){
+ if(!/^local_[a-z0-9_]+$/.test(definition.templateId)||definition.kind!=='outdoor')throw Error('INVALID_LOCAL_TEMPLATE');
+ templates[definition.templateId]=structuredClone(definition);if(!TEMPLATE_IDS.includes(definition.templateId))TEMPLATE_IDS.push(definition.templateId);
+}

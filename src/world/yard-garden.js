@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // 固定景观层：不写入家具存档，不修改农田和泳池的布局数据。
-export function makeYardGarden() {
+export function makeYardGarden(options={}) {
   const group=new THREE.Group();group.name='yard-landscape';
   const leafGeo=new THREE.SphereGeometry(1,10,7);
   const stemGeo=new THREE.CylinderGeometry(.012,.016,1,5);
@@ -14,7 +14,7 @@ export function makeYardGarden() {
     cream:new THREE.MeshStandardMaterial({color:0xffe5aa,roughness:.9}),
     lilac:new THREE.MeshStandardMaterial({color:0xc4b6df,roughness:.9}),
   };
-  const placements=[[-6.7,4.7],[-5.2,6.8],[-2.8,5.8],[-.4,6.4],[2.0,6.7],
+  const placements=options.placements||[[-6.7,4.7],[-5.2,6.8],[-2.8,5.8],[-.4,6.4],[2.0,6.7],
     [6.9,6.5],[7.5,2.4],[7.5,.1],[5.2,1.2],[-4.5,3.3],[-6.7,-1.0],[.3,-6.9]];
   const dummy=new THREE.Object3D();
   placements.forEach(([x,z],index)=>{
