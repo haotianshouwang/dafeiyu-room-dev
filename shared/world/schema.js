@@ -20,6 +20,7 @@ export const commandSchema=z.discriminatedUnion('kind',[
  cmd('build.preview',obj({baseRevision:rev,ops:z.array(buildOperationSchema).min(1).max(20)})),
  cmd('build.apply',obj({planId:idSchema})),cmd('build.undo',obj({changeId:idSchema})),
  cmd('action.submit',obj({actorId:idSchema,leaseId:idSchema,leaseVersion:rev,kind:z.enum(['move','sit','sleep','swim','slide','eat','cancel','jump']),target:destination.optional()})),
+ cmd('actor.teleport',obj({actorId:idSchema,sceneId:idSchema})),
  cmd('actor.input',obj({actorId:idSchema,leaseId:idSchema,leaseVersion:rev,frames:z.array(obj({sequence:z.number().int().positive(),jump:z.boolean().optional(),dtMs:z.number().finite().min(0).max(50),direction:z.tuple([z.number().finite().min(-1).max(1),z.number().finite().min(-1).max(1)])})).min(1).max(120)})),
  cmd('action.cancel',obj({actorId:idSchema,actionId:idSchema,leaseId:idSchema,leaseVersion:rev})),
  cmd('control.renew',obj({actorId:idSchema,leaseId:idSchema,leaseVersion:rev})),cmd('control.release',obj({actorId:idSchema,leaseId:idSchema,leaseVersion:rev})),

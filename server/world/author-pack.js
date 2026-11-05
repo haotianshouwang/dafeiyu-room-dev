@@ -2,7 +2,7 @@ import{listPortalSlots}from'./build.js';
 // Append-only import activation. Existing or deliberately removed authored scenes
 // are never re-seeded; edited/missing props inside an existing scene stay untouched.
 export function appendAuthorScenes(snapshot,manifest){
- const results=[];for(const[id,sceneId,name,entry,feature,preferred]of[['Demo_Town','town-demo','作者小镇','entry','authorTownImportV1','north'],['Demo_Beach','beach-demo','作者海边示例','west','authorBeachV1','west']]){
+ const results=[];for(const[id,sceneId,name,entry,feature,preferred]of[['Demo_Town','town-demo','小镇','entry','authorTownImportV1','north'],['Demo_Beach','beach-demo','海岛','west','authorBeachV1','west']]){
   if(snapshot.scenes.some(s=>s.sceneId===sceneId)||snapshot.features?.[feature]||(id==='Demo_Town'&&snapshot.features?.authorTownReplacementV1)){results.push({sceneId,status:'preserved'});continue;}
   const data=manifest.authorScenes?.find(s=>s.id===id);if(!data?.template||!data.authorEntities?.length){results.push({sceneId,status:'unavailable'});continue;}
   let reason;if(!snapshot.scenes.some(s=>s.sceneId==='convenience-store'))reason='STREET_MISSING';else if(snapshot.scenes.length>=8)reason='SCENE_QUOTA';

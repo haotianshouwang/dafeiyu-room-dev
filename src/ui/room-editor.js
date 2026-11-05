@@ -40,7 +40,8 @@ export class RoomEditor {
     }
     for(const name of Object.values(LOCAL_CATEGORIES))FURNITURE_CATEGORIES[name]=listCatalog().filter(e=>e.category===name&&!e.editorHidden).map(e=>e.type);
     this.buildUI();this.bind();this.setContext(Object.keys(this.contexts)[0]);
-    mountLocalPackImport({onOpen:()=>this.onToggle?.(true),onClose:()=>this.onToggle?.(this.active),hasDraft:()=>hasImportRefreshDraft(this)});
+    const packButton=mountLocalPackImport({onOpen:()=>this.onToggle?.(true),onClose:()=>this.onToggle?.(this.active),hasDraft:()=>hasImportRefreshDraft(this)});
+    this.panel.querySelector('header').insertBefore(packButton,this.panel.querySelector('[data-action=done]'));
     if(worldClient){this.updateWorldContexts();this.onChange?.();return;}
     for(const ctx of Object.values(this.contexts)) {
       let saved=null;
@@ -68,6 +69,10 @@ export class RoomEditor {
     this.allowedTypes=Object.keys(FURNITURE).filter(type=>!getCatalogEntry(type).editorHidden).filter(type=>this.worldClient?getCatalogEntry(type).sceneKinds.includes(getTemplate(ctx.templateId).kind):(ctx.templateId==='courtyard_v1'||ctx.sceneId==='yard')
       ? type.startsWith('yard') || ['plant','smallPlant','lamp','chair','table'].includes(type)
       : !type.startsWith('yard') && (!!this.worldClient || ctx.sceneId==='living' || !type.startsWith('living')));
+    const categoryNav=this.panel.querySelector('.room-edit-categories');
+    for(const name of Object.keys(FURNITURE_CATEGORIES))if(![...categoryNav.children].some(button=>button.textContent===name)){
+      const button=this.panel.ownerDocument.createElement('button');button.textContent=name;button.onclick=()=>this.showCategory(name);categoryNav.append(button);
+    }
     this.panel.querySelector('strong').textContent=`布置${ctx.label}`;
     for(const button of this.panel.querySelector('.room-edit-categories').children)button.hidden=button.textContent!=='全部' && !FURNITURE_CATEGORIES[button.textContent].some(type=>this.allowedTypes.includes(type));
     const category=this.currentCategory||'全部';

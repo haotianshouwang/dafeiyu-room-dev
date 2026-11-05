@@ -2,7 +2,7 @@ import {installConsumers,recordDelivery,confirmEvents,resumeConsumer,snapshotRec
 import {randomUUID} from 'node:crypto';
 import {validateCommand} from '../../shared/world/schema.js';
 import {appendEvent,readEvents,projectEventPage} from './events.js';
-const scopeFor=kind=>kind.startsWith('build.')?'build:write':kind.startsWith('control.')||kind.startsWith('action.')||kind==='actor.input'?'actor:control':'world:read';
+const scopeFor=kind=>kind.startsWith('build.')?'build:write':kind.startsWith('control.')||kind.startsWith('action.')||kind.startsWith('actor.')?'actor:control':'world:read';
 // Trusted adapter-only principal: {subjectId,worldIds,actorIds,scopes,role,
 // expiresAt?,revoked?}. Never construct this object from command/request JSON.
 export function authorizePrincipal(principal,worldId,scope,actorId,now=Date.now()){
@@ -32,7 +32,7 @@ export class WorldService{
  execute(principal,command){
   if(!validateCommand(command).ok)throw Error('INVALID_COMMAND');
   authorizePrincipal(principal,command.worldId,scopeFor(command.kind),command.payload.actorId,this.clock());
-  if(command.kind==='control.takeover'&&principal.role!=='owner')throw Error('UNAUTHORIZED');
+  if(['control.takeover','actor.teleport'].includes(command.kind)&&principal.role!=='owner')throw Error('UNAUTHORIZED');
   const serialized=canonical(command);const db=this.db;db.exec('BEGIN IMMEDIATE');
   try {
    const prior=db.prepare('SELECT command,result FROM command_results WHERE subject_id=? AND world_id=? AND request_id=?').get(principal.subjectId,command.worldId,command.requestId);

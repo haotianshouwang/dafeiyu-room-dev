@@ -14,13 +14,14 @@ import {RoomEditor} from '../src/ui/room-editor.js';
 test('changing to an indoor context resets an unavailable outdoor category to All',()=>{
  const category='户外',buttons=['全部',category].map(textContent=>({textContent})),title={},calls=[];
  const contexts={street:{label:'街角',sceneId:'street',templateId:'street_corner_v1',group:{children:[]}},bedroom:{label:'卧室',sceneId:'bedroom',templateId:'cozy_room_v1',group:{children:[]}}};
- const editor=Object.assign(Object.create(RoomEditor.prototype),{contexts,worldClient:{},outline:{},toggle:{},panel:{querySelector:s=>s==='strong'?title:{children:buttons}},currentCategory:category,showCategory(name,preserve){this.currentCategory=name;calls.push({name,preserve});},refreshState(){}});
+ const editor=Object.assign(Object.create(RoomEditor.prototype),{contexts,worldClient:{},outline:{},toggle:{},panel:{ownerDocument:{createElement:()=>({})},querySelector:s=>s==='strong'?title:{children:buttons,append:b=>buttons.push(b)}},currentCategory:category,showCategory(name,preserve){this.currentCategory=name;calls.push({name,preserve});},refreshState(){}});
  editor.setContext('street');assert.equal(calls.at(-1).name,category);assert.equal(buttons[1].hidden,false);
- editor.setContext('bedroom');assert.equal(buttons[1].hidden,true);assert.equal(calls.at(-1).name,'全部');assert.equal(calls.at(-1).preserve,false,'fallback must start at top of its new catalog');assert.ok(editor.allowedTypes.length>0);
+ editor.setContext('bedroom');assert.equal(buttons[1].hidden,true);assert.equal(calls.at(-1).name,'全部');assert.equal(calls.at(-1).preserve,false,'fallback must start at top of its new catalog');assert.ok(editor.allowedTypes.length>0);assert.ok(buttons.some(b=>b.textContent==='桌椅'),'missing category buttons are added when metadata changes');
  editor.currentCategory='桌椅';editor.setContext('street');assert.equal(calls.at(-1).name,'桌椅','keep a category still available in the new context');assert.equal(calls.at(-1).preserve,true);
 });
 
 test('213 distinct Chinese display names preserve source IDs and map author aliases',()=>{
+ const [indoorEntry]=registerLocalAssets({assets:[{type:'town-indoor-test',name:'test',file:'models/town-indoor-test.glb',category:'Props',dimensions:[1,1,1]}]});assert.deepEqual(indoorEntry.sceneKinds,['indoor','outdoor']);
  const labels=Object.values(LOCAL_ASSET_LABELS);assert.equal(labels.length,213);assert.equal(new Set(labels).size,213);assert.ok(labels.every(s=>/[\u4e00-\u9fff]/.test(s)&&!/[a-z]/i.test(s)));
  const asset={type:'town-house-1room-blue',name:'House_1Room_Blue',file:'models/town-house-1room-blue.glb',thumbnail:'thumbnails/town-house-1room-blue.png',category:'Buildings',dimensions:[2,3,4]};
  const before=structuredClone(asset),entry=registerLocalAssets({assets:[asset]})[0];assert.deepEqual(asset,before);assert.equal(entry.label,'蓝色一居小屋');assert.equal(entry.sourceName,asset.name);assert.equal(entry.source.file,asset.file);assert.equal(entry.thumbnailURL,'/api/local-assets/'+asset.thumbnail);

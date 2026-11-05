@@ -1,3 +1,4 @@
+import {createTeleportEffect} from './ui/teleport-effect.js';
 import {mountAuthorExamples} from './ui/author-examples.js';
 import {discoverLocalAssets,localAssetCache,prepareLocalSnapshot} from './world/local-assets.js';
 import {registerLocalFurniture} from './world/props.js';
@@ -55,9 +56,9 @@ const keys=new Set(),goal=new THREE.Vector3(),renderPosition=new THREE.Vector3()
 const status=document.createElement('div');status.id='world-sync-status';status.setAttribute('role','status');status.style.cssText='position:fixed;left:20px;bottom:20px;z-index:32;background:#faf1e5e8;border-radius:12px;padding:8px 12px;color:#51454a;font:13px system-ui;max-width:70vw';status.textContent='正在连接世界…';document.body.append(status);
 function showMessage(message){status.textContent=message;}
 client.onStatus(value=>{if(value==='connected')showMessage('世界已连接 · WASD 接管移动 · 点击地点可选择目的场景');else{keys.clear();player.release();lease=null;showMessage(value==='unauthorized'?'主人会话已失效，请刷新页面重新连接':'世界离线 · 草稿已保留，正在重连');}});
-function showScene(id){const cfg=registry.scenes.get(id);if(!cfg)return;activeScene=id;registry.show(id);const street=cfg.data.templateId==='street_corner_v1';scene.background=street?new THREE.Color(0xc9e5ed):(cfg.data.templateId==='coastal_town_v1'||cfg.template.authorSceneId)?new THREE.Color(0xd8e6dd):null;for(const [key,light]of Object.entries(lights))light.intensity=lightDefaults[key]*(street?({sun:1.1,hemi:1.5,fill:1.15}[key]??0):1);iso.setProfile(cfg.data.templateId);iso.setView(cfg.view.target,cfg.view.zoom);iso.target.copy(iso.homeTarget);iso.zoom=iso.homeZoom;iso.zoomTarget=iso.homeZoom;iso.drag=iso.dragTarget=0;iso.par.set(0,0);iso.parTarget.set(0,0);game.setScene(cfg);whale.bounds=cfg.bounds;whale.colliders=null;editor?.setContext(id);const loc=document.getElementById('loc');if(loc)loc.textContent=`${cfg.label} · 选择目的地`;lastPortalAt=performance.now();}
+function showScene(id){const cfg=registry.scenes.get(id);if(!cfg)return;activeScene=id;registry.show(id);refreshScenePicker();const street=cfg.data.templateId==='street_corner_v1';scene.background=street?new THREE.Color(0xc9e5ed):(cfg.data.templateId==='coastal_town_v1'||cfg.template.authorSceneId)?new THREE.Color(0xd8e6dd):null;for(const [key,light]of Object.entries(lights))light.intensity=lightDefaults[key]*(street?({sun:1.1,hemi:1.5,fill:1.15}[key]??0):1);iso.setProfile(cfg.data.templateId);iso.setView(cfg.view.target,cfg.view.zoom);iso.target.copy(iso.homeTarget);iso.zoom=iso.homeZoom;iso.zoomTarget=iso.homeZoom;iso.drag=iso.dragTarget=0;iso.par.set(0,0);iso.parTarget.set(0,0);game.setScene(cfg);whale.bounds=cfg.bounds;whale.colliders=null;editor?.setContext(id);const loc=document.getElementById('loc');if(loc)loc.textContent=`${cfg.label}`;lastPortalAt=performance.now();}
 client.onSnapshot(snapshot=>{
- registry.applySnapshot(snapshot);const next=snapshot.actors.find(a=>a.actorId==='whale')||snapshot.actors[0];if(!next)return;
+ registry.applySnapshot(snapshot);refreshScenePicker();const next=snapshot.actors.find(a=>a.actorId==='whale')||snapshot.actors[0];if(!next)return;
  const changed=actor?.sceneId!==next.sceneId;actor=next;player.reconcile(next);actorTimeline.push(next,performance.now());
  if(editor){const missing=Object.values(registry.contexts).some(c=>!c.sync);if(missing)editor.updateWorldContexts();}
  if(changed){if(portalPending)keys.clear();renderPosition.fromArray(next.position);showScene(next.sceneId);}
@@ -77,10 +78,32 @@ async function action(kind,target,options){
 function interact(kind,target){if(!actor)return;stopMovement();keys.clear();if(kind==='eat'){localSound.play(kind);return action(kind,undefined,{force:true});}const candidate=client.snapshot.entities.filter(e=>(!target?.entityId||e.entityId===target.entityId)&&getCatalogEntry(e.type).actions.includes(kind)).sort((a,b)=>Number(b.sceneId===actor.sceneId)-Number(a.sceneId===actor.sceneId))[0];if(!candidate){showMessage('世界里还没有对应的家具');return;}action(kind,{entityId:candidate.entityId,anchorId:'approach'},{force:true}).then(result=>{if(result)localSound.play(kind);});}
 game.worldAction=interact;
 game.getFurniture=()=>registry.scenes.get(activeScene)?.furniture.children||[];
-const scenePicker=document.createElement('div');scenePicker.hidden=true;scenePicker.style.cssText='position:fixed;left:24px;top:110px;z-index:60;display:none;gap:8px;background:#faf1e5;padding:14px;border-radius:15px;font:14px system-ui';document.body.append(scenePicker);
-document.getElementById('loc')?.addEventListener('click',()=>{scenePicker.replaceChildren();scenePicker.style.display=scenePicker.style.display==='none'?'grid':'none';for(const [id,cfg]of registry.scenes){if(cfg.data.status!=='active')continue;const button=document.createElement('button');button.textContent=cfg.label;button.onclick=()=>{scenePicker.style.display='none';keys.clear();action('move',{sceneId:id},{force:true});};scenePicker.append(button);}});
+const teleportEffect=createTeleportEffect();let teleportPending=false;
+async function teleportToScene(id){
+ if(teleportPending||!actor||id===actor.sceneId)return;
+ if(dispatcher.busy){showMessage('请等待当前操作完成后传送');return;}
+ teleportPending=true;keys.clear();
+ try{
+  if(editor?.active){await editor.setActive(false);if(editor.active){showMessage('请先保存当前布置再传送');return;}}
+  player.stop();await player.drain();player.release();lease=null;
+  await teleportEffect.depart(registry.scenes.get(id)?.label||id);
+  await client.dispatch({kind:'actor.teleport',payload:{actorId:actor.actorId,sceneId:id}});
+  actorTimeline.handoff(actor,performance.now());renderPosition.fromArray(actor.position);
+  await teleportEffect.arrive();
+ }catch(error){showMessage(`传送失败：${error.message}`);}
+ finally{teleportEffect.clear();teleportPending=false;keys.clear();}
+}
+const scenePicker=document.createElement('nav');scenePicker.setAttribute('aria-label','场景传送');scenePicker.style.cssText='position:fixed;left:24px;top:110px;z-index:30;display:grid;gap:7px;background:#faf1e5ed;padding:12px;border:1px solid #fff9;border-radius:16px;font:14px system-ui;max-height:calc(100vh - 300px);overflow:auto;min-width:110px';document.body.append(scenePicker);
+let scenePickerKey='';
+function refreshScenePicker(){
+ const choices=[...registry.scenes].filter(([,cfg])=>cfg.data.status==='active');
+ const key=JSON.stringify([activeScene,choices.map(([id,cfg])=>[id,cfg.label])]);if(key===scenePickerKey)return;scenePickerKey=key;
+ scenePicker.replaceChildren();
+ for(const [id,cfg]of choices){const current=id===activeScene,button=document.createElement('button');button.type='button';button.textContent=cfg.label;button.setAttribute('aria-current',current?'location':'false');button.disabled=current;button.style.cssText=`border:1px solid ${current?'#af8556':'#cbbba8'};background:${current?'#dfc39f':'#fff9ee'};color:#51454a;border-radius:10px;padding:9px 12px;font:inherit;cursor:${current?'default':'pointer'}`;button.onclick=()=>{keys.clear();void teleportToScene(id);};scenePicker.append(button);}
+}
+
 const editable=target=>target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName);
-window.addEventListener('keydown',e=>{if(e.repeat||editor?.resetPending||agentConnect.panel||editable(e.target)||!['KeyW','KeyA','KeyS','KeyD','Space'].includes(e.code))return;e.preventDefault();if(e.code==='Space'){if(!editor?.active)player.jumpRequested=true;return;}keys.add(e.code);});
+window.addEventListener('keydown',e=>{if(teleportPending||e.repeat||editor?.resetPending||agentConnect.panel||editable(e.target)||!['KeyW','KeyA','KeyS','KeyD','Space'].includes(e.code))return;e.preventDefault();if(e.code==='Space'){if(!editor?.active)player.jumpRequested=true;return;}keys.add(e.code);});
 window.addEventListener('keyup',e=>{const wasMovement=keys.delete(e.code);if(wasMovement&&!keys.size&&!editor?.active){player.stop();player.flush().catch(()=>{});}});
 function stopMovement(){const moving=keys.size>0;keys.clear();if(moving&&!editor?.active){player.stop();player.flush().catch(()=>{});}}window.addEventListener('blur',stopMovement);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMovement();});
 const pointer=new THREE.Vector2();window.addEventListener('pointermove',e=>{pointer.set(e.clientX/window.innerWidth*2-1,-e.clientY/window.innerHeight*2+1);iso.setPointer(pointer.x,pointer.y);});
@@ -89,7 +112,7 @@ bindCameraWheel(canvas,iso,()=>editor);
 window.addEventListener('resize',()=>{R.resize(window.innerWidth,window.innerHeight);iso.resize();});
 function directions(snapshot){const result=[];for(const portal of snapshot.portals){const end=portalEnds(snapshot,portal);if(end.fromSceneId===actor.sceneId)result.push({...end,inwardNormal:portalInwardNormal(snapshot,{...portal,...end})});if(portal.bidirectional&&end.toSceneId===actor.sceneId)result.push({fromSceneId:end.toSceneId,toSceneId:end.fromSceneId,departure:end.landing,landing:end.departure,inwardNormal:portalInwardNormal(snapshot,{...portal,...end},true)});}return result;}
 function updateKeyboard(dt,now){
- if(agentConnect.panel||editor?.resetPending){stopMovement();return;}
+ if(teleportPending||agentConnect.panel||editor?.resetPending){stopMovement();return;}
  const x=Number(keys.has('KeyD'))-Number(keys.has('KeyA')),z=Number(keys.has('KeyS'))-Number(keys.has('KeyW'));
  if(!actor)return;
  if(!(x||z)&&!player.jumpRequested&&player.sample?.()?.grounded!==false){if(player.active&&player.held){player.stop();player.flush().catch(()=>{});}return;}
