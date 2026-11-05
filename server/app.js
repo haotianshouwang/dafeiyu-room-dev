@@ -1,5 +1,5 @@
 import {installAuthorBeach} from './world/author-beach.js';
-import {appendAuthorScenes} from './world/author-pack.js';
+import {appendAuthorScenes,relocateStreetExits} from './world/author-pack.js';
 import {installLocalPackRoutes,recoverLocalPack} from './local-pack-import.js';
 import {registerAuthorScene,checkpointAuthorScenes} from '../shared/world/author-scenes.js';
 import {registerLocalTemplate,checkpointTemplates} from '../shared/world/templates.js';
@@ -48,7 +48,7 @@ export async function buildServer({ databasePath, serveStatic = false, logger = 
   if(worldMode)migrateWorld(db);
   const migrated=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='worlds'").get() && db.prepare('SELECT 1 FROM worlds LIMIT 1').get());
   const worldService=migrated?new WorldService(db,{handlers:{...createRuntimeHandlers(),...createBuildHandlers(),...worldHandlers}}):null;
-  if(worldMode&&worldService){installStoreScene(worldService);installStoreLights(worldService);installStreetHomeEntrance(worldService);installAuthorBeach(worldService,localManifest);}
+  if(worldMode&&worldService){installStoreScene(worldService);installStoreLights(worldService);installStreetHomeEntrance(worldService);installAuthorBeach(worldService,localManifest);relocateStreetExits(worldService);}
   const app=Fastify({logger,bodyLimit:6*1024*1024});
   app.decorate('worldService',worldService);
   const authService=worldService?installAuth(app,db,worldService,auth):null;

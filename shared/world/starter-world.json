@@ -160,6 +160,34 @@
             1,
             1
           ]
+        },
+        {
+          "type": "lamp",
+          "position": [
+            1,
+            0,
+            2.6
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "type": "smallPlant",
+          "position": [
+            1.6,
+            0,
+            2.1
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
         }
       ]
     },
@@ -412,6 +440,48 @@
             1,
             1
           ]
+        },
+        {
+          "type": "yardPicnicTable",
+          "position": [
+            -3.685224323939792,
+            0,
+            0.7557960473988778
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "type": "yardFlowerBox",
+          "position": [
+            3.4,
+            0,
+            6.4
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "type": "desk",
+          "position": [
+            3.0494982600695053,
+            0,
+            -4.0295444189154
+          ],
+          "rotation": 0,
+          "scale": [
+            1,
+            1,
+            1
+          ]
         }
       ]
     },
@@ -423,9 +493,9 @@
         {
           "type": "shopBuilding",
           "position": [
-            0.4,
+            -0.5882265574470606,
             0,
-            -1.9
+            -2.951375438585845
           ],
           "rotation": 0,
           "scale": [
@@ -440,20 +510,6 @@
             4.25,
             0,
             -0.35
-          ],
-          "rotation": 0,
-          "scale": [
-            1,
-            1,
-            1
-          ]
-        },
-        {
-          "type": "shopLamp",
-          "position": [
-            -4.1,
-            0,
-            -4.8
           ],
           "rotation": 0,
           "scale": [

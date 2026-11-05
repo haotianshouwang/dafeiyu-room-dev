@@ -59,3 +59,13 @@ export function buildStoreStreet(){
  g.add(buildJapaneseHome());
  return g;
 }
+
+// Local +Z points into the street. Extend the road beyond the scene edge.
+export function buildStreetExitRoad(side){
+ const road=new THREE.Group();road.name='street-exit-road';
+ road.rotation.y=({north:0,south:Math.PI,west:Math.PI/2,east:-Math.PI/2})[side]||0;
+ const asphalt=box(road,2.4,.045,3.8,0x687176,0,-.03,.6);asphalt.castShadow=false;
+ for(const x of [-1.25,1.25]){box(road,.16,.12,3.8,0xcfc7b5,x,.015,.6);box(road,.045,.008,3.5,0xe1cb97,x*.86,.003,.6);}
+ for(const z of [-.7,.15,1,1.85])box(road,.065,.008,.42,0xf0dfb6,0,.004,z);
+ return road;
+}

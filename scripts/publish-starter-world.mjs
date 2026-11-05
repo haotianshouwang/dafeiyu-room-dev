@@ -12,7 +12,11 @@ const db=new DatabaseSync(database,{readOnly:true});
 try{
  const row=db.prepare('SELECT snapshot FROM worlds WHERE world_id=?').get('default');
  if(!row)throw Error('WORLD_NOT_FOUND');
- const snapshot=JSON.parse(row.snapshot),starter=createStarterWorld(snapshot);
+ const snapshot=JSON.parse(row.snapshot);
+ // Apply the declared four-scene export boundary before checking private assets.
+ // Private content inside a published scene still fails closed.
+ const publicSnapshot={...snapshot,scenes:snapshot.scenes.filter(s=>STARTER_SCENES.includes(s.sceneId)),entities:snapshot.entities.filter(e=>STARTER_SCENES.includes(e.sceneId))};
+ const starter=createStarterWorld(publicSnapshot);
  writeFileSync(`${output}.tmp`,JSON.stringify(starter,null,2)+'\n');renameSync(`${output}.tmp`,output);
  console.log(`已更新发布默认布局：${starter.scenes.map(s=>`${s.name} ${s.entities.length} 件家具`).join('、')}。`);
  console.log('运行存档未修改；未导出人物状态、会话、授权、事件和操作记录。');

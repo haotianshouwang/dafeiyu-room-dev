@@ -8,6 +8,10 @@ function template(id,kind,r){
 }
 const templates={cozy_room_v1:template('cozy_room_v1','indoor',3.6),courtyard_v1:template('courtyard_v1','outdoor',8.5),street_corner_v1:template('street_corner_v1','outdoor',6.5)};
 templates.street_corner_v1.staticColliders=STREET_HOME.colliders;templates.street_corner_v1.legacyDoorNormal=STREET_HOME.inwardNormal;
+for(const slot of templates.street_corner_v1.portalSlots){
+ if(slot.slotId==='north')Object.assign(slot,{position:[5.2,0,-6.5],landing:[5.2,0,-5.55],width:1.4,trigger:rect(4.5,5.9,-6.5,-5.1),clearance:rect(4.5,5.9,-6.5,-5.2)});
+ if(slot.slotId==='east')Object.assign(slot,{position:[6.5,0,3],landing:[5.55,0,3],width:1.4,trigger:rect(5.1,6.5,2.3,3.7),clearance:rect(5.2,6.5,2.45,3.7)});
+}
 templates.street_corner_v1.spawn=[0,0,2.4];templates.street_corner_v1.spawnClearance=rect(-.5,.5,1.9,2.9);
 templates.coastal_town_v1=template('coastal_town_v1','outdoor',12);
 Object.assign(templates.coastal_town_v1,{spawn:[-10,2,-2],spawnClearance:rect(-10.5,-9.5,-2.5,-1.5),regions:COASTAL_ZONES,landmarks:COASTAL_LANDMARKS});
