@@ -4,7 +4,7 @@
 
 **作者 / 抖音：破晓手记**
 
-![夜间的街角便利店和日式小楼](docs/screenshots/store.png)
+![大肥鱼在院子里施放冰晶王冠，三个训练木桩同时跳出伤害数字](docs/screenshots/cover.webp)
 
 ## 开始游戏
 
@@ -35,7 +35,13 @@ npm run dev
 | X / G | 坐下 / 随机跳舞 |
 | 1–8 | 选中魔法，瞄准后左键施放 |
 
-[卧室](docs/screenshots/room.png) · [院子](docs/screenshots/yard.png) · [泳池变身](docs/screenshots/pool.png) · [家具编辑](docs/screenshots/editor.png)
+### 游戏截图
+
+| 卧室 | 客厅 | 街角便利店 |
+| --- | --- | --- |
+| ![卧室](docs/screenshots/room.webp) | ![客厅](docs/screenshots/living.webp) | ![街角便利店](docs/screenshots/store.webp) |
+| **院子** | **泳池变身** | **家具编辑** |
+| ![院子](docs/screenshots/yard.webp) | ![泳池变身](docs/screenshots/pool.webp) | ![家具编辑](docs/screenshots/editor.webp) |
 
 ## MCP · 带你的智能体来串门
 
