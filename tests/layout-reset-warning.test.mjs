@@ -13,7 +13,7 @@ test('reset requires explicit typed acknowledgement; cancellation never resets',
  }finally{globalThis.document=previous;}
 });
 test('cancel leaves furniture untouched; confirmation performs one reset',async()=>{
- const calls=[],context={},editor={context,active:true,defaults:[],panel:{querySelector:()=>({focus(){}})},confirmReset:async()=>false,checkpoint:()=>calls.push('checkpoint'),restore:()=>calls.push('restore'),save:()=>calls.push('save')};
- await RoomEditor.prototype.requestReset.call(editor);assert.deepEqual(calls,[]);assert.equal(editor.resetPending,false);
- editor.confirmReset=async()=>true;await RoomEditor.prototype.requestReset.call(editor);assert.deepEqual(calls,['checkpoint','restore','save']);
+ const calls=[],context={},editor={context,active:false,defaults:[],async setActive(value){this.active=value;calls.push('activate');},select(){calls.push('deselect');},confirmReset:async()=>false,checkpoint:()=>calls.push('checkpoint'),restore:()=>calls.push('restore'),save:()=>calls.push('save')};
+ assert.equal(await RoomEditor.prototype.requestReset.call(editor),false);assert.deepEqual(calls,[]);assert.equal(editor.resetPending,false);
+ editor.confirmReset=async()=>true;assert.equal(await RoomEditor.prototype.requestReset.call(editor),true);assert.deepEqual(calls,['activate','deselect','checkpoint','restore','save']);
 });

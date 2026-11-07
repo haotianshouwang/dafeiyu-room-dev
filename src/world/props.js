@@ -65,6 +65,10 @@ function makeBed() {
   // 被子：蓬松的软体 + 翻折 + 绗缝线（不要做成木板）
   const duvet = setShadow(new THREE.Mesh(rbox(W + 0.04, 0.19, L * 0.66, 0.085, 6), fabric(0x8fb3a5, { roughness: 1 })));
   duvet.position.set(0, topY + 0.065, L * 0.16); duvet.scale.set(1, 1, 1); g.add(duvet);
+  const sleepContact = new THREE.Object3D();
+  sleepContact.name = 'bed-sleep-contact';
+  sleepContact.position.set(.02, topY + .16, -.10);
+  g.add(sleepContact);
   // 被头翻折：一层薄被单压在枕头上方
   const topSheet = setShadow(new THREE.Mesh(rbox(W + 0.02, 0.055, 0.34, 0.028, 5), fabric(0xf2e7d6, { roughness: 1 })));
   topSheet.position.set(0, topY + 0.155, -L * 0.16 + 0.03); topSheet.rotation.x = -0.03; g.add(topSheet);
@@ -614,9 +618,13 @@ export const FURNITURE = {yardBench:{label:'长椅',icon:'🪑',make:makeCoastal
   nightstand: { label: '床头柜', icon: '🗄️', make: makeNightstand },
   rug: { label: '地毯', icon: '🧶', make: makeRug },
 };
+const furniturePreviewURL = type => `./furniture-previews/${type}.webp`;
+for (const [type, meta] of Object.entries(FURNITURE)) {
+  FURNITURE[type] = { ...meta, thumbnailURL: furniturePreviewURL(type) };
+}
 export function registerSceneFurniture(object, type, label, icon) {
   const template=object.clone(true);
-  FURNITURE[type]={label,icon,make:()=>template.clone(true)};
+  FURNITURE[type]={label,icon,thumbnailURL:furniturePreviewURL(type),make:()=>template.clone(true)};
   object.userData.furnitureType=type;
   return object;
 }
@@ -628,7 +636,7 @@ export function markFurniture(object, type) {
   }
   return object;
 }
-export function registerLocalFurniture(entries){for(const e of entries)FURNITURE[e.type]={label:e.label,thumbnailURL:e.thumbnailURL,local:true,icon:{Buildings:'🏠',Trees:'🌳',Roads:'🛤️',Floor:'⛰️',Flowers:'🌷',Animals:'🐈',Laterns:'🏮'}[e.localCategory]||'🧩',make:()=>makeLocalAsset(e.type)};}
+export function registerLocalFurniture(entries){for(const e of entries)FURNITURE[e.type]={label:e.label,thumbnailURL:e.thumbnailURL,local:true,icon:{Buildings:'🏠',Furniture:'🪑',Seating:'🛋️',Tables:'🪵',Storage:'🗄️',Bedding:'🛏️',Kitchen:'🍽️',Lighting:'💡',Plants:'🌿',Trees:'🌳',Flowers:'🌷',Decor:'🖼️',Containers:'📦',Tools:'🔧',Weapons:'⚔️',Animals:'🐈',Characters:'🧍',Vehicles:'🚗',Terrain:'⛰️',Attachments:'🧷',Misc:'🧩',Roads:'🛤️',Floor:'⛰️',Laterns:'🏮'}[e.localCategory]||'🧩',make:()=>makeLocalAsset(e.type)};}
 export function createFurniture(type) {
   if(type.startsWith('town-')&&!FURNITURE[type]){FURNITURE[type]={label:'本地素材缺失',icon:'🧩',make:()=>makeLocalAsset(type)};}
   if (!Object.hasOwn(FURNITURE, type)) throw new Error('Unknown furniture');

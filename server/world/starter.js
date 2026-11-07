@@ -7,13 +7,13 @@ export function createStarterWorld(snapshot){
  const scenes=STARTER_SCENES.map(sceneId=>{
   const scene=snapshot.scenes.find(s=>s.sceneId===sceneId&&s.status==='active');
   if(!scene)throw Error(`STARTER_SCENE_MISSING:${sceneId}`);
-  getTemplate(scene.templateId);
+  const template=getTemplate(scene.templateId);
   const entities=snapshot.entities.filter(e=>e.sceneId===sceneId).map(e=>{
    // Don't silently lose dependency relationships when publishing a flat layout.
    if(e.supportEntityId||e.supportAnchorId)throw Error(`STARTER_SUPPORT_UNSUPPORTED:${sceneId}`);
    return {type:e.type,position:[...e.position],rotation:e.rotation,scale:[...e.scale]};
   });
-  if(!validLayout(entities,sceneId))throw Error(`INVALID_STARTER_LAYOUT:${sceneId}`);
+  if(!validLayout(entities,sceneId,template.bounds))throw Error(`INVALID_STARTER_LAYOUT:${sceneId}`);
   return {sceneId,name:scene.name,templateId:scene.templateId,entities};
  });
  const portals=snapshot.portals.filter(p=>STARTER_SCENES.includes(p.kind==='legacy'?p.fromSceneId:p.from?.sceneId)&&STARTER_SCENES.includes(p.kind==='legacy'?p.toSceneId:p.to?.sceneId)).map(p=>{

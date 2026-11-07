@@ -3,6 +3,7 @@ import {writeFileSync,renameSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {parseArgs} from 'node:util';
+import {readBundledModels} from '../server/local-assets.js';
 import {createStarterWorld,STARTER_SCENES} from '../server/world/starter.js';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const {values}=parseArgs({options:{database:{type:'string'},output:{type:'string'}}});
@@ -16,6 +17,7 @@ try{
  // Apply the declared four-scene export boundary before checking private assets.
  // Private content inside a published scene still fails closed.
  const publicSnapshot={...snapshot,scenes:snapshot.scenes.filter(s=>STARTER_SCENES.includes(s.sceneId)),entities:snapshot.entities.filter(e=>STARTER_SCENES.includes(e.sceneId))};
+ readBundledModels(publicSnapshot.entities);
  const starter=createStarterWorld(publicSnapshot);
  writeFileSync(`${output}.tmp`,JSON.stringify(starter,null,2)+'\n');renameSync(`${output}.tmp`,output);
  console.log(`已更新发布默认布局：${starter.scenes.map(s=>`${s.name} ${s.entities.length} 件家具`).join('、')}。`);

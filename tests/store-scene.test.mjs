@@ -1,6 +1,20 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {getTemplate} from '../shared/world/templates.js';import {cameraPolicyFor} from '../shared/world/policies.js';import {STORE_SCENE} from '../shared/world/store-scene.js';import {getCatalogEntry} from '../shared/world/catalog.js';
 test('night street has an outdoor camera and every store asset is a validated catalog entry',()=>{const t=getTemplate(STORE_SCENE.templateId);assert.equal(t.kind,'outdoor');assert.equal(cameraPolicyFor(t.templateId).horizontalRotation,true);for(const e of STORE_SCENE.entities){const entry=getCatalogEntry(e.type);assert.ok(entry.sceneKinds.includes('outdoor'));assert.ok(entry.footprint.width>0);}});
 import {DatabaseSync} from 'node:sqlite';import {migrateWorld} from '../server/storage/migrations.js';import {WorldService} from '../server/world/service.js';import {installStoreScene} from '../server/world/store-feature.js';import {STORE_SCENE_ID} from '../shared/world/store-scene.js';import {sceneRoute,walkable} from '../shared/world/navigation.js';
+test('the expanded street has walkable parking and plaza aisles, solid props, and reachable exits',async()=>{
+ const {findPath}=await import('../shared/world/navigation.js');
+ const db=new DatabaseSync(':memory:');
+ try{
+  migrateWorld(db);
+  const snapshot=new WorldService(db).readSnapshot('default');
+  const template=getTemplate(STORE_SCENE.templateId);
+  for(const destination of [[10,0,7.6],[9.8,0,-2.4],...template.portalSlots.map(slot=>slot.landing)]){
+   assert.deepEqual(findPath(snapshot,STORE_SCENE_ID,template.spawn,destination).at(-1),destination);
+  }
+  assert.equal(walkable(snapshot,STORE_SCENE_ID,[9.1,0,10.65]),false);
+  assert.equal(walkable(snapshot,STORE_SCENE_ID,[6.95,0,4.95]),false);
+ }finally{db.close();}
+});
 test('upgrade adds one store and rewires living door once, preserving all prior furniture and subsequent edits',()=>{
  const db=new DatabaseSync(':memory:');try{migrateWorld(db);const service=new WorldService(db);service.transactRuntime('default',({snapshot:s})=>{s.scenes=s.scenes.filter(x=>x.sceneId!==STORE_SCENE_ID);s.entities=s.entities.filter(x=>x.sceneId!==STORE_SCENE_ID);s.portals=s.portals.filter(x=>x.fromSceneId!==STORE_SCENE_ID&&x.toSceneId!==STORE_SCENE_ID);s.portals.push({portalId:'legacy-living-yard',kind:'legacy',fromSceneId:'living',toSceneId:'yard'});});
  const before=structuredClone(service.readSnapshot('default').entities);assert.equal(installStoreScene(service).installed,true);let s=service.readSnapshot('default');assert.deepEqual(s.entities.filter(x=>x.sceneId!==STORE_SCENE_ID),before);assert.equal(sceneRoute(s,'living',STORE_SCENE_ID).length,1);assert.equal(sceneRoute(s,STORE_SCENE_ID,'living').length,1);assert.ok(!s.portals.some(p=>p.fromSceneId==='living'&&p.toSceneId==='yard'));for(const leg of sceneRoute(s,'living',STORE_SCENE_ID)){assert.ok(walkable(s,leg.fromSceneId,leg.departure));assert.ok(walkable(s,leg.toSceneId,leg.landing));}

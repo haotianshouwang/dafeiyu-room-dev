@@ -3,6 +3,16 @@ import { waterPose } from "./water.js";
 import { segmentWalkable } from "./navigation.js";
 import { getTemplate } from "./templates.js";
 export const PLAYER_SPEED = 2.82;
+export const CRAWL_SPEED_SCALE = 0.35;
+export const JUMP_SPEED = 5.4;
+export const JUMP_GRAVITY = 18;
+const BOXING_SPEED_SCALE = 0.75;
+
+export function inputSpeedScale({ crawl, boxing, sprint }) {
+  if (crawl) return CRAWL_SPEED_SCALE;
+  if (boxing) return BOXING_SPEED_SCALE;
+  return sprint ? 2 : 1;
+}
 // Identical deterministic integration on the browser and authoritative server.
 export function advancePlayer(
   snapshot,
@@ -20,7 +30,7 @@ export function advancePlayer(
   const collisionAir = (actor.airHeight || 0) + (actor.supportHeight || 0);
   let rotation = actor.rotation || 0;
   if (length && dt) {
-    const distance = PLAYER_SPEED * dt * Math.max(0, Math.min(1, speedScale)),
+    const distance = PLAYER_SPEED * dt * Math.max(0, Math.min(2, speedScale)),
       dx = (x / length) * distance,
       dz = (z / length) * distance;
     const scene = snapshot.scenes.find((s) => s.sceneId === actor.sceneId);
@@ -63,13 +73,16 @@ export function advancePlayer(
   let verticalVelocity = actor.verticalVelocity || 0,
     grounded = actor.grounded !== false,
     air = actor.airHeight || 0;
-  if (jump && !actor.jumpHeld && grounded && actor.form !== "swim") {
-    verticalVelocity = 5.4;
+  let jumpStage = grounded ? 0 : (actor.jumpStage ?? 1);
+  if (dt && jump && !actor.jumpHeld && actor.form !== "swim" &&
+      (grounded || jumpStage === 1)) {
+    verticalVelocity = JUMP_SPEED;
+    jumpStage = grounded ? 1 : 2;
     grounded = false;
   }
   if (!grounded) {
-    air += verticalVelocity * dt - 9 * dt * dt;
-    verticalVelocity -= 18 * dt;
+    air += verticalVelocity * dt - JUMP_GRAVITY * dt * dt / 2;
+    verticalVelocity -= JUMP_GRAVITY * dt;
     if (air <= 1e-8) {
       air = 0;
       grounded = true;
@@ -108,6 +121,7 @@ export function advancePlayer(
     grounded,
     verticalVelocity,
     airHeight: air,
+    jumpStage: grounded ? 0 : jumpStage,
     jumpHeld: jump,
     supportHeight,
   };

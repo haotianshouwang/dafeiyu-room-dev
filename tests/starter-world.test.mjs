@@ -23,3 +23,32 @@ test('release exports the four-scene boundary from a save containing private imp
  const {mkdtempSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {execFileSync}=await import('node:child_process');const dir=mkdtempSync(join(tmpdir(),'starter-private-'));
  try{const file=join(dir,'save.sqlite'),out=join(dir,'starter.json'),db=new DatabaseSync(file);migrateWorld(db);const snapshot=JSON.parse(db.prepare('SELECT snapshot FROM worlds').get().snapshot);snapshot.scenes.push({sceneId:'private-town',templateId:'local_private_v1',status:'active'});snapshot.entities.push({sceneId:'private-town',type:'town-private-model'});const before=JSON.stringify(snapshot);db.prepare('UPDATE worlds SET snapshot=?').run(before);db.close();execFileSync(process.execPath,['scripts/publish-starter-world.mjs','--database',file,'--output',out],{stdio:'pipe'});const text=readFileSync(out,'utf8');assert.equal(JSON.parse(text).scenes.length,4);assert.ok(!text.includes('private'));const saved=new DatabaseSync(file,{readOnly:true});try{assert.equal(saved.prepare('SELECT snapshot FROM worlds').get().snapshot,before);}finally{saved.close();}}finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+test('fresh game with no local pack loads the frozen layouts and serves their bundled models',async()=>{
+ const {buildServer}=await import('../server/app.js');
+ const {createHash}=await import('node:crypto');
+ const app=await buildServer({databasePath:':memory:',worldMode:true,startRuntime:false,localAssetDir:null,auth:{localAccess:true}});
+ try{
+  const fresh=app.worldService.readSnapshot('default');
+  for(const scene of defaultManifest.scenes){
+   const objects=fresh.entities.filter(entity=>entity.sceneId===scene.sceneId)
+    .map(({type,position,rotation,scale})=>({type,position,rotation,scale}));
+   assert.deepEqual(objects,scene.entities);
+  }
+  assert.deepEqual(fresh.portals,defaultManifest.portals);
+  const owner=await app.inject({method:'POST',url:'/api/auth/local-session',
+   headers:{host:'127.0.0.1:5200',origin:'http://127.0.0.1:5200'},payload:{}});
+  const headers={cookie:String(owner.headers['set-cookie']).split(';')[0]};
+  const manifest=(await app.inject({url:'/api/local-assets/manifest',headers})).json();
+  const required=new Set(defaultManifest.scenes.flatMap(scene=>scene.entities).map(entity=>entity.type).filter(type=>type.startsWith('pf-')));
+  assert.ok(required.size>0);
+  for(const type of required){
+   const asset=manifest.assets.find(model=>model.type===type);
+   assert.ok(asset);
+   const model=await app.inject({url:'/api/local-assets/models/'+asset.file.split('/').at(-1),headers});
+   assert.equal(model.statusCode,200);
+   assert.equal(createHash('sha256').update(model.rawPayload).digest('hex'),asset.sha256);
+   assert.equal((await app.inject({url:'/api/local-assets/'+asset.thumbnail,headers})).statusCode,200);
+  }
+ }finally{await app.close();}
+});

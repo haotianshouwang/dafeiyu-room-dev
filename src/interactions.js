@@ -29,6 +29,9 @@ export class Interactions {
     this.bounds = { x0: -3, x1: 3, z0: -3, z1: 3 };
     this.onHotspot = null;
     this.hovering = false;
+    this.movingGuard = null;      // 走动中禁止其它动作的判定回调
+    this.centerPointer = false;   // 第一视角：按屏幕中心准星拾取
+    this.suppressClick = false;   // 第一视角拖动视线后的误触抑制
     this.idleTimer = 0;
     this.blinkTimer = 0;
     this.whale.onEffect = (kind, pos) => {
@@ -44,13 +47,12 @@ export class Interactions {
     const el = document.getElementById('actions');
     el?.addEventListener('click', (e) => {
       if (this.editing) return;
-      const btn = e.target.closest('[data-act]');
-      if (!btn) return;
-      const act = btn.dataset.act;
-      if(this.worldAction&&['feed','sleep'].includes(act)){this.worldAction(act==='feed'?'eat':'sleep');return;}
-      if (act === 'pet') this.pet();
-      if (act === 'feed') this.feed();
-      if (act === 'sleep') this.toggleSleep();
+      if (!e.target.closest('[data-act="feed"]')) return;
+      // 移动优先：走动中不做其它动作，避免边走边播
+      if(this.movingGuard?.()){this.hud.say('先停下来再说。',this.whale.group.position.clone().add(new THREE.Vector3(0,this.whale.bubbleHeight??0.66,0)),2.2);return;}
+      if(this.onFeed)this.onFeed();
+      else if(this.worldAction)this.worldAction('eat');
+      else this.feed();
     });
 
     const canvas = document.querySelector('#app canvas');
@@ -84,7 +86,9 @@ export class Interactions {
 
   _click(e) {
     if (this.editing) return;
-    this.pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    if (this.suppressClick) { this.suppressClick = false; return; }
+    if (this.centerPointer) this.pointer.set(0, 0);
+    else this.pointer.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     this.ray.setFromCamera(this.pointer, this.camera);
     // NPC
     if (this.npcs.length) {
@@ -99,8 +103,9 @@ export class Interactions {
         }
       }
     }
-    const hits = this.ray.intersectObject(this.whale.group, true);
-    if (hits.length) { this.pet(); return; }
+    if (this.whale.group.visible && this.ray.intersectObject(this.whale.group, true).length) {
+      this.pet(); return;
+    }
 
     // Resolve the clicked mesh back to the exact editable furniture entity.
     if(this.worldAction&&this.getFurniture){

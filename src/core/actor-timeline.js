@@ -24,6 +24,9 @@ export class ActorTimeline {
     const position=a.position.map((v,i)=>v+(b.position[i]-v)*alpha);
     const speed=duration>0?Math.hypot(b.position[0]-a.position[0],b.position[2]-a.position[2])*1000/duration:0;
     const angle=Math.atan2(Math.sin(b.rotation-a.rotation),Math.cos(b.rotation-a.rotation));
-    return {...a,position,rotation:a.rotation+angle*alpha,moving:speed>.02,speed};
+    const maneuver=a.maneuver&&b.maneuver?.actionId===a.maneuver.actionId
+      ? {...a.maneuver,elapsed:a.maneuver.elapsed+(b.maneuver.elapsed-a.maneuver.elapsed)*alpha}
+      : a.maneuver;
+    return {...a,position,rotation:a.rotation+angle*alpha,moving:speed>.02,speed,maneuver};
   }
 }

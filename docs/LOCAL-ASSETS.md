@@ -46,3 +46,10 @@ Windows可把 `TOWN_PYTHON_PATH` 指向该环境的 `Scripts/python.exe`。程�
 开发启动和生产 `npm start` 均会发现本机已导入的库。`npm run build` 不复制它；Git与发布检查排除原包、模型、贴图、缩略图及原作者布局。不要把 `.cache` 或个人数据库打包给其他用户。
 
 HTTP导入仅接受拥有者网页会话，并校验CSRF和同源请求；普通MCP访问令牌不能导入或指定本机路径。素材目录、缩略图和模型仍受已有访问控制保护。
+
+
+## 随项目提供的 Polyfork 精选库
+
+- `resources/polyfork/` 随公开仓库提供，共 146 个 GLB 及从这些 GLB 本机渲染的 WebP 缩略图。模型、缩略图与署名约 22 MiB。逐条署名见 [CREDITS.md](../resources/polyfork/CREDITS.md)，分发许可见 [LICENSE.md](../resources/polyfork/LICENSE.md)。
+- 没有本地素材清单时，服务会加载这份精选库。选了本地库以后，默认场景已经摆进去的精选模型仍由项目提供。精选库由服务按需提供，Vite 不会把它复制到网页构建目录。
+- `.cache/town-assets/` 保存本机全量库，或你在游戏里导入的其他素材。整个目录及导入备份都在 Git 忽略范围内。克隆项目后可用精选库开始游戏，再按需添加自己的素材。

@@ -1,6 +1,9 @@
 import {selectAuthorizedWorld} from './world-selection.js';
 import {z} from 'zod';
-import {idSchema,vectorSchema,buildOperationSchema} from '../../shared/world/schema.js';
+import {GAITS,MANEUVERS,SEQUENCE_MANEUVERS} from '../../shared/world/maneuvers.js';
+import {combatTargets} from '../../shared/world/combat-targets.js';
+import {SPELLS} from '../../shared/world/spells.js';
+import {idSchema,vectorSchema,buildOperationSchema,spellFields,taskSequenceFields,taskAttackFields} from '../../shared/world/schema.js';
 import {listPortalSlots} from '../world/build.js';
 import {suggestLayout} from '../world/layout-suggestions.js';
 import {RULES,catalog,projectSnapshot} from './resources.js';
@@ -18,9 +21,12 @@ const definitions=[
  ['layout_suggest','按区域与用途生成候选 ops；不会修改世界。',{sceneId:id,purpose:z.string().max(80).optional(),zoneId:id.optional(),preferences:z.union([z.array(id).max(6),z.object({types:z.array(id).max(6)}).strict()]).optional()}],
  ['actor_take_control','取得指定已授权角色60秒控制租约，不能抢占他人。',{...actor,...request}],
  ['actor_release_control','归还租约，并取消该角色未完成动作。',{...lease,...request}],
- ['actor_move','支持 groundPosition:[X,Z] 自动采样地面、landmarkId 地标，兼容 position:[X,Y,Z]；指定sceneId，提交后查询 actionId。',{...lease,...request,target}],
+ ['actor_move','支持 groundPosition:[X,Z] 自动采样地面、landmarkId 地标，兼容 position:[X,Y,Z]；指定sceneId，提交后查询 actionId。gait=sprint 在地面冲刺，默认 walk。',{...lease,...request,target,gait:z.enum(GAITS).optional()}],
+ ['actor_maneuver','执行飞踢、翻滚、滑铲、三连拳、二段跳、随机舞、原地连踢或魔法。heading 为弧度，默认当前朝向。仅飞踢支持 gait。spell 必填 slot（技能栏 1–8），可选 groundPosition:[X,Z]。',{...lease,...request,maneuver:z.enum(MANEUVERS),...spellFields,heading:z.number().finite().optional(),gait:z.enum(GAITS).optional()}],
+ ['actor_run_sequence','冲刺到目标位置再按顺序执行招式。程序负责寻路和确认到达。返回 actionId，可查询或取消。',{...lease,...request,...taskSequenceFields}],
+ ['actor_attack_target','自动对 world_observe 的 combatTargets 中指定目标跑位和瞄准。省略 spell 时轮换可用魔法，也可指定 spell。默认攻击一次，continuous=true 持续到取消或租约结束。返回 actionId。',{...lease,...request,...taskAttackFields}],
  ['actor_jump','原地或朝1.6米内目标跳跃，落地后完成；不可二段跳。',{...lease,...request,target:target.optional()}],
- ['actor_interact','走到物件交互点再坐、睡、游泳、滑梯或吃白饭。',{...lease,...request,verb:z.enum(['sit','sleep','swim','slide','eat']),targetId:id.optional()}],
+ ['actor_interact','走到物件交互点再坐、睡、游泳、滑梯、爬树或吃白饭。',{...lease,...request,verb:z.enum(['sit','sleep','swim','slide','eat','climbTree']),targetId:id.optional()}],
  ['action_get','读取属于本授权主体的动作真实状态、阶段与结果。',{actionId:id}],
  ['action_cancel','取消本授权主体正在执行的动作。',{actionId:id,...request}],
  ['build_preview','预览最多20项严格建设操作，签发5分钟方案，不自动应用。',{...request,baseRevision:rev,ops:z.array(buildOperationSchema).min(1).max(20)}],
@@ -28,22 +34,30 @@ const definitions=[
  ['build_undo','撤销自己的建设变更；后续依赖会明确报错。',{...request,changeId:id}],
 
 ];
-export const TOOL_DEFINITIONS=definitions.map(([name,description,shape])=>({name,description,schema:obj(shape)}));
-export function createToolCaller(service,{resolvePrincipal,extensions={}}={}){
- return async(name,input)=>{const def=TOOL_DEFINITIONS.find(d=>d.name===name);if(!def)throw Error('UNKNOWN_TOOL');const a=def.schema.parse(input),p=await resolvePrincipal(),worldId=selectAuthorizedWorld(p,a.worldId,service.clock());
+const toolDefinitions=definitions.map(([name,description,shape])=>({name,description,schema:obj(shape)}));
+const advancedActionNames=new Set(['actor_maneuver','actor_jump']);
+export function mcpTools(advancedActions=false){
+ return advancedActions?toolDefinitions:toolDefinitions.filter(tool=>!advancedActionNames.has(tool.name));
+}
+export function createToolCaller(service,{resolvePrincipal,extensions={},advancedActions=false}={}){
+ const tools=mcpTools(advancedActions);
+ return async(name,input)=>{const def=tools.find(d=>d.name===name);if(!def)throw Error('UNKNOWN_TOOL');const a=def.schema.parse(input),p=await resolvePrincipal(),worldId=selectAuthorizedWorld(p,a.worldId,service.clock());
  const snap=()=>service.getSnapshot(p,worldId),command=(kind,payload)=>service.execute(p,{worldId,requestId:a.requestId,kind,payload});
  const action=()=>{const act=snap().actions?.[a.actionId];if(!act||!p.actorIds.includes(act.actorId)||(p.role!=='owner'&&act.subjectId!==p.subjectId))throw Error('UNAUTHORIZED');return act;};
  if(extensions[name])return extensions[name]({principal:p,worldId,args:a,service});
  switch(name){
- case 'world_enter':{const s=projectSnapshot(snap(),p),summary=service.resumeSummary(p,worldId),recovery=summary.snapshotResetRequired?service.snapshotRecovery(p,worldId):null;return {worldId,...summary,...recovery?{recoveryToken:recovery.recoveryToken,recoveryCursor:recovery.recoveryCursor,recoverySnapshot:projectSnapshot(recovery.snapshot,p)}:{},actor:s.actors[0]||null,actors:s.actors,activeActions:Object.values(s.actions).filter(a=>['running','queued'].includes(a.status)),permissions:{scopes:p.scopes,actorIds:p.actorIds},rules:RULES,capabilities:{tools:TOOL_DEFINITIONS.map(t=>t.name),ackEvents:true},nextStep:'先观察目录与场景，再按授权取得控制或预览建设。'};}
- case 'world_observe':{const s=projectSnapshot(snap(),p);if(a.sceneId&&!s.scenes.some(s=>s.sceneId===a.sceneId))throw Error('SCENE_NOT_FOUND');if(a.entityId){const entity=s.entities.find(e=>e.entityId===a.entityId);if(!entity)throw Error('ENTITY_NOT_FOUND');return {worldId,layoutRevision:s.layoutRevision,entity};}if(a.detail==='portals'){if(!a.sceneId)throw Error('SCENE_REQUIRED');return {worldId,sceneId:a.sceneId,slots:listPortalSlots(snap(),a.sceneId)};}if(a.sceneId)return {...s,scenes:s.scenes.filter(s=>s.sceneId===a.sceneId),entities:s.entities.filter(e=>e.sceneId===a.sceneId),actors:s.actors.filter(e=>e.sceneId===a.sceneId)};return s;}
+ case 'world_enter':{const s=projectSnapshot(snap(),p),summary=service.resumeSummary(p,worldId),recovery=summary.snapshotResetRequired?service.snapshotRecovery(p,worldId):null;return {worldId,...summary,...recovery?{recoveryToken:recovery.recoveryToken,recoveryCursor:recovery.recoveryCursor,recoverySnapshot:projectSnapshot(recovery.snapshot,p)}:{},actor:s.actors[0]||null,actors:s.actors,activeActions:Object.values(s.actions).filter(a=>['running','queued'].includes(a.status)),permissions:{scopes:p.scopes,actorIds:p.actorIds},rules:RULES,capabilities:{tools:tools.map(t=>t.name),ackEvents:true,attackSpells:SPELLS.map(({id,label})=>({id,label})),maneuvers:advancedActions?MANEUVERS:SEQUENCE_MANEUVERS,...advancedActions?{spellSlots:SPELLS.map(({id,label,kind,range},index)=>({slot:index+1,id,label,kind,range}))}:{}},nextStep:'先观察目录与场景，再按授权取得控制或预览建设。'};}
+ case 'world_observe':{const s=projectSnapshot(snap(),p);s.combatTargets=combatTargets(s,a.sceneId);if(a.sceneId&&!s.scenes.some(s=>s.sceneId===a.sceneId))throw Error('SCENE_NOT_FOUND');if(a.entityId){const entity=s.entities.find(e=>e.entityId===a.entityId);if(!entity)throw Error('ENTITY_NOT_FOUND');return {worldId,layoutRevision:s.layoutRevision,entity};}if(a.detail==='portals'){if(!a.sceneId)throw Error('SCENE_REQUIRED');return {worldId,sceneId:a.sceneId,slots:listPortalSlots(snap(),a.sceneId)};}if(a.sceneId)return {...s,scenes:s.scenes.filter(s=>s.sceneId===a.sceneId),entities:s.entities.filter(e=>e.sceneId===a.sceneId),actors:s.actors.filter(e=>e.sceneId===a.sceneId)};return s;}
  case 'world_get_events':return service.getEvents(p,{worldId,afterCursor:a.afterCursor||0,limit:a.limit||100});
  case 'world_ack_events':return service.ackEvents(p,{worldId,cursor:a.cursor,requestId:a.requestId,recoveryToken:a.recoveryToken});
  case 'catalog_list':{const c=catalog();return {worldId,...a.category==='assets'?{}:{templates:c.templates.filter(t=>!a.sceneKind||t.kind===a.sceneKind)},...a.category==='templates'?{}:{assets:c.assets.filter(t=>!a.sceneKind||t.sceneKinds.includes(a.sceneKind))}};}
  case 'layout_suggest':return {worldId,...suggestLayout(snap(),a)};
  case 'actor_take_control':return command('control.acquire',{actorId:a.actorId});
  case 'actor_release_control':return command('control.release',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion});
- case 'actor_move':return command('action.submit',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,kind:'move',target:a.target});
+ case 'actor_move':return command('action.submit',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,kind:'move',target:a.target,...a.gait?{gait:a.gait}:{}});
+ case 'actor_maneuver':return command('action.submit',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,kind:'maneuver',maneuver:a.maneuver,...a.heading!==undefined?{heading:a.heading}:{},...a.gait?{gait:a.gait}:{},...a.slot!==undefined?{slot:a.slot}:{},...a.groundPosition?{groundPosition:a.groundPosition}:{}});
+ case 'actor_run_sequence':return command('action.task',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,plan:{kind:'sequence',target:a.target,maneuvers:a.maneuvers}});
+ case 'actor_attack_target':return command('action.task',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,plan:{kind:'attack',targetId:a.targetId,continuous:a.continuous,spell:a.spell}});
  case 'actor_jump':return command('action.submit',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,kind:'jump',target:a.target});
  case 'actor_interact':return command('action.submit',{actorId:a.actorId,leaseId:a.leaseId,leaseVersion:a.leaseVersion,kind:a.verb,...a.targetId?{target:{entityId:a.targetId,anchorId:'approach'}}:{}});
  case 'action_get':return {worldId,...action()};

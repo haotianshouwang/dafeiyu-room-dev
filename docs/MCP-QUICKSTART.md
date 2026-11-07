@@ -1,6 +1,6 @@
 # MCP 对接手册
 
-适用版本：2026-11-04 的项目实现。需要 Node.js 22.13+，推荐 Node.js 24。客户端以实时 `tools/list` 的参数定义为准；新增家具后应刷新工具定义与目录。
+适用范围为当前公开版。需要 Node.js 22.13+，推荐 Node.js 24。客户端以实时 `tools/list` 的参数定义为准；新增家具后应刷新工具定义与目录。
 
 ## 1. 从地址开始连接
 
@@ -9,7 +9,7 @@ npm ci
 npm run dev
 ```
 
-打开 `http://127.0.0.1:5200/`，点击右上角「连接智能体 → 复制地址」。默认 MCP 地址为：
+打开 `http://127.0.0.1:5200/`，点击右上角「设置 → 连接智能体 → 生成连接 JSON」，复制后可直接用于支持 HTTP MCP 的客户端。使用 OAuth 的客户端也可以手动填入默认 MCP 地址：
 
 ```text
 http://127.0.0.1:5200/mcp
@@ -17,7 +17,7 @@ http://127.0.0.1:5200/mcp
 
 将它添加到支持 **Streamable HTTP + OAuth** 的 MCP 客户端。客户端发现授权方式、打开授权页，由主人确认权限。若授权页没有主人会话，先在同一浏览器打开游戏，再返回授权页。
 
-本机游戏页面自动进入主人会话，不再使用游戏配对码；标准 OAuth 授权码、PKCE 和同意页面仍然存在。复制地址不包含凭证，也不创建新角色、不重置存档。
+本机游戏页面自动进入主人会话，不再使用游戏配对码；标准 OAuth 授权码、PKCE 和同意页面仍然存在。使用 OAuth 时，MCP 地址本身不包含凭证。
 
 开发时 5200 是入口，5201 是内部 API；不要把 5201 配成 MCP 地址。生产运行使用 `npm run build` 后 `npm start`；`npm run preview` 不是完整后端服务。
 
@@ -26,7 +26,7 @@ http://127.0.0.1:5200/mcp
 | 权限 | 用途 |
 | --- | --- |
 | `world:read` | 观察世界、读取目录和事件，基础必需权限 |
-| `actor:control` | 取得角色租约、移动和交互 |
+| `actor:control` | 取得角色租约、移动、交互和战斗任务 |
 | `build:write` | 建设预览、应用与撤销 |
 | `audio:play` | 可选，播放调用方已生成的音频 |
 
@@ -210,7 +210,7 @@ npm run mcp:stdio -- --config /secure/world-mcp.json
 
 ## 11. 可选音频与远程部署
 
-音频仅播放调用方已经生成的 MP3、WAV 或 OGG，需 `audio:play` 单独授权，并在网页点击「开启声音」。`audio_play` 接收 `audioBase64`、`mimeType` 和 `requestId`，最多 4 MiB、60 秒；不接受 URL 或本机文件路径。
+音频仅播放调用方已经生成的 MP3、WAV 或 OGG，需 `audio:play` 单独授权。游戏静音时，可在「设置」里点击「开启声音」。`audio_play` 接收 `audioBase64`、`mimeType` 和 `requestId`，最多 4 MiB、60 秒；不接受 URL 或本机文件路径。
 
 用 `audio_get_status {playbackId}` 查回执，`audio_stop {requestId, playbackId}` 停止。网页 `started`/`finished` 及 `delivered_not_heard` 不能证明人听见。音频只在内存短暂保存，不进入世界存档。没有录音、ASR、TTS 或本地语音模型。
 
@@ -221,7 +221,25 @@ npm run mcp:stdio -- --config /secure/world-mcp.json
 有用户自带本地素材时，可安装 `town-demo`（模板 `local_author_town_v1`）与 `beach-demo`。公开初始世界仅有四个免费场景，不包含私有素材或作者布局。旧手建海边经用户明确迁移后不会自动恢复。
 
 - 先 `world_observe` 获取实际场景、模板及地标。Town 地标包括 square、shops、bridge、upper、coast、pier；支持 `actor_move` 的 `target: {sceneId:"town-demo", landmarkId:"bridge"}`，或 `groundPosition:[x,z]` 自动解析真实高度。
-- `actor_jump` 使用控制租约，支持原地或1.6米以内落点；用 `action_get` 等待终态，水中不能起跳。
 - 普通场景100物件，本地Town按模板 `maxEntities:1000` 校验；213个模型在目录中，实例专用隐藏类型只用于保留/编辑原摆设。
 - Town 全774原网格逐步加载并完整保留，不随镜头距离隐藏细节；离开场景再释放。服务器导航不依赖加载进度。
 - 原地形、桥面和阶梯固定。原摆设可编辑，预览自动按共享地面吸附。陆地/水面切换、桥侧限制与浏览器操作一致。
+
+### 角色控制
+
+`actor_move` 可选 `gait: "sprint"`。默认 `walk`，支持目标坐标、地标和跨场景寻路。主人移动可以接管角色，停手或动作完成 10 秒后让出控制权。
+
+默认开放到点执行和自动攻击。直接招式、跳跃和指定落点施法留作[高级动作接口](MCP-ADVANCED-ACTIONS.md)。
+
+### 使用授权密钥连接
+
+在游戏设置的「连接智能体」面板里，填写接入的 agent 名称后点击「生成连接 JSON」。主机会同时签发一条有效期 30 天的授权和密钥。点击「复制连接 JSON」可获得含 `url` 和 `headers` 的单个 HTTP MCP 连接配置，无需客户端先走 OAuth。已有授权也可以点「生成密钥」后复制连接 JSON，或单独复制密钥到客户端的 Bearer Token 或 API Key 栏。HTTP 客户端使用 `Authorization: Bearer <密钥>`。地址保持原来的 `/mcp`。有效授权的「查看 JSON」可以再次展开和复制，旧版仅保存哈希的密钥需要更换一次。
+
+密钥继承该授权的权限和到期时间。更换密钥会立即使旧密钥失效，撤销授权会使该授权下的密钥和 OAuth 凭证一起失效。
+
+### 让游戏自己跑位和瞄准
+
+下面两种任务使用同一套角色租约，返回的 `actionId` 可用 `action_get` 查询或用 `action_cancel` 取消。主人移动也可以接管。
+
+- `actor_run_sequence` 接收 `target: { "sceneId": "yard", "groundPosition": [10, 6.1] }` 和 `maneuvers: ["roll", "doubleJump"]`。游戏先冲刺到指定位置，再依次执行招式。结果列出已经做完的动作。
+- 先用 `world_observe` 查看 `combatTargets`，再用 `actor_attack_target` 提交 `targetId`，例如 `yard-dummy-2`。游戏自己找可达站位并瞄准，默认轮换射程内且冷却结束的魔法。也可传 `spell: "frost"` 指定寒冰长枪，其他技能名见 `world_enter.capabilities.attackSpells`。指定技能时，游戏会为该技能找站位并等待冷却。默认命中一次就结束，显式传 `continuous: true` 才会持续攻击，直到取消或租约结束。结果包含命中数、总伤害和最后一次命中。当前可攻击目标是院子里的三个训练木桩。

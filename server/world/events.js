@@ -2,6 +2,10 @@ export function appendEvent(db,{worldId,kind,subjectId,changeId,data,now=Date.no
  if(typeof kind!=='string'||!kind.length)throw Error('INVALID_EVENT');
  return Number(db.prepare('INSERT INTO events(world_id,kind,subject_id,change_id,created_at,data) VALUES(?,?,?,?,?,?)').run(worldId,kind,subjectId,changeId,now,JSON.stringify(data)).lastInsertRowid);
 }
+export function readLatestCursor(db,worldId){
+ return Number(db.prepare('SELECT COALESCE(MAX(cursor),0) AS cursor FROM events WHERE world_id=?').get(worldId).cursor);
+}
+
 export function readEvents(db,{worldId,afterCursor=0,limit=100}){
  if(!Number.isSafeInteger(afterCursor)||afterCursor<0||!Number.isSafeInteger(limit)||limit<1||limit>500)throw Error('INVALID_CURSOR_OR_LIMIT');
  // Retired chat records stay private; the world event log contains no chat delivery.

@@ -35,6 +35,10 @@ THE SOFTWARE.
 
 ---
 
+### Polyfork 精选模型 · CC BY 4.0
+
+公开仓库分发 `resources/polyfork/` 内的精选网格。缩略图由本项目用这些网格本机渲染。每个资产的作者和来源见 [Polyfork 署名](resources/polyfork/CREDITS.md)，许可见 [Polyfork 许可说明](resources/polyfork/LICENSE.md)。本机全量库由使用者自行管理。
+
 ## 仅在开发/构建/测试阶段使用（不进入成品）
 
 | 组件 | 版本 | 许可证 | 用途 |
@@ -58,7 +62,7 @@ THE SOFTWARE.
 
 项目自身源码及作者有权授权的 `resources/character/` 资源、项目截图采用根目录 LICENSE 中的 MIT 许可，允许使用、修改、分发及商用，须保留版权和许可文本。第三方依赖保留原许可。
 
-人物模型包含付费 Meshy 服务生成内容及破晓手记制作、修复和编辑的源文件，作者署名为「破晓手记」。同时保留腾讯版试验模型与制作说明；授权以项目作者实际拥有的权利为范围。资源清单及 SHA-256 见 `resources/character/manifest.json`。
+公开运行模型 `Dafeiyu.glb` 包含付费 Meshy 服务生成内容，由破晓手记制作、修复和编辑。授权以项目作者实际拥有的权利为范围。资源清单及 SHA-256 见 `resources/character/manifest.json`。
 
 ## 本地后端新增依赖
 
@@ -138,3 +142,17 @@ SQLite 通过 Node.js 内置 `node:sqlite` 调用，不额外分发数据库引�
 以上组件的版权和许可证由 npm 安装包各自 LICENSE 提供；传递依赖以 `package-lock.json` 为准，分别遵循各自声明。
 
 本项目不分发语音合成/识别引擎、模型权重、录音、字体或系统声音。播放用音频由外部智能体提供，临时保留于服务内存，不打包进公开产物；音频提供方负责其内容来源与使用权限。
+
+### LinearAbiltyCastingThreeJS — MIT
+
+冰晶几何、Frost Lance 冰材质、Glacial Crown 冰刃及冻土着色器、Storm Lance 电弧和冲击罩，以及 Nova Beam 光束、螺旋光带与冲击环改编自 [Elemental Sandbox](https://github.com/achrefelouafi/LinearAbiltyCastingThreeJS/tree/97f1de19617e9a2e3af3c8021c8c21c8f58b40f3)。完整版权声明和许可随构建分发，见 [elemental-sandbox.txt](public/licenses/elemental-sandbox.txt)。
+
+这些技能使用的 Simplex 噪声源自 [webgl-noise](https://github.com/ashima/webgl-noise/blob/master/LICENSE)，许可见 [webgl-noise.txt](public/licenses/webgl-noise.txt)。
+
+### Doomsday Laser Cannon Sound Effect — CC0
+
+4 号技能使用 TAD 的短版素材，经剪辑、叠加和淡入淡出处理。[OpenGameArt 原始素材](https://opengameart.org/content/doomsday-laser-cannon-sound-effect) · [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
+
+### 跑步及进食音效 — CC0
+
+跑步使用 Fantozzi 的草沙地与石地左右脚采样。进食使用 AntumDeluge 的 Apple Bite（原录音见素材页）与 StarNinjas 的 7 Eating Crunches，均做了剪辑、滤波和淡入淡出。[Fantozzi 脚步](https://opengameart.org/content/fantozzis-footsteps-grasssand-stone) · [Apple Bite](https://opengameart.org/node/132358) · [7 Eating Crunches](https://opengameart.org/content/7-eating-crunches)

@@ -52,3 +52,20 @@ test('partial author scene loss merges and persists cached scene IDs across inde
  const launch=()=>JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',`import{buildServer}from${JSON.stringify(new URL('../server/app.js',import.meta.url).href)};import{getTemplate}from${JSON.stringify(new URL('../shared/world/templates.js',import.meta.url).href)};const a=await buildServer({databasePath:${JSON.stringify(join(dir,'save.sqlite'))},localAssetDir:${JSON.stringify(dir)}});const m=(await a.inject('/api/local-assets/manifest')).json();console.log(JSON.stringify({ids:m.authorScenes.map(s=>s.id).sort(),town:getTemplate('local_restore_town').version,beach:getTemplate('local_restore_beach').version}));await a.close();`],{encoding:'utf8'}));
  try{assert.equal(launch().town,1);rmSync(join(dir,'Demo_Town.json'));const beach=JSON.parse((await import('node:fs')).readFileSync(join(dir,'Demo_Beach.json')));beach.template.version=2;writeFileSync(join(dir,'Demo_Beach.json'),JSON.stringify(beach));const partial=launch();assert.deepEqual(partial.ids,['Demo_Beach','Demo_Town']);assert.equal(partial.beach,2,'disk wins');rmSync(join(dir,'Demo_Beach.json'));assert.deepEqual(launch(),partial,'merged cache survives a second independent process');}finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+test('polyfork local assets register with new categories and serve under pf- prefix',async()=>{
+ const pf={type:'pf-cueca-musician-d71a2e',name:'Cueca Musician',category:'Characters',file:'models/pf-cueca-musician-d71a2e.glb',dimensions:[1.6,1.7,.9]};
+ registerLocalAssets({version:1,assets:[pf]});
+ const entry=getCatalogEntry(pf.type);assert.equal(entry.category,'角色');assert.equal(entry.label,'Cueca Musician');assert.equal(entry.footprint.width,1.6);
+ const {mkdtempSync,mkdirSync,writeFileSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {buildServer}=await import('../server/app.js');
+ const dir=mkdtempSync(join(tmpdir(),'pf-assets-test-'));mkdirSync(join(dir,'models'));mkdirSync(join(dir,'thumbnails'));
+ writeFileSync(join(dir,pf.file),Buffer.alloc(32));writeFileSync(join(dir,'thumbnails/pf-cueca-musician-d71a2e.png'),Buffer.from([0x89,0x50,0x4e,0x47]));
+ writeFileSync(join(dir,'manifest.json'),JSON.stringify({version:1,assets:[{...pf,thumbnail:'thumbnails/pf-cueca-musician-d71a2e.png'}]}));
+ let app;
+ try{app=await buildServer({databasePath:join(dir,'test.sqlite'),localAssetDir:dir});
+  const manifest=(await app.inject('/api/local-assets/manifest')).json();assert.equal(manifest.assets.length,1);assert.equal(manifest.assets[0].thumbnailURL,'/api/local-assets/thumbnails/pf-cueca-musician-d71a2e.png');
+  assert.equal((await app.inject('/api/local-assets/'+pf.file)).statusCode,200);
+  assert.equal((await app.inject('/api/local-assets/thumbnails/pf-cueca-musician-d71a2e.png')).statusCode,200);
+  assert.equal((await app.inject('/api/local-assets/models/pf-missing.glb')).statusCode,404);
+ }finally{await app?.close();rmSync(dir,{recursive:true,force:true});}
+});

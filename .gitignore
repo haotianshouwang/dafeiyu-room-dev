@@ -29,6 +29,9 @@ docs/*
 !docs/MCP-COMPATIBILITY.md
 !docs/WORLD-SAVES.md
 !docs/SELF-TEST.md
+!docs/LOCAL-ASSETS.md
+!docs/MCP-ADVANCED-ACTIONS.md
+!docs/RELEASING.md
 !docs/screenshots/
 
 # Local database and personal saves
@@ -40,10 +43,26 @@ data/
 
 # Local implementation reports and scratch artifacts
 .superpowers/
+# Locally installed agent skills (tooling, not part of the game)
+.dsh/
 
-# Approved redistributable character assets; exact inventory checked by check:public
-!resources/character/models/*.glb
-!resources/character/models/*.blend
+# Desktop client build output (electron-builder)
+release/
+/desktop/
+.electron-builder-cache/
+.electron-cache/
+.build-home/
+# Skill evidence + captures (local, regenerated per pass)
+artifacts/
+# Third-party asset downloads (local, not shipped)
+downloads/
+
+# Approved redistributable character assets; inventory checked by check:public
+/resources/character/models/*
+/resources/character/characters/
+/resources/character/notes/
+!/resources/character/models/Dafeiyu.glb
+!resources/polyfork/glb/*.glb
 # User-supplied Unity packages and derived local content never ship.
 *.unitypackage
 *.fbx
@@ -53,4 +72,21 @@ data/
 
 # Optional local pack jobs, including uploads and rollback copies
 .town-import-jobs/
-!docs/LOCAL-ASSETS.md
+
+# npm 缓存（外置盘内，避免 ~/.npm 权限问题）
+.npm-cache/
+
+# Local npm settings and author reference images
+/.npmrc
+/大肥鱼正面
+/大肥鱼正面.png
+/大肥鱼侧面.png
+/大肥鱼背面.png
+/鲸娘女仆三视图设定稿.png
+/鲸娘角色3D建模设定图.png
+
+# Credentials, including vault keys outside the default data directory
+*.key
+*.pem
+*.p12
+*.pfx

@@ -1,11 +1,13 @@
 import {makeYardGarden, protectFarmSpace} from './yard-garden.js';
 import { makePoolSlide } from './pool-slide.js';
+import { buildYardTraining } from './yard-training.js';
 import { registerSceneFurniture } from './props.js';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { P } from '../core/palette.js';
 import { clay, glow } from '../core/materials.js';
 import { tex } from '../core/textures.js';
+import { getTemplate } from '../../shared/world/templates.js';
 
 const rbox = (w, h, d, r = 0.04, s = 3) => new RoundedBoxGeometry(w, h, d, s, r);
 const setShadow = (m, cast = true) => { m.castShadow = cast; m.receiveShadow = true; return m; };
@@ -42,13 +44,15 @@ function plasterTextureLocal({ size = 512 } = {}) {
 
 export function buildYard() {
   const group = new THREE.Group();
-  const X0 = -8.9, X1 = 8.9, Z0 = -8.1, Z1 = 8.1;
+  const bounds = getTemplate('courtyard_v1').bounds;
+  const X0 = bounds.x0 - 0.4, X1 = bounds.x1 + 0.25;
+  const Z0 = bounds.z0 - 0.25, Z1 = bounds.z1 + 0.25;
   const cx = (X0 + X1) / 2, cz = (Z0 + Z1) / 2;
   const W = X1 - X0, D = Z1 - Z0;
   const wallX = X0 + 0.45;                 // 房子外墙内表面
 
   /* ---------- 地面 ---------- */
-  const grassTex = tex(grassTexture(), { repeat: [6.4, 6.4], aniso: 12 });
+  const grassTex = tex(grassTexture(), { repeat: [W / 2.8, D / 2.55], aniso: 12 });
   const grassMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.96, metalness: 0, envMapIntensity: 0.3, color: 0xf0f2da });
   const grass = new THREE.Mesh(new THREE.PlaneGeometry(W, D), grassMat);
   grass.rotation.x = -Math.PI / 2;
@@ -283,7 +287,7 @@ export function buildYard() {
 
   // 游泳池
   const poolStart = group.children.length;
-  const POOL = { x0: X1 - 5.8, x1: X1 - 1.0, z0: Z0 + 1.0, z1: Z0 + 4.4 };
+  const POOL = { x0: 3.1, x1: 7.9, z0: -7.1, z1: -3.7 };
   const poolCx = (POOL.x0 + POOL.x1) / 2, poolCz = (POOL.z0 + POOL.z1) / 2;
   const poolW = POOL.x1 - POOL.x0, poolD = POOL.z1 - POOL.z0;
 
@@ -448,7 +452,7 @@ export function buildYard() {
         plot.add(furrow);
       }
       plot.position.set(wallX + 1.1 + col * (plotSize + plotGap), 0,
-        Z0 + 1.1 + row * (plotSize + plotGap));
+        -7 + row * (plotSize + plotGap));
       farm.add(plot);
     }
   }
@@ -461,7 +465,7 @@ export function buildYard() {
   const flowerStart=group.children.length;
   const flowerColors = [0xf6a9c0, 0xffd479, 0xa9c6f6, 0xf2a08a];
   for (let bed = 0; bed < 3; bed++) {
-    const bx = -3.6 + bed * 2.5, bz = Z1 - 0.9;
+    const bx = -3.6 + bed * 2.5, bz = 7.2;
     const soil = setShadow(new THREE.Mesh(rbox(1.0, 0.12, 0.5, 0.04, 3), clay(0x6a4d38, { roughness: 1 })));
     soil.position.set(bx, 0.06, bz); group.add(soil);
     for (let i = 0; i < 7; i++) {
@@ -559,18 +563,26 @@ export function buildYard() {
   ff.frustumCulled = false;
   group.add(ff);
 
-  const garden=makeYardGarden();group.add(garden);
+  const garden = makeYardGarden({ placements: [
+    [-6.7,4.7], [-6.7,-1.0], [.3,-6.9],
+    [-5.2,Z1-1.2], [2,Z1-1.1], [8,Z1-1.1], [14,Z1-1.3], [20,Z1-1.2],
+    [X1-1.1,8], [X1-1.1,2.4], [X1-1.1,-3.8], [14,Z0+1.2],
+  ] });
+  group.add(garden);
+  const training = buildYardTraining(group);
 
   // 院子光照：黄昏侧逆光（暖）+ 天空冷补光
   const dusk = new THREE.DirectionalLight(0xffc28a, 2.6);
-  dusk.position.set(9, 9.5, -6);
+  dusk.position.set(cx + 9, 9.5, cz - 6);
+  dusk.target.position.set(cx, 0, cz);
   dusk.castShadow = true;
   dusk.shadow.mapSize.set(2048, 2048);
-  dusk.shadow.camera.left = -14; dusk.shadow.camera.right = 14;
-  dusk.shadow.camera.top = 14; dusk.shadow.camera.bottom = -14;
+  const shadowExtent = Math.hypot(W, D) / 2;
+  dusk.shadow.camera.left = -shadowExtent; dusk.shadow.camera.right = shadowExtent;
+  dusk.shadow.camera.top = shadowExtent; dusk.shadow.camera.bottom = -shadowExtent;
   dusk.shadow.camera.near = 1; dusk.shadow.camera.far = 45;
   dusk.shadow.bias = -0.0006; dusk.shadow.normalBias = 0.03;
-  group.add(dusk);
+  group.add(dusk, dusk.target);
   const sky = new THREE.HemisphereLight(0xbcd3ff, 0x5d6b4a, 1.15);
   group.add(sky);
   const coolFill = new THREE.DirectionalLight(0xa9c4ff, 0.6);
@@ -609,7 +621,7 @@ export function buildYard() {
   }
 
   return {
-    group, update,
+    group, update, training,
     refreshLandscape:()=>protectFarmSpace(group,garden),
     pool: POOL,
     containsWater(position) {
@@ -620,8 +632,8 @@ export function buildYard() {
         return p.x>rect.x0&&p.x<rect.x1&&p.z>rect.z0&&p.z<rect.z1;
       });
     },
-    bounds: { x0: wallX + 0.35, x1: X1 - 0.55, z0: Z0 + 0.55, z1: Z1 - 0.55 },
-    view: { target: new THREE.Vector3(0.55, 1.1, 0.05), zoom: 0.86 },
+    bounds,
+    view: { target: new THREE.Vector3(cx, 1.1, cz), zoom: 0.72 },
     spawn: new THREE.Vector3(wallX + 1.9, 1.12, 0.1),
   };
 }

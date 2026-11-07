@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import * as THREE from 'three';
 import {findPath} from '../shared/world/navigation.js';
 import {damp,clamp} from '../src/core/anim.js';
+import {KickSequence} from '../src/characters/kick-sequence.js';
 
 test('unobstructed keyboard destinations stay on the requested straight line',()=>{
  const snapshot={scenes:[{sceneId:'room',templateId:'cozy_room_v1'}],entities:[]};
@@ -15,6 +16,8 @@ test('externally positioned character plays walk animation without moving itself
  const source=fs.readFileSync(new URL('../src/characters/whaleMaid.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export class WhaleMaid','class WhaleMaid');
  const context={THREE,damp,clamp};vm.createContext(context);vm.runInContext(source+';globalThis.WhaleMaid=WhaleMaid;',context);
  const character=Object.create(context.WhaleMaid.prototype);const played=[];
+ character.kicks=new KickSequence(()=>false);
+ character.punches=new KickSequence(()=>false);
  Object.assign(character,{pos:new THREE.Vector3(),target:new THREE.Vector3(),group:new THREE.Group(),pivot:new THREE.Group(),state:'swim',stateTime:0,heading:0,groundY:0,speedMax:1.4,externalMotion:{moving:true,speed:1.4},play:name=>played.push(name)});
  character.update(1/60,1);assert.equal(played.at(-1),'Walking');assert.equal(character.speed,1.4);assert.deepEqual(character.pos.toArray(),[0,0,0]);
  character.externalMotion={moving:false,speed:0};character.update(1/60,2);assert.equal(played.at(-1),'Idle');
@@ -32,6 +35,8 @@ test('network samples render at an even speed between updates and stop at the la
 function maidFixture(){
  const source=fs.readFileSync(new URL('../src/characters/whaleMaid.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export class WhaleMaid','class WhaleMaid');const context={THREE,damp,clamp};vm.createContext(context);vm.runInContext(source+';globalThis.WhaleMaid=WhaleMaid;',context);
  const character=Object.create(context.WhaleMaid.prototype),played=[];const bones={};for(const key of ['hips','head','upperL','upperR','foreL','foreR','handL','handR','thighL','thighR','shinL','shinR'])bones[key]=new THREE.Bone();bones.hips.position.y=.65;const model=new THREE.Group();model.add(...Object.values(bones));
+ character.kicks=new KickSequence(()=>false);
+ character.punches=new KickSequence(()=>false);
  Object.assign(character,{pos:new THREE.Vector3(),target:new THREE.Vector3(),group:new THREE.Group(),pivot:new THREE.Group(),state:'idle',stateTime:0,heading:0,groundY:0,speedMax:1.4,weightedArms:true,bones,model,idleLifeTime:0,idleLifeBlend:0,hairTime:0,hairSpeed:0,hairHeading:0,play:name=>played.push(name),mixer:{update(){},timeScale:1},seatLegRest:['thighL','thighR','shinL','shinR'].map(key=>({key,bone:bones[key],rest:bones[key].quaternion.clone()}))});character.activityRest=['upperL','upperR','foreL','foreR','handL','handR','head'].map(key=>({bone:bones[key],rest:bones[key].quaternion.clone()}));character.group.add(character.pivot);character.pivot.add(model);return {character,played};
 }
 test('authoritative eating drives eating pose, visible rice bowl and weighted arm motion',async()=>{

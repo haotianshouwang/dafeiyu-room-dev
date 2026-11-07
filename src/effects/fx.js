@@ -16,6 +16,17 @@ const softDot = () => canvasTex((g, s) => {
   g.fillStyle = grd; g.fillRect(0, 0, s, s);
 });
 
+const footDustTex = () => canvasTex((g, s) => {
+  for (const [x, y, r] of [[.38, .54, .31], [.59, .46, .32], [.61, .65, .22], [.43, .32, .22]]) {
+    const cloud = g.createRadialGradient(x * s, y * s, 0, x * s, y * s, r * s);
+    cloud.addColorStop(0, 'rgba(214,191,151,.58)');
+    cloud.addColorStop(.45, 'rgba(200,178,140,.32)');
+    cloud.addColorStop(1, 'rgba(200,178,140,0)');
+    g.fillStyle = cloud;
+    g.fillRect(0, 0, s, s);
+  }
+}, 64);
+
 const heartTex = () => canvasTex((g, s) => {
   g.translate(s / 2, s / 2);
   g.fillStyle = '#ff8fab';
@@ -96,6 +107,12 @@ class SpritePool {
       it.sp.material.opacity = Math.min(1, (1 - k) * 1.6) * it.fade;
     }
   }
+  clear() {
+    for (const item of this.items) {
+      item.life = 0;
+      item.sp.visible = false;
+    }
+  }
 }
 
 export class FX {
@@ -105,6 +122,11 @@ export class FX {
     this.sparklePool = new SpritePool(scene, starTex(), 24, { size: 0.16 });
     this.bubblePool = new SpritePool(scene, bubbleTex(), 40, { size: 0.12, additive: false });
     this.zzzPool = new SpritePool(scene, zTex(), 10, { size: 0.16, additive: false });
+    this.footDustPool = new SpritePool(scene, footDustTex(), 24, { additive: false });
+    this.footPosition = new THREE.Vector3();
+    this.footVelocity = new THREE.Vector3();
+    this.footDistance = 0;
+    this.footSide = 1;
 
     /* 尘埃 */
     const N = 130;
@@ -188,11 +210,50 @@ export class FX {
     this.zzzPool.spawn(pos, { vel: new THREE.Vector3(0.15, 0.28, 0.05), life: 2.4, size: 0.17, fade: 0.75 });
   }
 
+  trackFootsteps(visual, outdoor, onStep) {
+    const [x, y, z] = visual.position;
+    const dx = x - this.footPosition.x, dz = z - this.footPosition.z;
+    this.footPosition.set(x, y, z);
+    const distance = Math.hypot(dx, dz);
+    if (this.footScene !== visual.sceneId || distance > .65) {
+      this.footScene = visual.sceneId;
+      this.footDistance = 0;
+      this.footDustPool.clear();
+      return;
+    }
+    if ((!outdoor && !onStep) || visual.pose !== 'walking' || !visual.moving || visual.grounded === false || visual.crawl) {
+      this.footDistance = 0;
+      return;
+    }
+    if (distance < .001) return;
+    const fast = visual.sprint || visual.speed > 4.2;
+    const stride = fast ? .92 : .60;
+    this.footDistance += distance;
+    if (this.footDistance < stride) return;
+    this.footDistance -= stride;
+    this.footSide *= -1;
+    onStep?.(this.footSide);
+    if (!outdoor) return;
+    const forwardX = dx / distance, forwardZ = dz / distance;
+    const count = fast ? 3 : 2;
+    for (let i = 0; i < count; i++) {
+      const side = this.footSide * .12 + (i - 1) * .065;
+      const behind = .12 + i * .045;
+      this._v.set(x + forwardZ * side - forwardX * behind, y + .035, z - forwardX * side - forwardZ * behind);
+      this.footVelocity.set(-forwardX * .25 + forwardZ * side, .11 + .05 * i, -forwardZ * .25 - forwardX * side);
+      this.footDustPool.spawn(this._v, {
+        vel: this.footVelocity, life: .36 + i * .065,
+        size: (fast ? .29 : .22) + i * .035, fade: fast ? .64 : .53,
+      });
+    }
+  }
+
   update(dt, t) {
     this.heartPool.update(dt);
     this.sparklePool.update(dt);
     this.bubblePool.update(dt);
     this.zzzPool.update(dt);
+    this.footDustPool.update(dt);
 
     // 尘埃漂移
     const attr = this.dustPoints.geometry.attributes.position;

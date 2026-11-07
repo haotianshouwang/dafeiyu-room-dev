@@ -36,11 +36,12 @@ assert.deepEqual([...classified].sort(),Object.keys(FURNITURE).sort(),'each furn
 editor.select(editor.items()[0]);const angle=editor.selected.rotation.y;editor.rotate(Math.PI/12);assert.ok(Math.abs(editor.selected.rotation.y-angle-Math.PI/12)<1e-8);
 console.log('PASS: categories cover all furniture; 15-degree rotation works');
 
-editor.panel={hidden:false};editor.active=true;
-editor.select(editor.items()[0]);assert.equal(editor.panel.hidden,true);
-editor.select(null);assert.equal(editor.panel.hidden,false);
+let placement=false;
+editor.panel={hidden:false,classList:{toggle(_name,value){placement=value;}}};editor.active=true;
+editor.select(editor.items()[0]);assert.equal(editor.panel.hidden,false);assert.equal(placement,true);
+editor.select(null);assert.equal(editor.panel.hidden,false);assert.equal(placement,false);
 editor.active=false;editor.select(null);assert.equal(editor.panel.hidden,true);
-console.log('PASS: selecting furniture hides panel; deselecting restores panel only in edit mode');
+console.log('PASS: selecting furniture switches to a compact panel while editing');
 const previewEditor=Object.assign(Object.create(RoomEditor.prototype),{worldClient:{},registry:{scenes:new Map([['yard',{draft:false}]])},context:{sceneId:'yard',bounds:{x0:-8,x1:8,z0:-8,z1:8}},group:new THREE.Group(),history:[],outline:{visible:false,setFromObject(){}},save(){throw Error('catalog selection must not auto-save before placement');}});
 previewEditor.add('yardPicnicTable');assert.equal(previewEditor.selected.userData.furnitureType,'yardPicnicTable');assert.equal(previewEditor.items().length,1);assert.equal(previewEditor.registry.scenes.get('yard').draft,true);
 console.log('PASS: new picnic table remains an editable preview until explicit placement');

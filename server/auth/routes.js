@@ -17,6 +17,17 @@ export function installAuth(app,db,service,options={}){
  app.post('/api/auth/logout',management((req,reply)=>{const raw=(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('world_owner='))?.slice(12);if(raw)store.remove('session',hash(raw));reply.header('set-cookie','world_owner=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return {status:'logged_out'};}));
  app.get('/api/auth/grants',management(()=>({grants:store.list('grant')})));
  app.post('/api/auth/grants',management(req=>store.create(req.body)));
+ app.post('/api/auth/grants/key',management((req,reply,p)=>{
+  const body=req.body??{};
+  if(typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>key!=='clientName')||typeof body.clientName!=='string')throw Error('INVALID_GRANT');
+  const clientName=body.clientName.trim();
+  if(!clientName)throw Error('CLIENT_NAME_REQUIRED');
+  return reply.code(201).header('cache-control','no-store').send(store.createApiKeyGrant({
+   clientName,worldId:p.worldIds[0],actorIds:p.actorIds,
+  }));
+ }));
+ app.post('/api/auth/grants/:grantId/key',management((req,reply)=>reply.header('cache-control','no-store').send(store.issueApiKey(req.params.grantId))));
+ app.post('/api/auth/grants/:grantId/key/view',management((req,reply)=>reply.header('cache-control','no-store').send(store.readApiKey(req.params.grantId))));
  app.post('/api/auth/grants/:grantId/revoke',management(req=>store.revoke(req.params.grantId)));
  const metadata={issuer,authorization_endpoint:issuer+'/oauth/authorize',token_endpoint:issuer+'/oauth/token',registration_endpoint:issuer+'/oauth/register',revocation_endpoint:issuer+'/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],token_endpoint_auth_methods_supported:['none'],code_challenge_methods_supported:['S256'],scopes_supported:SCOPES};
  app.get('/.well-known/oauth-authorization-server',async()=>metadata);

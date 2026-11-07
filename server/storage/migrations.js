@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {defaultManifest as builtIn,farmPlots} from '../../shared/world/default-manifest.js';
+import {readBundledModels} from '../local-assets.js';
 import {getTemplate} from '../../shared/world/templates.js';
 import {validLayout,normalizeSceneId} from '../../shared/layout.js';
 export {normalizeSceneId} from '../../shared/layout.js';
@@ -10,20 +11,33 @@ export function migrateWorld(db,{defaultManifest=builtIn}={}){
   db.exec(`CREATE TABLE IF NOT EXISTS world_schema(version INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS worlds(world_id TEXT PRIMARY KEY,schema_version INTEGER NOT NULL,layout_revision INTEGER NOT NULL,snapshot TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS command_results(subject_id TEXT NOT NULL,world_id TEXT NOT NULL,request_id TEXT NOT NULL,command TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(subject_id,world_id,request_id));
+   CREATE TABLE IF NOT EXISTS build_history(world_id TEXT NOT NULL,change_id TEXT NOT NULL,record TEXT NOT NULL,PRIMARY KEY(world_id,change_id));
+   CREATE TABLE IF NOT EXISTS movement_receipts(subject_id TEXT NOT NULL,world_id TEXT NOT NULL,request_id TEXT NOT NULL,command TEXT NOT NULL,result TEXT NOT NULL,expires_at INTEGER NOT NULL,PRIMARY KEY(subject_id,world_id,request_id));
+   CREATE INDEX IF NOT EXISTS movement_receipts_expiry ON movement_receipts(expires_at);
    CREATE TABLE IF NOT EXISTS events(cursor INTEGER PRIMARY KEY AUTOINCREMENT,world_id TEXT NOT NULL,kind TEXT NOT NULL,subject_id TEXT,change_id TEXT,created_at INTEGER NOT NULL,data TEXT NOT NULL);
    CREATE INDEX IF NOT EXISTS events_world_cursor ON events(world_id,cursor);`);
   const version=db.prepare('SELECT version FROM world_schema').get()?.version;
   if(version && version!==SCHEMA_VERSION)throw Error('UNSUPPORTED_SCHEMA_VERSION');
+  // This changes internal storage only. The world/API schema remains version 1.
+  const saveHistory=db.prepare('INSERT INTO build_history VALUES(?,?,?)');
+  const saveSnapshot=db.prepare('UPDATE worlds SET snapshot=? WHERE world_id=?');
+  for(const row of db.prepare("SELECT world_id,snapshot FROM worlds WHERE json_type(snapshot,'$.buildChanges') IS NOT NULL").all()){
+   const snapshot=JSON.parse(row.snapshot);
+   for(const [id,record] of Object.entries(snapshot.buildChanges??{}))saveHistory.run(row.world_id,id,JSON.stringify(record));
+   delete snapshot.buildChanges;
+   saveSnapshot.run(JSON.stringify(snapshot),row.world_id);
+  }
   const worldId=defaultManifest.worldId;
   if(db.prepare('SELECT 1 FROM worlds WHERE world_id=?').get(worldId)){db.exec('COMMIT');return {schemaVersion:SCHEMA_VERSION,worldId,imported:false};}
+  readBundledModels(defaultManifest.scenes.flatMap(scene=>scene.entities));
   const hasLegacy=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='layouts'").get();
   const rows=hasLegacy?db.prepare('SELECT * FROM layouts ORDER BY id').all():[];
   const scenes=[],entities=[],warnings=[];
   for(const scene of defaultManifest.scenes){
-   const sceneId=normalizeSceneId(scene.sceneId);getTemplate(scene.templateId);
+   const sceneId=normalizeSceneId(scene.sceneId),template=getTemplate(scene.templateId);
    const row=rows.find(r=>r.id===sceneId)||rows.find(r=>normalizeSceneId(r.id)===sceneId);
    const layout=row?JSON.parse(row.layout):scene.entities;
-   if(!validLayout(layout,sceneId))throw Error(`INVALID_LEGACY_LAYOUT:${sceneId}`);
+   if(!validLayout(layout,sceneId,row?undefined:template.bounds))throw Error(`INVALID_LEGACY_LAYOUT:${sceneId}`);
    scenes.push({sceneId,name:scene.name,templateId:scene.templateId,status:'active',legacyRevision:row?.revision||0});
    layout.forEach((entity,index)=>{
     const entityId=`${sceneId}-${index+1}`;

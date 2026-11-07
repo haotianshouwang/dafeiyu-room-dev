@@ -11,12 +11,12 @@ import {portalEnds,anchor} from '../../shared/world/navigation.js';
 const box=(w,h,d,color)=>new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color,roughness:.85}));
 function shell(template,openSlots){
  const root=new THREE.Group(),b=template.bounds;root.userData.openSlots=[...openSlots];
- const floor=box(b.x1-b.x0,.16,b.z1-b.z0,template.kind==='indoor'?0xd6b799:0x9caf7b);floor.position.y=-.09;floor.receiveShadow=true;root.add(floor);
- for(const slot of template.portalSlots){const alongX=slot.side==='north'||slot.side==='south',length=alongX?b.x1-b.x0:b.z1-b.z0;const height=template.kind==='indoor'?2.7:.48;const opening=openSlots.includes(slot.slotId),width=slot.width;
+ const floor=box(b.x1-b.x0,.16,b.z1-b.z0,template.kind==='indoor'?0xd6b799:0x9caf7b);floor.position.set((b.x0+b.x1)/2,-.09,(b.z0+b.z1)/2);floor.receiveShadow=true;root.add(floor);
+ for(const slot of template.portalSlots){const alongX=slot.side==='north'||slot.side==='south',start=alongX?b.x0:b.z0,end=alongX?b.x1:b.z1;const height=template.kind==='indoor'?2.7:.48;const opening=openSlots.includes(slot.slotId),width=slot.width,center=slot.position[alongX?0:2];
   const add=(span,center,h=height,y=height/2)=>{const wall=box(alongX?span:.16,h,alongX?.16:span,template.kind==='indoor'?0xe8d8c4:0xd6c7ab);wall.position.fromArray(slot.position);wall.position[alongX?'x':'z']=center;wall.position.y=y;wall.castShadow=true;root.add(wall);};
   // Front walls remain low so the fixed isometric camera can see the room.
   const visibleHeight=template.kind==='indoor'&&['south','east'].includes(slot.side)?.24:height;
-  if(opening){const span=(length-width)/2;add(span,-(width+span)/2,visibleHeight,visibleHeight/2);add(span,(width+span)/2,visibleHeight,visibleHeight/2);if(visibleHeight>2.1)add(width,height-2.1,height-(height-2.1)/2);}else add(length,0,visibleHeight,visibleHeight/2);
+  if(opening){const left=center-width/2,right=center+width/2;add(left-start,(start+left)/2,visibleHeight,visibleHeight/2);add(end-right,(right+end)/2,visibleHeight,visibleHeight/2);if(visibleHeight>2.1)add(width,center,height-2.1,height-(height-2.1)/2);}else add(end-start,(start+end)/2,visibleHeight,visibleHeight/2);
  }
  return root;
 }
@@ -28,7 +28,7 @@ export class SceneRegistry {
   const draft=[...this.scenes.values()].some(cfg=>cfg.draft);
   if(!draft&&!this.hadDraft&&this.snapshot&&snapshot.actors?.[0]?.sceneId===this.snapshot.actors?.[0]?.sceneId&&snapshot.scenes===this.snapshot.scenes&&snapshot.entities===this.snapshot.entities&&snapshot.portals===this.snapshot.portals){this.snapshot=snapshot;return this;}
   this.hadDraft=draft;this.snapshot=snapshot;for(const [id,cfg]of this.scenes){const active=!this.lazy||snapshot.actors?.some(a=>a.sceneId===id);if(active&&!cfg.loaded&&typeof this.legacy[id]==='function'){this.scene.remove(cfg.root);this.scenes.delete(id);delete this.contexts[id];}else if(this.lazy&&!active&&!cfg.draft&&(cfg.loaded||cfg.shell)){this.unload(id);}}const present=new Set(snapshot.scenes.map(s=>s.sceneId));for(const [id,cfg] of this.scenes)if(!present.has(id)){cfg.draft=false;this.unload(id);}
-  for(const data of snapshot.scenes){let cfg=this.scenes.get(data.sceneId);const template=getTemplate(data.templateId);if(!cfg){const live=!this.lazy||snapshot.actors?.some(a=>a.sceneId===data.sceneId);const old=live&&typeof this.legacy[data.sceneId]==='function'?this.legacy[data.sceneId]():typeof this.legacy[data.sceneId]==='object'?this.legacy[data.sceneId]:null;const root=old?.root||new THREE.Group(),furniture=old?.furniture||new THREE.Group(),portals=new THREE.Group();if(!old)root.add(furniture);root.add(portals);this.scene.add(root);root.visible=false;cfg={...old,loaded:!!old,root,furniture,portals,bounds:template.bounds,view:old?.view||{target:new THREE.Vector3(0,1,0),zoom:template.kind==='outdoor'?.7:1},spawn:new THREE.Vector3(...template.spawn)};this.scenes.set(data.sceneId,cfg);
+  for(const data of snapshot.scenes){let cfg=this.scenes.get(data.sceneId);const template=getTemplate(data.templateId);if(!cfg){const live=!this.lazy||snapshot.actors?.some(a=>a.sceneId===data.sceneId);const old=live&&typeof this.legacy[data.sceneId]==='function'?this.legacy[data.sceneId]():typeof this.legacy[data.sceneId]==='object'?this.legacy[data.sceneId]:null;const root=old?.root||new THREE.Group(),furniture=old?.furniture||new THREE.Group(),portals=new THREE.Group();if(!old)root.add(furniture);root.add(portals);this.scene.add(root);root.visible=false;cfg={...old,loaded:!!old,root,furniture,portals,bounds:template.bounds,view:old?.view||{target:new THREE.Vector3(0,1,0),zoom:template.templateId==='street_corner_v1'?.58:template.kind==='outdoor'?.7:1},spawn:new THREE.Vector3(...template.spawn)};this.scenes.set(data.sceneId,cfg);
    // Keep scenery and animation objects, adopt furniture roots by occurrence below.
    cfg.unclaimed=furniture.children.filter(o=>o.userData.furnitureType);this.contexts[data.sceneId]={group:furniture,sceneId:data.sceneId,label:({'town-demo':'小镇','beach-demo':'海岛'}[data.sceneId]||data.name),bounds:template.buildBounds,templateId:data.templateId};
   }Object.assign(cfg,{data,template,label:({'town-demo':'小镇','beach-demo':'海岛'}[data.sceneId]||data.name)});const ends=[];for(const portal of snapshot.portals){for(const end of (()=>{const base=portalEnds(snapshot,portal);return [{...base,portalId:portal.portalId||portal.id},...(portal.bidirectional?[{fromSceneId:base.toSceneId,toSceneId:base.fromSceneId,departure:base.landing,landing:base.departure,portalId:portal.portalId||portal.id}]:[])];})())if(end.fromSceneId===data.sceneId)ends.push(end);}
@@ -68,6 +68,11 @@ export class SceneRegistry {
  applyChanges(events){for(const event of events)if(event.snapshot)this.applySnapshot(event.snapshot);}
  unload(id){const cfg=this.scenes.get(id);if(!cfg||cfg.draft)return;cfg.shell?.userData.streaming?.dispose();releaseLocalAssets(cfg.root);const resources=this.pool.retain(cfg.root);cfg.root.removeFromParent();this.pool.release(resources);for(const [key,obj]of this.entities)if(obj.userData.worldEntity?.sceneId===id)this.entities.delete(key);this.scenes.delete(id);delete this.contexts[id];}
  show(sceneId){for(const[id,cfg]of this.scenes)cfg.root.visible=id===sceneId;}
+ bedSleepPosition(actor){
+  const entityId=this.snapshot?.actions?.[actor.actionId]?.entityId;
+  const contact=this.entities.get(entityId)?.getObjectByName('bed-sleep-contact');
+  return contact?.getWorldPosition(new THREE.Vector3());
+ }
  seatOffset(actor){
   const entityId=actor.resting?.entityId||this.snapshot?.actions?.[actor.actionId]?.entityId;
   const object=this.entities.get(entityId),marker=object?.getObjectByName('swing-seat-contact');

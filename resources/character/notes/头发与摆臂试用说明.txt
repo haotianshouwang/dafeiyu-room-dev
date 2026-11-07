@@ -1,6 +1,0 @@
-Whale_Maid_Lively.glb：基于原Meshy修复版的加强摆臂和头发骨骼版本。
-房间预览：http://127.0.0.1:5173/?character=maid-arms&v=lively
-6节头发骨骼（左/右/后各2节）；运行时在动画后叠加有阻尼的弹簧偏移，响应起停和转身。不是布料模拟，也未实现头发碰撞检测；已限制角度，仍可能有轻微穿插和接缝牵扯。
-手臂重新分配并平滑权重，增加步态摆幅。测试实际导出GLB的蒙皮顶点，两相位手部最大差约0.085米；运动样本头发对比无弹簧姿势最大差约0.027米。结果是特定样本的最大位移，不代表所有部件的平均效果或视觉质量。
-验证：node tools/model-repair/test-hair-motion.mjs；MODEL_FILE=Whale_Maid_Lively.glb node tools/model-repair/test-room-adapter.mjs；npm run build。
-保留原文件，当前使用的仍是原Meshy角色，不是腾讯静态版。没有更改移动速度配置。

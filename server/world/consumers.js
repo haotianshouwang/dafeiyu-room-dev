@@ -8,6 +8,7 @@ export function installConsumers(db){db.exec(`
  BEGIN INSERT INTO event_retention VALUES(OLD.world_id,OLD.cursor) ON CONFLICT(world_id) DO UPDATE SET removed_through=MAX(removed_through,excluded.removed_through); END;
  CREATE TABLE IF NOT EXISTS consumer_cursors(subject_id TEXT NOT NULL,world_id TEXT NOT NULL,confirmed_cursor INTEGER NOT NULL DEFAULT 0,delivered_cursor INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(subject_id,world_id));
  CREATE TABLE IF NOT EXISTS consumer_deliveries(subject_id TEXT NOT NULL,world_id TEXT NOT NULL,cursor INTEGER NOT NULL,PRIMARY KEY(subject_id,world_id,cursor));
+ CREATE TABLE IF NOT EXISTS compacted_checkpoints(world_id TEXT NOT NULL,cursor INTEGER NOT NULL,PRIMARY KEY(world_id,cursor));
  CREATE TABLE IF NOT EXISTS consumer_acks(subject_id TEXT NOT NULL,world_id TEXT NOT NULL,request_id TEXT NOT NULL,cursor INTEGER NOT NULL,result TEXT NOT NULL,PRIMARY KEY(subject_id,world_id,request_id));
 `);}
 const visible="kind NOT IN ('owner_voice','owner_message') AND kind NOT LIKE 'voice.%'";
@@ -46,7 +47,7 @@ export function confirmEvents(db,subjectId,{worldId,cursor,requestId,recoveryTok
 }
 export function resumeConsumer(db,subjectId,worldId){
  const state=consumerState(db,subjectId,worldId),rows=db.prepare(`SELECT kind,COUNT(*) count FROM events WHERE world_id=? AND cursor>? AND ${visible} GROUP BY kind`).all(worldId,state.confirmed_cursor);
- const missing=db.prepare('SELECT 1 FROM consumer_deliveries d WHERE subject_id=? AND world_id=? AND cursor>? AND NOT EXISTS(SELECT 1 FROM events e WHERE e.cursor=d.cursor AND e.world_id=d.world_id) LIMIT 1').get(subjectId,worldId,state.confirmed_cursor);
+ const missing=db.prepare('SELECT 1 FROM consumer_deliveries d WHERE subject_id=? AND world_id=? AND cursor>? AND NOT EXISTS(SELECT 1 FROM events e WHERE e.cursor=d.cursor AND e.world_id=d.world_id) AND NOT EXISTS(SELECT 1 FROM compacted_checkpoints c WHERE c.cursor=d.cursor AND c.world_id=d.world_id) LIMIT 1').get(subjectId,worldId,state.confirmed_cursor);
  return {lastConfirmedCursor:state.confirmed_cursor,deliveredCursor:state.delivered_cursor,unreadCounts:{total:rows.reduce((n,r)=>n+r.count,0),byKind:Object.fromEntries(rows.map(r=>[r.kind,r.count]))},snapshotResetRequired:Boolean(missing)||(db.prepare('SELECT removed_through FROM event_retention WHERE world_id=?').get(worldId)?.removed_through||0)>state.confirmed_cursor};
 }
 

@@ -86,5 +86,6 @@ export function createRenderer(container) {
     gradePass.uniforms.uRes.value.set(w, h);
   }
 
-  return { ...state, setScene, resize };
+  // 返回同一份 state，setScene 后 renderPass 才可被外部替换 camera。
+  return Object.assign(state, { setScene, resize });
 }

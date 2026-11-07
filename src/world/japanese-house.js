@@ -20,7 +20,7 @@ function windowFrame(root,y,z){
 }
 export function buildJapaneseHome(){
  const root=new THREE.Group();root.name='japanese-two-storey-home';
- const house=new THREE.Group();house.position.fromArray(STREET_HOME.houseCenter);root.add(house);
+ const house=new THREE.Group();house.name='house-facade';house.position.fromArray(STREET_HOME.houseCenter);house.scale.z=STREET_HOME.facadeScale;root.add(house);
  box(house,2.2,.24,2.85,0x686065,0,.12,0);
  box(house,2.08,1.9,2.7,0xd9c9b3,0,1.17,0);box(house,2.08,1.85,2.7,0xe7e0ca,0,3.04,0);
  for(const xx of [-1.06,1.06])for(const zz of [-1.37,1.37])box(house,.1,3.85,.1,0x6f5548,xx,2.12,zz);
@@ -38,10 +38,14 @@ export function buildJapaneseHome(){
  const porch=new THREE.PointLight(0xffd4a2,6,4,2);porch.position.set(1.5,1.72,0);house.add(porch);
  box(house,.08,.22,.16,0xffd5a0,1.12,1.72,.52,true);
  // Enclosed courtyard with a clear path and the gate open toward the street.
- box(root,1.35,.035,3.15,0x7c836a,-3.39,.01,3.4);
+ const [north,south]=STREET_HOME.courtyardSides;
+ box(root,1.35,.035,south-north-.18,0x7c836a,-3.39,.01,(north+south)/2);
  for(let i=0;i<4;i++)box(root,.24,.035,.65,0xb8b1a1,-3.96+i*.34,.045,3.4);
- for(const z of [1.71,5.11]){box(root,3.7,.72,.18,0xcfc5b2,-4.55,.36,z);box(root,3.76,.08,.24,0x665d5c,-4.55,.76,z);}
- for(const z of [2.275,4.535]){box(root,.18,.72,.95,0xcfc5b2,-2.75,.36,z);box(root,.24,.08,1.01,0x665d5c,-2.75,.76,z);}
+ for(const z of [north,south]){box(root,3.7,.72,.18,0xcfc5b2,-4.55,.36,z);box(root,3.76,.08,.24,0x665d5c,-4.55,.76,z);}
+ for(const [from,to] of [[north+.09,2.75],[4.05,south-.09]]){
+  const z=(from+to)/2,d=to-from;
+  box(root,.18,.72,d,0xcfc5b2,-2.75,.36,z);box(root,.24,.08,d+.06,0x665d5c,-2.75,.76,z);
+ }
  for(const [z,rotation,direction]of [[2.8,-Math.PI/2,1],[4,Math.PI/2,-1]]){
   box(root,.2,1.18,.2,0x77716a,-2.75,.59,z);
   const pivot=new THREE.Group();pivot.name='open-courtyard-gate-leaf';pivot.position.set(-2.75,0,z);pivot.rotation.y=rotation;root.add(pivot);
