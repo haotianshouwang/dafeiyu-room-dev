@@ -1,6 +1,7 @@
 import { FOODS } from '../../shared/world/foods.js';
 
 const ACTION_EFFECTS = {
+ 'battle-countdown': ['battle-countdown', .42],
  kick: ['kick-whoosh', .24],
  'kick-whoosh': ['kick-whoosh', .33],
  'punch-whoosh': ['punch-whoosh', .26],
@@ -8,29 +9,27 @@ const ACTION_EFFECTS = {
  land: ['land', .30],
  'crawl-cloth': ['crawl-cloth', .22],
  slide: ['slide-rustle', .26],
- 'run-grass-left': ['run-grass-left', .58],
- 'run-grass-right': ['run-grass-right', .58],
- 'run-hard-left': ['run-hard-left', .50],
- 'run-hard-right': ['run-hard-right', .50],
+ 'run-grass-left': ['run-grass-left', .24],
+ 'run-grass-right': ['run-grass-right', .24],
+ 'run-hard-left': ['run-hard-left', .20],
+ 'run-hard-right': ['run-hard-right', .20],
  'meal-soft': ['meal-soft', .82],
  'meal-crunch': ['meal-crunch', .78],
- 'spell-cast': ['spell-cast', .45],
- 'spell-frost': ['spell-frost', .66],
- 'spell-storm': ['spell-storm', .66],
- 'spell-meteor': ['spell-meteor', .77],
- 'spell-beam': ['spell-beam', .78],
- 'spell-snare': ['spell-snare', .65],
- 'spell-crown': ['spell-crown', .67],
- 'spell-rift': ['spell-rift', .72],
- 'spell-bloom': ['spell-bloom', .66],
  'spell-wood': ['spell-wood', .48],
 };
-const LOCAL_FOOTSTEP_COUNT = 8;
-const localFootstepUrl = index => `/.cache/local-foley/step-${index}.wav`;
-const LOCAL_MEAL_CHEW_COUNT = 3;
+const SPELL_VOLUMES={frost:.66,storm:.66,meteor:.77,beam:.78,snare:.65,crown:.67,rift:.72,bloom:.66,waterJet:.68};
+for(const [id,volume] of Object.entries(SPELL_VOLUMES)){
+ const name=id==='waterJet'?'water-jet':id;
+ ACTION_EFFECTS[`spell-${id}-release`]=[`spell-${name}-release`,.65];
+ ACTION_EFFECTS[`spell-${id}`]=[`spell-${name}-impact`,volume];
+}
+const FOOTSTEP_COUNT=8;
+const MEAL_CHEW_COUNT=3;
+const CHEW_CUES=['meal-soft','meal-crunch'];
 
 export class LocalSound {
  mealChewIndex=0;
+ footstepIndex=0;
  constructor({AudioClass=globalThis.Audio}={}){this.AudioClass=AudioClass;this.enabled=false;this.music=new AudioClass('/resources/audio/garden-theme.mp3');this.music.loop=true;this.music.volume=.18;this.actionAudio=new Map();this.voiceVersion=0;}
  setEnabled(enabled){
   this.enabled=enabled;
@@ -38,14 +37,10 @@ export class LocalSound {
    this.music.volume=.18;
    void Promise.resolve(this.music.play()).catch(()=>{});
    for(const [name] of Object.values(ACTION_EFFECTS))this.actionClip(name);
-   if(import.meta.env?.DEV){
-    this.localFootstepLoad??=this.loadLocalFootsteps();
-    this.flyingKickVoice();
-    for(const id of Object.keys(FOODS))this.mealVoice(id);
-    for(const cue of ['meal-soft','meal-crunch']){
-     for(let index=0;index<LOCAL_MEAL_CHEW_COUNT;index++)this.mealChew(cue,index);
-    }
-   }
+   this.actionClip('flying-kick-voice');
+   for(const id of Object.keys(FOODS))this.mealVoice(id);
+   for(let i=1;i<=FOOTSTEP_COUNT;i++)this.actionClip(`footstep-${i}`);
+   for(const cue of CHEW_CUES)for(let i=1;i<=MEAL_CHEW_COUNT;i++)this.actionClip(`${cue}-${i}`);
   }else{
    this.voiceVersion++;
    this.music.pause();this.voice?.pause();
@@ -54,40 +49,16 @@ export class LocalSound {
  }
  resume(){if(this.enabled&&this.music.paused)void Promise.resolve(this.music.play()).catch(()=>{});}
  play(kind){if(!this.enabled)return;const names={pet:'pet',eat:'feed',feed:'feed',sleep:'sleep',pool:'pool'};const name=names[kind];if(name)this.playVoice(new this.AudioClass(`/resources/audio/${name}.mp3`),.85);}
- flyingKickVoice(){
-  if(import.meta.env?.DEV)return this.actionClip('flying-kick-voice','/.cache/local-action-voice/chi-wo-yi-jiao.wav');
- }
  mealVoice(foodId){
-  if(import.meta.env?.DEV)return this.actionClip(`meal-voice-${foodId}`,`/.cache/local-meal-voice/${foodId}.wav`);
- }
- mealChew(cue,index){
-  if(import.meta.env?.DEV){
-   const name=`${cue}-${index+1}`;
-   return this.actionClip(`local-${name}`,`/.cache/local-meal-chews/${name}.wav`);
-  }
+  return this.actionClip(`meal-voice-${foodId}`);
  }
  playMealReaction(foodId){
-  if(!import.meta.env?.DEV||!this.enabled||!Object.hasOwn(FOODS,foodId))return;
-  const audio=this.mealVoice(foodId);
-  if(audio.readyState>=2)this.playVoice(audio,.9);
+  if(!this.enabled||!Object.hasOwn(FOODS,foodId))return;
+  this.playVoice(this.mealVoice(foodId),.9);
  }
- async loadLocalFootsteps(){
-  if(!import.meta.env?.DEV)return;
-  try{
-   const response=await fetch(localFootstepUrl(1),{method:'HEAD'});
-   if(!response.ok||!response.headers.get('content-type')?.startsWith('audio/'))return;
-   this.localFootsteps=Array.from({length:LOCAL_FOOTSTEP_COUNT},(_,index)=>{
-    const step=index+1;
-    return this.actionClip(`local-step-${step}`,localFootstepUrl(step));
-   });
-   this.localFootstepIndex=0;
-  }catch{
-   // The bundled footsteps cover clean checkouts and offline development.
-  }
- }
- actionClip(name,url=`/resources/audio/action-${name}.wav`){
+ actionClip(name){
   if(!this.actionAudio.has(name)){
-   const audio=new this.AudioClass(url);
+   const audio=new this.AudioClass(`/resources/audio/action-${name}.wav`);
    audio.preload='auto';
    this.actionAudio.set(name,audio);
   }
@@ -104,22 +75,21 @@ export class LocalSound {
  }
  playAction(cue){
   if(!this.enabled)return;
-  if(import.meta.env?.DEV&&cue==='flying-kick-voice'){
-   const audio=this.flyingKickVoice();
-   if(audio.readyState>=2)this.playVoice(audio,.9);
+  if(cue==='flying-kick-voice'){
+   this.playVoice(this.actionClip(cue),.9);
    return;
   }
   const effect=ACTION_EFFECTS[cue];
   if(effect){
    const [name,volume]=effect;
-   let sample=name.startsWith('run-') && this.localFootsteps?.[this.localFootstepIndex++ % LOCAL_FOOTSTEP_COUNT];
-   if(import.meta.env?.DEV&&(name==='meal-soft'||name==='meal-crunch')){
-    sample=this.mealChew(name,this.mealChewIndex++ % LOCAL_MEAL_CHEW_COUNT);
-   }
-   const local=sample?.readyState>=2;
-   const audio=local ? sample : this.actionClip(name);
+   let sample;
+   const footstep=name.startsWith('run-');
+   if(footstep)sample=this.actionClip(`footstep-${this.footstepIndex++ % FOOTSTEP_COUNT+1}`);
+   if(CHEW_CUES.includes(name))sample=this.actionClip(`${name}-${this.mealChewIndex++ % MEAL_CHEW_COUNT+1}`);
+   const ready=sample?.readyState>=2;
+   const audio=ready?sample:this.actionClip(name);
    audio.currentTime=0;
-   audio.volume=local&&name.startsWith('run-') ? .78 : volume;
+   audio.volume=ready&&footstep ? .25 : volume;
    void Promise.resolve(audio.play()).catch(()=>{});
   }
 
