@@ -275,7 +275,8 @@ export class RoomEditor {
     const dialog=document.createElement('dialog');dialog.className='room-reset-dialog';
     dialog.setAttribute('role','alertdialog');dialog.setAttribute('aria-labelledby','room-reset-title');dialog.setAttribute('aria-describedby','room-reset-warning');
     const source=this.worldClient?'当前游戏版本随附的默认布局':'本次打开游戏时载入的布局';
-    dialog.innerHTML=`<h2 id="room-reset-title">⚠ 危险操作：恢复默认布局</h2><p data-scene></p><div id="room-reset-warning"><strong>当前自定义家具和摆放修改将被替换！</strong><p>恢复到${source}，并在校验通过后覆盖当前场景的数据库存档。其他场景不受影响。</p><p>请先取消并使用「导出布局」备份，不要依赖撤销来恢复。</p></div><label>确认继续，请输入「恢复默认」<input data-ack autocomplete="off" spellcheck="false" placeholder="恢复默认"></label><footer><button data-cancel type="button">取消，保留当前布置</button><button data-confirm type="button" disabled>确认覆盖当前布局</button></footer>`;
+    const forestGate=this.worldClient&&this.context?.sceneId==='yard'?'院子东侧也会接通森林。':'';
+    dialog.innerHTML=`<h2 id="room-reset-title">⚠ 危险操作：恢复默认布局</h2><p data-scene></p><div id="room-reset-warning"><strong>当前自定义家具和摆放修改将被替换！</strong><p>恢复到${source}，并在校验通过后覆盖当前场景的数据库存档。${forestGate}</p><p>请先取消并使用「导出布局」备份，不要依赖撤销来恢复。</p></div><label>确认继续，请输入「恢复默认」<input data-ack autocomplete="off" spellcheck="false" placeholder="恢复默认"></label><footer><button data-cancel type="button">取消，保留当前布置</button><button data-confirm type="button" disabled>确认覆盖当前布局</button></footer>`;
     dialog.addEventListener('keydown',event=>event.stopPropagation());
     dialog.querySelector('[data-scene]').textContent=`操作范围：${this.context?.label||'当前场景'}`;
     document.body.append(dialog);const input=dialog.querySelector('[data-ack]'),confirm=dialog.querySelector('[data-confirm]'),cancel=dialog.querySelector('[data-cancel]');

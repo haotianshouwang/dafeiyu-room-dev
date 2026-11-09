@@ -5,6 +5,7 @@ import {getTemplate} from '../../shared/world/templates.js';
 import {sceneRoute,findPath,nearestFree,invalidateNavigationCache,walkable} from '../../shared/world/navigation.js';
 import {defaultManifest} from '../../shared/world/default-manifest.js';
 import {protectFarm} from './starter.js';
+import {forestConnectionOps} from './forest-connection.js';
 import {validateSpatial,overlapsRect} from './spatial.js';
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const fail=(code,details)=>{const error=Error(code);error.details=details;throw error;};
@@ -49,6 +50,17 @@ function resetScene({snapshot,command,principal,now,emit}){
  const next={...snapshot,entities};
  if(actors.some(actor=>!walkable(next,sceneId,actor.position)&&walkable(snapshot,sceneId,actor.position)))throw Error('ACTOR_BLOCKED');
  if(listPortalSlots(next,sceneId).some(slot=>slot.occupied&&slot.blocked))throw Error('PORTAL_BLOCKED');
+ if(sceneId==='yard'){
+  const ops=forestConnectionOps(next);
+  if(ops.length){
+   checkLocks(next,ops,principal.subjectId,now);
+   const ids=Object.fromEntries(ops.map((op,index)=>[op.ref??`portal-${index}`,randomUUID()]));
+   const connected=simulate(next,ops,ids);
+   snapshot.scenes=connected.scenes;
+   snapshot.portals=connected.portals;
+   snapshot.topologyRevision++;
+  }
+ }
  snapshot.entities=entities;
  snapshot.layoutRevision++;
  emit('build.reset',{sceneId,layoutRevision:snapshot.layoutRevision});
