@@ -64,6 +64,45 @@ test('restoring the courtyard connects the forest already created by fast travel
   assert.equal(sceneRoute(snapshot,'yard','existing-forest').length,1);
  }finally{db.close();}
 });
+test('restoring the world from any scene replaces every built-in layout, including forest furniture',()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  migrateWorld(db);
+  const service=new WorldService(db,{handlers:createBuildHandlers()});
+  service.transactRuntime('default',({snapshot})=>{
+   snapshot.scenes.push(
+    {sceneId:'existing-forest',templateId:'forest_v1',name:'森林',status:'active'},
+    {sceneId:'custom-room',templateId:'cozy_room_v1',name:'自建房间',status:'draft'},
+   );
+   snapshot.actors[0].sceneId='existing-forest';
+   snapshot.actors[0].position=[-29.8,0,0];
+   snapshot.entities.push(
+    {entityId:'forest-prop',sceneId:'existing-forest',type:'yardLantern',position:[-28,0,2],rotation:0,scale:[1,1,1]},
+    {entityId:'custom-prop',sceneId:'custom-room',type:'lamp',position:[1,0,1],rotation:0,scale:[1,1,1]},
+   );
+   for(const {sceneId} of defaultManifest.scenes){
+    const entity=snapshot.entities.find(entity=>entity.sceneId===sceneId&&!entity.protected);
+    entity.position[0]+=.5;
+   }
+  });
+  const owner={subjectId:'owner',role:'owner',worldIds:['default'],scopes:['build:write']};
+  const command={worldId:'default',requestId:'restore-world',kind:'build.resetWorld',payload:{baseRevision:0}};
+  assert.throws(()=>service.execute({...owner,role:'agent'},command),/UNAUTHORIZED/);
+  const result=service.execute(owner,command);
+  assert.deepEqual(service.execute(owner,command),result);
+  const snapshot=service.readSnapshot('default');
+  for(const baseline of defaultManifest.scenes){
+   const layout=snapshot.entities.filter(entity=>entity.sceneId===baseline.sceneId)
+    .map(({type,position,rotation,scale})=>({type,position,rotation,scale}));
+   assert.deepEqual(layout,baseline.entities);
+  }
+  assert.deepEqual(snapshot.scenes.filter(scene=>scene.templateId==='forest_v1').map(scene=>scene.sceneId),['existing-forest']);
+  assert.ok(!snapshot.entities.some(entity=>entity.sceneId==='existing-forest'));
+  assert.ok(snapshot.entities.some(entity=>entity.entityId==='custom-prop'));
+  assert.equal(sceneRoute(snapshot,'yard','existing-forest').length,1);
+  assert.equal(snapshot.layoutRevision,1);
+ }finally{db.close();}
+});
 test('publisher whitelists only layout fields and excludes runtime identity, credentials and actor state',async()=>{
  const {createStarterWorld}=await import('../server/world/starter.js');const scenes=defaultManifest.scenes.map(s=>({...s,status:'active',editLock:{subjectId:'SECRET'},legacyRevision:88}));const snapshot={worldId:'default',scenes,entities:scenes.flatMap(s=>s.entities.map(e=>({...e,sceneId:s.sceneId,entityId:'private-id',subjectId:'SECRET'}))),portals:defaultManifest.portals,actors:[{controller:'SECRET'}],grants:'SECRET',events:'SECRET'};const seed=createStarterWorld(snapshot);assert.equal(seed.scenes.length,4);assert.ok(!JSON.stringify(seed).includes('SECRET'));assert.ok(!JSON.stringify(seed).includes('private-id'));assert.equal(seed.actors,undefined);assert.equal(seed.scenes[0].editLock,undefined);assert.equal(seed.scenes[0].entities[0].sceneId,undefined);
 });
