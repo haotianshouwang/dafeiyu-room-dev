@@ -4,7 +4,7 @@
 
 **作者 / 抖音：破晓手记**
 
-![大肥鱼在院子里施放冰晶王冠，三个训练木桩同时跳出伤害数字](docs/screenshots/cover.webp)
+![大肥鱼和伙伴白泽走进林间高草](docs/screenshots/forest-grass.webp)
 
 ## 开始游戏
 
@@ -50,13 +50,17 @@ npm run desktop:dev
 
 白泽会跟着大肥鱼沿林间小路和石阶上山。山顶湖可以游泳，按 C 潜水，再按 C 或空格浮出水面。沿湖边继续走，可以到后山的开阔平台。
 
+![大肥鱼和伙伴白泽来到森林的山顶湖](docs/screenshots/forest-lake.webp)
+
 ### 穿过高草，进入回合制对战
 
-在森林的大片高草里走动，有机会遇到野生白泽。遇敌后会切入独立的对战画面，大肥鱼站后排，伙伴白泽站前排，对面可能同时出现多只野生白泽。
+从森林入口沿路往里走，踏进路边的大片高草，在草里多走几步就有机会遇到野生白泽。遇敌后会切入独立的对战画面，大肥鱼站后排，伙伴白泽站前排，对面可能同时出现多只野生白泽。
 
 1. 双方就位后开始读秒，每回合有 **30 秒**。点击敌人的模型或名牌，打开大肥鱼的技能菜单。
 2. 鼠标移到技能上，敌人脚下会亮起对应的单体、T 字范围或全体目标。选好大肥鱼的技能后，再给白泽选招，并点击敌人确认目标。
 3. 指令选齐或倒计时结束后结算回合。超时还没收到指令的单位本回合待命。击败敌方后会自动回到森林，也可以选择逃跑。
+
+![森林对战中的双方站位、回合倒计时和技能选择菜单](docs/screenshots/baize-battle.webp)
 
 ### 探索按键
 
@@ -77,6 +81,8 @@ npm run desktop:dev
 | ![卧室](docs/screenshots/room.webp) | ![客厅](docs/screenshots/living.webp) | ![街角便利店](docs/screenshots/store.webp) |
 | **院子** | **泳池变身** | **家具编辑** |
 | ![院子](docs/screenshots/yard.webp) | ![泳池变身](docs/screenshots/pool.webp) | ![家具编辑](docs/screenshots/editor.webp) |
+
+![大肥鱼在院子里施放冰晶王冠，三个训练木桩同时跳出伤害数字](docs/screenshots/cover.webp)
 
 ## MCP · 带你的智能体来串门
 
