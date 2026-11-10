@@ -40,6 +40,16 @@
         "clip": "HumanSpQuickRollToRun",
         "duration": 1.6
       }
+    ],
+    "pet": [
+      {
+        "clip": "HumanSpForwardJump",
+        "duration": 1.0
+      },
+      {
+        "clip": "HumanSpIdle4",
+        "duration": 1.2
+      }
     ]
   }
 }

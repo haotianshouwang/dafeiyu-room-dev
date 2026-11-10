@@ -111,7 +111,7 @@ export function mountPetSystem({
       <button type="button" data-tab="food" role="tab" aria-selected="false">食物</button>
     </div>
     <div class="pet-body"></div>
-    <p class="pet-foot">抚摸提升羁绊（每小时最多 +10），满 100 可进化；跟随和出战各只能有一只。</p>
+    <p class="pet-foot">点击宠物头可以抚摸（每小时最多 +10），满 100 可进化；跟随和出战各只能有一只。</p>
   </div>`;
   document.body.append(dialog);
   const body = dialog.querySelector('.pet-body');
@@ -141,6 +141,9 @@ export function mountPetSystem({
       onMessage(`${pet.name} 现在不在你身边`);
       return;
     }
+    // 点击头部触发的专属反应动作（由模型配置的 pet 动作槽定义）。
+    avatar.petting = 2.3;
+    if (avatar.model?.chain) avatar.model.chain('pet');
     const result = petPet(state, id, Date.now());
     if (!result.ok) {
       if (result.reason === 'hourly-cap') onMessage(`这一小时已经摸满 ${PET_BOND_HOURLY_CAP} 点了，等会儿再陪${pet.name}玩吧`);
@@ -469,6 +472,11 @@ export function mountPetSystem({
       if (avatar.eating <= 0) finishEating(pet, avatar);
       return;
     }
+    if (avatar.petting > 0) {
+      avatar.petting -= dt;
+      avatar.model.update(dt);
+      return;
+    }
     // 有食物：无论跟随还是待命都先过去吃
     if (food && food.petId === pet.id) {
       const distance = Math.hypot(food.position.x - avatar.root.position.x, food.position.z - avatar.root.position.z);
@@ -612,7 +620,6 @@ export function mountPetSystem({
             <button type="button" class="pet-battle${candidate.battle ? ' active' : ''}" data-mode="battle" aria-pressed="${candidate.battle}">⚔ 出战</button>
           </div>
           <div class="pet-actions">
-            <button type="button" data-action="pet">抚摸</button>
             <button type="button" data-action="evolve" class="primary" ${candidate.readyToEvolve ? '' : 'disabled'}>进化</button>
           </div>
         </article>`;
@@ -666,8 +673,7 @@ export function mountPetSystem({
     }
     if (actionButton && card) {
       const id = card.dataset.petId;
-      if (actionButton.dataset.action === 'pet') petById(id);
-      else if (actionButton.dataset.action === 'evolve') evolve(id);
+      if (actionButton.dataset.action === 'evolve') evolve(id);
       return;
     }
     const foodButton = event.target.closest('button[data-food-id]');
@@ -693,7 +699,13 @@ export function mountPetSystem({
     if (!node) return null;
     const player = getPlayer();
     if (node.position.distanceTo(player.position) > 4.5) return null;
-    for (const [id, avatar] of avatars) if (avatar.root === node) return id;
+    for (const [id, avatar] of avatars) {
+      if (avatar.root !== node) continue;
+      const bounds = new THREE.Box3().setFromObject(avatar.root);
+      const height = Math.max(0.001, bounds.max.y - bounds.min.y);
+      const head = (hits[0].point.y - bounds.min.y) / height >= 0.55;
+      return { id, head };
+    }
     return null;
   }
 
@@ -705,8 +717,10 @@ export function mountPetSystem({
     const moved = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y);
     pointerDown = null;
     if (moved > 8 || isEditing() || isFirstPerson() || isBattle()) return;
-    const id = raycastPet(event.clientX, event.clientY);
-    if (id) petById(id);
+    const target = raycastPet(event.clientX, event.clientY);
+    if (!target) return;
+    if (!target.head) { onMessage('摸摸宠物的头才能增加羁绊'); return; }
+    petById(target.id);
   });
 
   updateEntryCount();
@@ -718,12 +732,18 @@ export function mountPetSystem({
     hasFollowingPets: () => followingPets(state).length > 0,
     getBattlePet: () => petBattlePet(state),
     isReady: () => ready,
-    _debug: () => [...avatars.entries()].map(([id, avatar]) => ({
-      id,
-      visible: avatar.root.visible,
-      pos: avatar.root.position.toArray().map((value) => +value.toFixed(2)),
-      ai: avatar.ai ? { target: avatar.ai.target, sprint: avatar.ai.sprint, timer: +avatar.ai.timer.toFixed(2), busy: avatar.model.busy, clip: avatar.model.currentClip } : null,
-    })),
+    _debug: () => [...avatars.entries()].map(([id, avatar]) => {
+      const bounds = new THREE.Box3().setFromObject(avatar.root);
+      return {
+        id,
+        visible: avatar.root.visible,
+        pos: avatar.root.position.toArray().map((value) => +value.toFixed(2)),
+        height: +(bounds.max.y - bounds.min.y).toFixed(2),
+        petting: +(avatar.petting ?? 0).toFixed(2),
+        clip: avatar.model?.currentClip ?? null,
+        ai: avatar.ai ? { target: avatar.ai.target, sprint: avatar.ai.sprint, timer: +avatar.ai.timer.toFixed(2), busy: avatar.model.busy, clip: avatar.model.currentClip } : null,
+      };
+    }),
     placeFood,
     _forcePoop: (petId) => {
       const snapshot = getSnapshot();

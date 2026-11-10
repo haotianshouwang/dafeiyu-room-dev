@@ -20,7 +20,7 @@ test('每个宠物模型都有独立的配置文件', () => {
 });
 
 test('模型配置包含固定动作槽：攻击/快跑/慢跑/被攻击/死亡/院子待机动作链', () => {
-  const required = ['idle', 'walk', 'runSlow', 'runFast', 'attack', 'hit', 'death', 'yardIdle'];
+  const required = ['idle', 'walk', 'runSlow', 'runFast', 'attack', 'hit', 'death', 'pet', 'yardIdle'];
   for (const config of configs) {
     for (const slot of required) assert.ok(slot in config.animations, `${config.id} missing ${slot}`);
     assert.equal(typeof config.animations.idle, 'string');
@@ -29,6 +29,7 @@ test('模型配置包含固定动作槽：攻击/快跑/慢跑/被攻击/死亡/
     assert.equal(typeof config.animations.attack, 'string');
     assert.equal(typeof config.animations.hit, 'string');
     assert.equal(typeof config.animations.death, 'string');
+    assert.ok(typeof config.animations.pet === 'string' || Array.isArray(config.animations.pet), `${config.id} pet should be an action`);
     assert.ok(Array.isArray(config.animations.yardIdle), `${config.id} yardIdle should be an action chain`);
     assert.ok(config.animations.yardIdle.length >= 2);
     for (const step of config.animations.yardIdle) {

@@ -37,6 +37,16 @@
         "clip": "CanineEating2",
         "duration": 2.2
       }
+    ],
+    "pet": [
+      {
+        "clip": "CanineJumpRun",
+        "duration": 1.0
+      },
+      {
+        "clip": "CanineIdle",
+        "duration": 1.2
+      }
     ]
   }
 }
