@@ -83,8 +83,8 @@ export function mountPetSystem({
   let food = null;
   let pointerDown = null;
   const poopTimers = new Map();
-  const POOP_MIN_MS = 60_000;
-  const POOP_MAX_MS = 120_000;
+  const POOP_MIN_MS = 240_000;
+  const POOP_MAX_MS = 480_000;
 
   if (!document.getElementById('pet-system-style')) {
     const style = document.createElement('style');
