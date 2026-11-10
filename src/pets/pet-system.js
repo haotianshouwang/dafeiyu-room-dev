@@ -7,7 +7,7 @@ import { FOODS } from '../../shared/world/foods.js';
 import {
   PET_BOND_MAX, PET_BOND_HOURLY_CAP,
   loadPetState, savePetState, getPet, selectPet, setPetMode, toggleBattle,
-  petPet, evolvePet, petBattlePet, setPetHome, followingPets,
+  petPet, evolvePet, petBattlePet, adoptPet, followingPets,
 } from './pet-store.js';
 
 const HOME_SCENE_ID = 'yard';
@@ -50,6 +50,10 @@ const STYLE = `
 .pet-food-grid button:hover{background:#fff1d9;border-color:#b79065}
 .pet-food-grid .emoji{font-size:26px;line-height:1}
 .pet-foot{margin:12px 0 0;font-size:11px;color:#8a7563}
+.pet-empty{color:#78665a;font-size:13px;padding:12px 0;text-align:center}
+.pet-adopt{display:flex;justify-content:center;margin-top:10px}
+.pet-adopt button{padding:8px 14px;border:1px dashed #c9b092;border-radius:11px;background:#fffdf7;color:#5d493b;font:inherit;font-size:13px;cursor:pointer}
+.pet-adopt button:hover{background:#fff1d9;border-color:#b79065}
 `;
 
 function circularLerp(from, to, t) {
@@ -103,7 +107,7 @@ export function mountPetSystem({
       <button type="button" data-tab="food" role="tab" aria-selected="false">食物</button>
     </div>
     <div class="pet-body"></div>
-    <p class="pet-foot">抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，家园待命会待在院子花园里；战斗可独立勾选。</p>
+    <p class="pet-foot">初始只有一只白泽，可在这里继续领养。抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，家园待命会待在院子花园里；战斗可独立勾选。</p>
   </div>`;
   document.body.append(dialog);
   const body = dialog.querySelector('.pet-body');
@@ -324,10 +328,11 @@ export function mountPetSystem({
 
   function updateAvatar(pet, avatar, dt, ctx) {
     const follow = pet.mode === 'follow';
-    // 跟随时跟着玩家；家园待命（以及未勾选的自由宠物）只在花园出现
-    const visible = follow || ctx.sceneId === HOME_SCENE_ID;
+    const standby = pet.mode === 'standby';
+    // 跟随：一直跟着；家园待命：只在院子花园出现；未设置模式的宠物不露面。
+    const visible = follow || (standby && ctx.sceneId === HOME_SCENE_ID);
     if (!visible) { avatar.root.visible = false; avatar.eating = 0; return; }
-    if (!follow && (pet.homeSceneId !== HOME_SCENE_ID || !Array.isArray(pet.homePosition))) {
+    if (standby && (pet.homeSceneId !== HOME_SCENE_ID || !Array.isArray(pet.homePosition))) {
       pet.homeSceneId = HOME_SCENE_ID;
       pet.homePosition = yardHomePosition(pet.id);
       save();
@@ -429,10 +434,22 @@ export function mountPetSystem({
     }
   }
 
+  function adopt() {
+    const pet = adoptPet(state, { mode: 'follow' });
+    if (asset) createAvatar(pet);
+    save();
+    onMessage(`领养了${pet.name}，它开始跟着你了`);
+    render();
+  }
+
   function render() {
     const pet = selectedPet();
     updateEntryCount();
     if (activeTab === 'pets') {
+      if (!state.pets.length) {
+        body.innerHTML = `<p class="pet-empty">还没有宠物。点击下面按钮领养第一只白泽。</p><div class="pet-adopt"><button type="button" data-action="adopt">＋ 领养一只白泽</button></div>`;
+        return;
+      }
       body.innerHTML = `<div class="pet-list">${state.pets.map(candidate => {
         const bound = candidate.bond;
         const evolvedText = candidate.evolved ? '已进化' : candidate.readyToEvolve ? '可进化' : '';
@@ -452,7 +469,7 @@ export function mountPetSystem({
             <button type="button" data-action="evolve" class="primary" ${candidate.readyToEvolve ? '' : 'disabled'}>进化</button>
           </div>
         </article>`;
-      }).join('')}</div>`;
+      }).join('')}</div><div class="pet-adopt"><button type="button" data-action="adopt">＋ 领养一只白泽</button></div>`;
     } else {
       body.innerHTML = `<div class="pet-food-grid">${Object.entries(FOODS).map(([foodId, foodDef]) =>
         `<button type="button" data-food-id="${foodId}"><span class="emoji">${FOOD_EMOJI[foodId] ?? '🍽️'}</span><span>${foodDef.label}</span></button>`
@@ -497,6 +514,7 @@ export function mountPetSystem({
     }
   });
   body.addEventListener('click', event => {
+    if (event.target.closest('button[data-action="adopt"]')) { adopt(); return; }
     const card = event.target.closest('[data-pet-id]');
     const actionButton = event.target.closest('button[data-action]');
     if (card) {

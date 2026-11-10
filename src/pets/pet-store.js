@@ -1,41 +1,43 @@
 // 家园宠物状态：纯函数 + localStorage 持久化，便于单测与以后迁移到服务端存档。
-export const PET_STORAGE_KEY = 'dafeiyu.pets.v1';
+export const PET_STORAGE_KEY = 'dafeiyu.pets.v2';
 export const PET_BOND_MAX = 100;
 export const PET_BOND_HOURLY_CAP = 10;
 export const PET_BOND_GAIN = 1;
 export const PET_MODES = ['follow', 'standby'];
 const HOUR_MS = 60 * 60 * 1000;
 
-const DEFAULT_NAMES = ['白泽', '青岚', '小雪'];
-const DEFAULT_MODES = ['follow', 'standby', null];
+function createPet(id, name, now, mode = null) {
+  return {
+    id,
+    name,
+    species: 'baize',
+    bond: 0,
+    evolved: false,
+    readyToEvolve: false,
+    mode,
+    battle: false,
+    homeSceneId: 'yard',
+    homePosition: null,
+    bondWindowStart: now,
+    bondWindowPoints: 0,
+    createdAt: now,
+    evolvedAt: null,
+  };
+}
 
+// 不预置固定数量：初始只有一只白泽伙伴，其余通过「领养」变成真正的宠物对象。
 export function createDefaultPetState(now = Date.now()) {
   return {
-    version: 1,
+    version: 2,
     selectedPetId: 'pet-1',
-    pets: DEFAULT_NAMES.map((name, index) => ({
-      id: `pet-${index + 1}`,
-      name,
-      species: 'baize',
-      bond: 0,
-      evolved: false,
-      readyToEvolve: false,
-      mode: DEFAULT_MODES[index],
-      battle: false,
-      homeSceneId: 'yard',
-      homePosition: null,
-      bondWindowStart: now,
-      bondWindowPoints: 0,
-      createdAt: now,
-      evolvedAt: null,
-    })),
+    pets: [createPet('pet-1', '白泽', now, 'follow')],
   };
 }
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 export function normalizePetState(raw, now = Date.now()) {
-  if (!raw || raw.version !== 1 || !Array.isArray(raw.pets) || !raw.pets.length) return createDefaultPetState(now);
+  if (!raw || raw.version !== 2 || !Array.isArray(raw.pets) || !raw.pets.length) return createDefaultPetState(now);
   const seen = new Set();
   const pets = [];
   for (const pet of raw.pets) {
@@ -63,7 +65,7 @@ export function normalizePetState(raw, now = Date.now()) {
   }
   if (!pets.length) return createDefaultPetState(now);
   return {
-    version: 1,
+    version: 2,
     selectedPetId: pets.some(pet => pet.id === raw.selectedPetId) ? raw.selectedPetId : pets[0].id,
     pets,
   };
@@ -92,6 +94,16 @@ export function getPet(state, petId) {
 export function selectPet(state, petId) {
   if (getPet(state, petId)) state.selectedPetId = petId;
   return state;
+}
+
+/** 领养一只新宠物对象（默认白泽）；返回新宠物，重复调用可继续增加。 */
+export function adoptPet(state, { name = null, now = Date.now(), mode = 'follow' } = {}) {
+  let index = 1;
+  while (state.pets.some(pet => pet.id === `pet-${index}`)) index += 1;
+  const pet = createPet(`pet-${index}`, name || (state.pets.length ? `白泽 ${index}` : '白泽'), now, mode);
+  state.pets.push(pet);
+  state.selectedPetId = pet.id;
+  return pet;
 }
 
 export function setPetMode(state, petId, mode, { sceneId = null, position = null } = {}) {
