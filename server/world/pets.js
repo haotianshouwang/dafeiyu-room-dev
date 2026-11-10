@@ -1,9 +1,15 @@
 import {PET_BOND_MAX, PET_BOND_HOURLY_CAP} from '../../shared/creatures/stats.js';
-import {normalizePetInstance} from '../../shared/creatures/instance.js';
+import {normalizePetInstance,createPetInstance} from '../../shared/creatures/instance.js';
+import {getSpecies} from '../../shared/creatures/species.js';
+import {randomUUID} from 'node:crypto';
 import {normalizeRoster, setFollowPet, setBattlePet} from '../../shared/creatures/roster.js';
 
 const PET_LIMIT=20;
 const HOUR_MS=60*60*1000;
+const STARTER_EGGS=[
+ {eggId:'starter-baize',speciesId:'baize'},
+ {eggId:'starter-fish',speciesId:'fish-bowl'},
+];
 
 function ensurePets(snapshot){
  if(!snapshot.pets||typeof snapshot.pets!=='object'||snapshot.pets.version!==1||!snapshot.pets.owners){
@@ -18,11 +24,24 @@ function actorOf(snapshot,actorId){
  return actor;
 }
 
+function ensureEggs(bucket,now=Date.now()){
+ if(!bucket)return null;
+ if(!Array.isArray(bucket.eggs)){
+  // 已有宠物的老存档不补发初始蛋；真正的新玩家才拿到两只初始蛋。
+  bucket.eggs=Object.keys(bucket.instances??{}).length
+   ? []
+   : STARTER_EGGS.map(egg=>({...egg,hatched:false,createdAt:now}));
+  bucket.eggsInitialized=true;
+ }
+ return bucket.eggs;
+}
+
 function bucketOf(snapshot,actorId,create=false){
  const pets=ensurePets(snapshot);
  let bucket=pets.owners[actorId];
  if(!bucket&&create){
   bucket={instances:{},roster:{followPetId:null,battlePetId:null},migration:{localVersion:null,importedAt:null}};
+  ensureEggs(bucket);
   pets.owners[actorId]=bucket;
  }
  return bucket;
@@ -73,8 +92,39 @@ export const petHandlers={
   bucket.instances=instances;
   bucket.roster=normalizeRoster({followPetId:command.payload.followPetId??null,battlePetId:command.payload.battlePetId??null},instances,actorId);
   bucket.migration={localVersion:Number.isFinite(command.payload.localVersion)?command.payload.localVersion:3,importedAt:now};
+  // 从旧本地存档迁移过来的玩家已经有宠物，不再补发初始蛋。
+  bucket.eggs=[];bucket.eggsInitialized=true;
   emit('pets.imported',{actorId,count:Object.keys(instances).length});
   return {status:'imported',count:Object.keys(instances).length,roster:{...bucket.roster}};
+ },
+
+ 'pet.bootstrap':({snapshot,command,principal,now,emit})=>{
+  if(principal.role!=='owner')throw Error('UNAUTHORIZED');
+  const {actorId}=command.payload;
+  actorOf(snapshot,actorId);
+  const bucket=bucketOf(snapshot,actorId,true);
+  const eggs=ensureEggs(bucket,now);
+  emit('pets.eggs_initialized',{actorId,eggs:eggs.length});
+  return {eggs:structuredClone(eggs),roster:{...bucket.roster}};
+ },
+
+ 'pet.hatchEgg':({snapshot,command,principal,now,emit})=>{
+  if(principal.role!=='owner')throw Error('UNAUTHORIZED');
+  const {actorId,eggId}=command.payload;
+  actorOf(snapshot,actorId);
+  const bucket=bucketOf(snapshot,actorId,true);
+  const eggs=ensureEggs(bucket,now);
+  const egg=eggs.find(entry=>entry.eggId===eggId&&!entry.hatched);
+  if(!egg)throw Error('EGG_NOT_FOUND');
+  const species=getSpecies(egg.speciesId);
+  let petId=`pet-${egg.eggId}`;
+  if(bucket.instances[petId])petId=`${petId}-${randomUUID().slice(0,6)}`;
+  const pet=createPetInstance({petId,ownerId:actorId,speciesId:egg.speciesId,nickname:species.name,now});
+  bucket.instances[petId]=pet;
+  egg.hatched=true;
+  if(!bucket.roster.followPetId)bucket.roster.followPetId=petId;
+  emit('pets.hatched',{actorId,eggId,petId,speciesId:egg.speciesId});
+  return {petId,eggId,speciesId:egg.speciesId,name:pet.nickname,roster:{...bucket.roster},eggs:structuredClone(eggs)};
  },
 
  'pet.setMode':({snapshot,command,principal,now,emit})=>{

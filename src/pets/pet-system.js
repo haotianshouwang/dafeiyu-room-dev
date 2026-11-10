@@ -7,7 +7,7 @@ import { FOODS } from '../../shared/world/foods.js';
 import {
   PET_BOND_MAX, PET_BOND_HOURLY_CAP,
   loadPetState, savePetState, getPet, selectPet, setPetMode, toggleBattle,
-  petPet, evolvePet, petBattlePet, followingPets, ensurePetSeeds,
+  petPet, evolvePet, petBattlePet, followingPets,
   buildServerImport, serverPetsToLocal, PET_MIGRATED_KEY,
 } from './pet-store.js';
 import {deriveStats} from '../../shared/creatures/stats.js';
@@ -97,6 +97,7 @@ export function mountPetSystem({
   let serverReady = false;
   let migrationPending = false;
   let migrationAttempted = false;
+  let bootstrapAttempted = false;
   let appliedServerPets = null;
 
   if (!document.getElementById('pet-system-style')) {
@@ -190,7 +191,7 @@ export function mountPetSystem({
     const actorId = currentActorId();
     if (!actorId) return;
     const owner = snapshot?.pets?.owners?.[actorId];
-    if (owner && Object.keys(owner.instances ?? {}).length) {
+    if (owner && (Object.keys(owner.instances ?? {}).length || Array.isArray(owner.eggs))) {
       if (owner === appliedServerPets) return;
       appliedServerPets = owner;
       const next = serverPetsToLocal(owner);
@@ -201,13 +202,27 @@ export function mountPetSystem({
         reconcileServerPets(next);
         try { storage?.setItem(PET_MIGRATED_KEY, '1'); } catch { /* ignore */ }
       }
+      // 老世界已存在宠物但没有 eggs 字段：补一次初始化；有宠物的旧档不会拿到新蛋。
+      if (!Array.isArray(owner.eggs) && !migrationPending && !bootstrapAttempted) {
+        migrationPending = true;
+        bootstrapAttempted = true;
+        void dispatchPet('pet.bootstrap', { actorId })
+          .then(() => { migrationPending = false; })
+          .catch(error => { migrationPending = false; onMessage(`宠物宝箱初始化失败：${error.message}`); });
+      }
       return;
     }
     if (serverReady || migrationPending || migrationAttempted || !isConnected()) return;
     const payload = buildServerImport(state);
-    if (!payload.pets.length) return;
     migrationPending = true;
     migrationAttempted = true;
+    if (!payload.pets.length) {
+      // 新玩家：建立空名册和两只初始蛋，不自动发宠物。
+      void dispatchPet('pet.bootstrap', { actorId })
+        .then(() => { migrationPending = false; })
+        .catch(error => { migrationPending = false; onMessage(`宠物宝箱初始化失败：${error.message}`); });
+      return;
+    }
     void dispatchPet('pet.import', { actorId, ...payload })
       .then(() => { migrationPending = false; })
       .catch(error => {
@@ -490,8 +505,8 @@ export function mountPetSystem({
     }));
     for (const entry of loaded) if (entry) assets.set(entry[0], entry[1]);
     if (!assets.size) { onMessage('宠物模型加载失败，稍后再试'); return; }
-    // 宠物由模型配置文件决定：每个模型配置对应一只宠物，不再有领养按钮。
-    ensurePetSeeds(state, PET_MODELS, Date.now());
+    // 新玩家不预置宠物；宠物从院子窗户下的宝箱蛋里领取。
+    // 旧 localStorage 有宠物时仍保留，用于首次迁移到服务端。
     ready = true;
     for (const pet of state.pets) createAvatar(pet);
     save();
@@ -774,7 +789,7 @@ export function mountPetSystem({
     updateEntryCount();
     if (activeTab === 'pets') {
       if (!state.pets.length) {
-        body.innerHTML = `<p class="pet-empty">宠物配置里还没有模型。</p>`;
+        body.innerHTML = `<p class="pet-empty">还没有宠物。去院子窗户下打开宝箱领取宠物蛋。</p>`;
         return;
       }
       body.innerHTML = `<div class="pet-list">${state.pets.map(candidate => {

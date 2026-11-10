@@ -135,7 +135,7 @@ export function buildServerImport(state) {
 export function serverPetsToLocal(owner) {
   if (!owner?.instances) return null;
   const instances = Object.values(owner.instances);
-  if (!instances.length) return null;
+  if (!instances.length) return { version: 3, selectedPetId: null, pets: [] };
   const followPetId = owner.roster?.followPetId ?? null;
   const battlePetId = owner.roster?.battlePetId ?? null;
   const pets = instances.map(pet => {

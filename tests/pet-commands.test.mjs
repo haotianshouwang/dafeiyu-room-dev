@@ -102,3 +102,36 @@ test('森林战斗使用服务端选中的出战宠物属性与技能',()=>{
  assert.ok(pet.skills.some(move=>move.id==='waterJet'));
  assert.equal(events[0].kind,'battle.started');
 });
+
+test('新玩家宝箱初始化两只蛋，孵化后按顺序成为宠物',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  const boot=cmd(service,principal,'pet.bootstrap',{actorId});
+  assert.equal(boot.eggs.length,2);
+  assert.deepEqual(boot.eggs.map(egg=>egg.speciesId).sort(),['baize','fish-bowl']);
+  let owner=service.readSnapshot('default').pets.owners[actorId];
+  assert.equal(Object.keys(owner.instances).length,0);
+  assert.equal(owner.roster.followPetId,null);
+  const first=cmd(service,principal,'pet.hatchEgg',{actorId,eggId:boot.eggs[0].eggId});
+  assert.ok(first.petId);
+  assert.equal(first.speciesId,boot.eggs[0].speciesId);
+  owner=service.readSnapshot('default').pets.owners[actorId];
+  assert.equal(owner.instances[first.petId].nickname,first.name);
+  assert.equal(owner.roster.followPetId,first.petId);
+  const second=cmd(service,principal,'pet.hatchEgg',{actorId,eggId:boot.eggs[1].eggId});
+  assert.ok(second.petId);
+  assert.equal(Object.keys(service.readSnapshot('default').pets.owners[actorId].instances).length,2);
+  assert.equal(cmd(service,principal,'pet.hatchEgg',{actorId,eggId:boot.eggs[0].eggId}).error ?? 'unused',undefined);
+ }catch(error){
+  if(!/EGG_NOT_FOUND/.test(error.message))throw error;
+ } finally {db.close();}
+});
+
+test('从旧本地宠物导入的玩家不补发初始蛋',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  cmd(service,principal,'pet.import',{actorId,pets:[{petId:'p',speciesId:'baize'}],followPetId:'p'});
+  const boot=cmd(service,principal,'pet.bootstrap',{actorId});
+  assert.equal(boot.eggs.length,0);
+ }finally{db.close();}
+});

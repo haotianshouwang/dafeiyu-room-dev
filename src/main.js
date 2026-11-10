@@ -2,6 +2,7 @@ import {poolAt,waterAt} from '/shared/world/water.js';
 import {forestLakeDepth} from '/shared/world/forest.js';
 import {createBaizeEncounter} from './core/baize-encounter.js';
 import {mountPetSystem} from './pets/pet-system.js';
+import {mountEggChest} from './pets/egg-chest.js';
 import {mountBackpackSystem} from './items/backpack-system.js';
 import {createBaizeFollower} from './characters/baize.js';
 import {mountBaizeBattle} from './ui/baize-battle.js';
@@ -412,6 +413,22 @@ backpack=mountBackpackSystem({
  localSound,fx,
 });
 window.__backpack=backpack;
+const eggChest=mountEggChest({
+ scene,canvas,
+ getCamera:()=>game.camera,
+ getSnapshot:()=>client.snapshot,
+ getSceneId:()=>activeScene,
+ getPlayer:()=>({position:renderPosition,heading:actor?.rotation??0}),
+ getActor:()=>actor,
+ dispatchPet:(kind,payload)=>client.dispatch({kind,payload}),
+ isConnected:()=>client.connectionStatus==='connected',
+ isEditing:()=>Boolean(editor?.active),
+ isFirstPerson:()=>fpActive,
+ isBattle:()=>Boolean(baizeBattle?.active),
+ onMessage:showMessage,
+ localSound,fx,
+});
+window.__eggChest=eggChest;
 const baizeBattle=mountBaizeBattle(client,{
  character:original,
  playSound:cue=>localSound.playAction(cue),
@@ -999,8 +1016,8 @@ function frame(){
  if(freezeLog.lastFrameAt){const gap=frameStart-freezeLog.lastFrameAt;if(gap>600)freezeLog.gaps.push({t:Date.now()-freezeLog.startedAt,gap:Math.round(gap),fpActive,locked:document.pointerLockElement===canvas});if(gap>1500&&fpActive){setTimeout(()=>escapePointerTrap('检测到明显卡顿，已退出第一视角以免光标被锁住'),0);}}
  freezeLog.lastFrameAt=frameStart;
  try{
-  const dt=Math.min(.05,clock.getDelta());if(baizeBattle.active){baizeBattle.render(R.renderer,dt);return;}time+=dt;if(!encounterPending)updateKeyboard(dt,frameStart);updateControlStatus(frameStart);registry.update(dt,time);updateAuthorProgress();const visual=renderActor(dt,time);if(petSystem.hasFollowers())baizeFollower.hide();else baizeFollower.update(dt,client.snapshot,visual,renderPosition);
-  petSystem.update(dt,client.snapshot,visual,renderPosition);backpack.update(dt);iso.update(dt);if(fpActive){fp.setEye(renderPosition,currentPose);fpShadow.position.set(renderPosition.x,renderPosition.y+0.015,renderPosition.z);if(R.renderPass)R.renderPass.camera=fp.camera;}else if(thirdActive){const isBlob=whale===blob;tp.setBaseDistance(isBlob?6.4:3.6);tp.follow(renderPosition,dt,isBlob?1.9:(currentPose==='sleeping'?0.5:1.15));clampThirdCameraToRoom();if(R.renderPass)R.renderPass.camera=tp.camera;}else if(R.renderPass)R.renderPass.camera=camera;spellBar.update(dt,frameStart,renderedSpellCast,spellHand);fx.update(dt,time);hud.updateBubble(dt,fpActive?fp.camera:camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0){if(forestLighting)followForestSun();lights.sun.shadow.needsUpdate=true;}R.composer.render();performanceStats.frames.push(performance.now()-frameStart);if(performanceStats.frames.length>1200)performanceStats.frames.shift();
+  const dt=Math.min(.05,clock.getDelta());if(baizeBattle.active){baizeBattle.render(R.renderer,dt);return;}time+=dt;if(!encounterPending)updateKeyboard(dt,frameStart);updateControlStatus(frameStart);registry.update(dt,time);updateAuthorProgress();const visual=renderActor(dt,time);if(petSystem.isReady())baizeFollower.hide();else baizeFollower.update(dt,client.snapshot,visual,renderPosition);
+  petSystem.update(dt,client.snapshot,visual,renderPosition);backpack.update(dt);eggChest.update();iso.update(dt);if(fpActive){fp.setEye(renderPosition,currentPose);fpShadow.position.set(renderPosition.x,renderPosition.y+0.015,renderPosition.z);if(R.renderPass)R.renderPass.camera=fp.camera;}else if(thirdActive){const isBlob=whale===blob;tp.setBaseDistance(isBlob?6.4:3.6);tp.follow(renderPosition,dt,isBlob?1.9:(currentPose==='sleeping'?0.5:1.15));clampThirdCameraToRoom();if(R.renderPass)R.renderPass.camera=tp.camera;}else if(R.renderPass)R.renderPass.camera=camera;spellBar.update(dt,frameStart,renderedSpellCast,spellHand);fx.update(dt,time);hud.updateBubble(dt,fpActive?fp.camera:camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0){if(forestLighting)followForestSun();lights.sun.shadow.needsUpdate=true;}R.composer.render();performanceStats.frames.push(performance.now()-frameStart);if(performanceStats.frames.length>1200)performanceStats.frames.shift();
  }catch(error){
   if(!frameErrorAt||performance.now()-frameErrorAt>3000){frameErrorAt=performance.now();console.error('frame loop failed',error);freezeLog.errors.push({t:Date.now()-freezeLog.startedAt,message:String(error?.message||error)});escapePointerTrap('运行出错，已退回等距视角：'+(error?.message||error));}
  }
