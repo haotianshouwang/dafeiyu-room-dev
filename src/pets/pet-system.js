@@ -104,7 +104,7 @@ export function mountPetSystem({
       <button type="button" data-tab="food" role="tab" aria-selected="false">食物</button>
     </div>
     <div class="pet-body"></div>
-    <p class="pet-foot">宠物来自模型配置文件（白泽 / 缸盆小鱼），每只模型拥有自己的动作槽。抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，家园待命会待在院子花园里；战斗可独立勾选。</p>
+    <p class="pet-foot">宠物来自模型配置文件（白泽 / 缸盆小鱼），每只模型拥有自己的动作槽。抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，家园待命会待在院子花园里；跟随和战斗各只能有一只宠物。</p>
   </div>`;
   document.body.append(dialog);
   const body = dialog.querySelector('.pet-body');
@@ -185,6 +185,9 @@ export function mountPetSystem({
   function setMode(id, mode) {
     const pet = getPet(state, id);
     if (!pet) return;
+    const demoted = mode === 'follow'
+      ? state.pets.filter(candidate => candidate.id !== id && candidate.mode === 'follow').map(candidate => candidate.name)
+      : [];
     if (mode === 'standby') {
       // 家园待命固定待在院子的花园，不留在当前场景
       setPetMode(state, id, 'standby', { sceneId: HOME_SCENE_ID, position: yardHomePosition(id) });
@@ -196,7 +199,8 @@ export function mountPetSystem({
     save();
     render();
     const label = mode === 'follow' ? '开始跟随你' : mode === 'standby' ? '留在家园待命' : '自由活动';
-    onMessage(`${pet.name} ${label}`);
+    const demotedHint = demoted.length ? `；${demoted.join('、')}回家园待命` : '';
+    onMessage(`${pet.name} ${label}${demotedHint}`);
   }
 
   function placeFood(foodId) {
@@ -583,9 +587,9 @@ export function mountPetSystem({
             <i><em style="width:${Math.round((bound / PET_BOND_MAX) * 100)}%"></em></i>
           </div>
           <div class="pet-modes">
-            <label><input type="checkbox" data-role="follow" ${candidate.mode === 'follow' ? 'checked' : ''}> 跟随</label>
+            <label><input type="checkbox" data-role="follow" ${candidate.mode === 'follow' ? 'checked' : ''}> 跟随（仅一只）</label>
             <label><input type="checkbox" data-role="standby" ${candidate.mode === 'standby' ? 'checked' : ''}> 家园待命（花园）</label>
-            <label><input type="checkbox" data-role="battle" ${candidate.battle ? 'checked' : ''}> 战斗</label>
+            <label><input type="checkbox" data-role="battle" ${candidate.battle ? 'checked' : ''}> 战斗（仅一只）</label>
           </div>
           <div class="pet-actions">
             <button type="button" data-action="pet">抚摸</button>

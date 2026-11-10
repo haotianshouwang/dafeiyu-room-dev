@@ -33,6 +33,22 @@ export function createDefaultPetState() {
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+// 跟随和出战各只能有一只：优先保留列表中第一只，其余跟随自动回到家园待命。
+function enforcePetExclusivity(pets) {
+  let followed = false;
+  let battling = false;
+  for (const pet of pets) {
+    if (pet.mode === 'follow') {
+      if (followed) pet.mode = 'standby';
+      else followed = true;
+    }
+    if (pet.battle) {
+      if (battling) pet.battle = false;
+      else battling = true;
+    }
+  }
+}
+
 export function normalizePetState(raw, now = Date.now()) {
   if (!raw || raw.version !== 3 || !Array.isArray(raw.pets)) return createDefaultPetState();
   const seen = new Set();
@@ -62,6 +78,7 @@ export function normalizePetState(raw, now = Date.now()) {
     });
   }
   if (!pets.length) return createDefaultPetState(now);
+  enforcePetExclusivity(pets);
   return {
     version: 3,
     selectedPetId: pets.some(pet => pet.id === raw.selectedPetId) ? raw.selectedPetId : pets[0].id,
@@ -104,6 +121,7 @@ export function ensurePetSeeds(state, seeds = [], now = Date.now()) {
     if (seed.homeSceneId) pet.homeSceneId = seed.homeSceneId;
     state.pets.push(pet);
   }
+  enforcePetExclusivity(state.pets);
   if (!state.pets.some(pet => pet.id === state.selectedPetId)) state.selectedPetId = state.pets[0]?.id ?? null;
   return state;
 }
@@ -113,6 +131,11 @@ export function setPetMode(state, petId, mode, { sceneId = null, position = null
   const pet = getPet(state, petId);
   if (!pet) return state;
   pet.mode = mode;
+  if (mode === 'follow') {
+    for (const other of state.pets) {
+      if (other.id !== pet.id && other.mode === 'follow') other.mode = 'standby';
+    }
+  }
   if (mode === 'standby') {
     if (sceneId) pet.homeSceneId = sceneId;
     if (Array.isArray(position) && position.length === 3 && position.every(Number.isFinite)) pet.homePosition = position.slice(0, 3);
@@ -122,7 +145,11 @@ export function setPetMode(state, petId, mode, { sceneId = null, position = null
 
 export function toggleBattle(state, petId) {
   const pet = getPet(state, petId);
-  if (pet) pet.battle = !pet.battle;
+  if (!pet) return state;
+  pet.battle = !pet.battle;
+  if (pet.battle) {
+    for (const other of state.pets) if (other.id !== pet.id) other.battle = false;
+  }
   return state;
 }
 

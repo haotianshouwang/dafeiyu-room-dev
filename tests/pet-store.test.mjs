@@ -40,6 +40,35 @@ test('跟随与家园待命互斥，待命会记录花园位置', () => {
   assert.equal(getPet(state, 'pet-baize').mode, null);
 });
 
+test('跟随和出战各只能保留一只宠物', () => {
+  const state = createDefaultPetState();
+  ensurePetSeeds(state, SEEDS, 1000);
+  setPetMode(state, 'pet-fish-bowl', 'follow');
+  assert.equal(getPet(state, 'pet-fish-bowl').mode, 'follow');
+  assert.equal(getPet(state, 'pet-baize').mode, 'standby');
+  assert.deepEqual(followingPets(state).map(pet => pet.id), ['pet-fish-bowl']);
+  toggleBattle(state, 'pet-fish-bowl');
+  toggleBattle(state, 'pet-baize');
+  assert.equal(getPet(state, 'pet-fish-bowl').battle, false);
+  assert.equal(getPet(state, 'pet-baize').battle, true);
+  assert.equal(petBattlePet(state).id, 'pet-baize');
+  assert.equal(state.pets.filter(pet => pet.battle).length, 1);
+});
+
+test('旧存档里多只跟随/出战会收敛为一只', () => {
+  const state = normalizePetState({
+    version: 3,
+    pets: [
+      { id: 'a', name: 'A', modelId: 'baize', mode: 'follow', battle: true },
+      { id: 'b', name: 'B', modelId: 'fish-bowl', mode: 'follow', battle: true },
+    ],
+  }, 1000);
+  assert.equal(getPet(state, 'a').mode, 'follow');
+  assert.equal(getPet(state, 'b').mode, 'standby');
+  assert.equal(getPet(state, 'a').battle, true);
+  assert.equal(getPet(state, 'b').battle, false);
+});
+
 test('战斗勾选独立于跟随/待命，出战宠物取第一只勾选', () => {
   const state = createDefaultPetState();
   ensurePetSeeds(state, SEEDS, 1000);
