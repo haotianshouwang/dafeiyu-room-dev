@@ -84,7 +84,8 @@ test('跟随/待命筛选与出战宠物', () => {
   const state = createDefaultPetState(1000);
   setPetHome(state, 'pet-2', { sceneId: 'living', position: [0, 0, 0] });
   assert.deepEqual(followingPets(state).map(pet => pet.id), ['pet-1']);
-  assert.deepEqual(standbyPetsInScene(state, 'bedroom').map(pet => pet.id), ['pet-3']);
+  assert.deepEqual(standbyPetsInScene(state, 'yard').map(pet => pet.id), ['pet-3']);
+  assert.deepEqual(standbyPetsInScene(state, 'bedroom'), []);
   assert.deepEqual(standbyPetsInScene(state, 'living').map(pet => pet.id), ['pet-2']);
 });
 

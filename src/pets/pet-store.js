@@ -22,7 +22,7 @@ export function createDefaultPetState(now = Date.now()) {
       readyToEvolve: false,
       mode: DEFAULT_MODES[index],
       battle: false,
-      homeSceneId: 'bedroom',
+      homeSceneId: 'yard',
       homePosition: null,
       bondWindowStart: now,
       bondWindowPoints: 0,
@@ -51,7 +51,7 @@ export function normalizePetState(raw, now = Date.now()) {
       readyToEvolve: Boolean(pet.readyToEvolve) || (bond >= PET_BOND_MAX && !pet.evolved),
       mode: PET_MODES.includes(pet.mode) ? pet.mode : null,
       battle: Boolean(pet.battle),
-      homeSceneId: typeof pet.homeSceneId === 'string' && pet.homeSceneId ? pet.homeSceneId : 'bedroom',
+      homeSceneId: typeof pet.homeSceneId === 'string' && pet.homeSceneId ? pet.homeSceneId : 'yard',
       homePosition: Array.isArray(pet.homePosition) && pet.homePosition.length === 3 && pet.homePosition.every(Number.isFinite)
         ? pet.homePosition.slice(0, 3)
         : null,

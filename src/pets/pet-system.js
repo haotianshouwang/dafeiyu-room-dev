@@ -10,6 +10,9 @@ import {
   petPet, evolvePet, petBattlePet, setPetHome, followingPets,
 } from './pet-store.js';
 
+const HOME_SCENE_ID = 'yard';
+// 待命宠物待在院子花园里的固定位置（院子出生点在 [1,0,1] 附近）
+const HOME_SPOTS = [[3.2, 0, -1.2], [-1.4, 0, -2.0], [1.0, 0, 3.4]];
 const LANES = [{ back: 1.05, side: -0.6 }, { back: 1.35, side: 0.6 }, { back: 1.75, side: 0 }];
 const FOOD_EMOJI = { rice: '🍚', hamburger: '🍔', pizza: '🍕', croissant: '🥐', apple: '🍎', strawberry: '🍓' };
 const FOOD_COLORS = { rice: 0xfff7e8, hamburger: 0xc98a4b, pizza: 0xe0a34a, croissant: 0xd9a35f, apple: 0xd94f4f, strawberry: 0xe45b6b };
@@ -100,7 +103,7 @@ export function mountPetSystem({
       <button type="button" data-tab="food" role="tab" aria-selected="false">食物</button>
     </div>
     <div class="pet-body"></div>
-    <p class="pet-foot">抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，战斗可独立勾选。</p>
+    <p class="pet-foot">抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，家园待命会待在院子花园里；战斗可独立勾选。</p>
   </div>`;
   document.body.append(dialog);
   const body = dialog.querySelector('.pet-body');
@@ -163,17 +166,29 @@ export function mountPetSystem({
     render();
   }
 
+  function yardHomePosition(petId) {
+    const index = Math.max(0, state.pets.findIndex(candidate => candidate.id === petId));
+    const spot = HOME_SPOTS[index % HOME_SPOTS.length];
+    let [x, y, z] = spot;
+    const snapshot = getSnapshot();
+    try {
+      const yard = snapshot?.scenes?.find(entry => entry.sceneId === HOME_SCENE_ID);
+      const template = yard ? getTemplate(yard.templateId) : null;
+      const free = nearestFree(snapshot, HOME_SCENE_ID, [x, y, z]);
+      x = free[0]; z = free[2];
+      y = groundAt(template, x, z, y);
+    } catch { /* 用默认点 */ }
+    return [x, y, z];
+  }
+
   function setMode(id, mode) {
     const pet = getPet(state, id);
     if (!pet) return;
     if (mode === 'standby') {
+      // 家园待命固定待在院子的花园，不留在当前场景
+      setPetMode(state, id, 'standby', { sceneId: HOME_SCENE_ID, position: yardHomePosition(id) });
       const avatar = avatars.get(id);
-      const player = getPlayer();
-      const position = avatar && avatar.root.visible
-        ? avatar.root.position.toArray()
-        : [player.position.x, player.position.y, player.position.z];
-      setPetMode(state, id, 'standby', { sceneId: getSceneId(), position });
-      if (avatar) avatar.sceneId = getSceneId();
+      if (avatar) avatar.sceneId = HOME_SCENE_ID;
     } else {
       setPetMode(state, id, mode);
     }
@@ -309,16 +324,15 @@ export function mountPetSystem({
 
   function updateAvatar(pet, avatar, dt, ctx) {
     const follow = pet.mode === 'follow';
-    const visible = follow || pet.homeSceneId === ctx.sceneId;
+    // 跟随时跟着玩家；家园待命（以及未勾选的自由宠物）只在花园出现
+    const visible = follow || ctx.sceneId === HOME_SCENE_ID;
     if (!visible) { avatar.root.visible = false; avatar.eating = 0; return; }
+    if (!follow && (pet.homeSceneId !== HOME_SCENE_ID || !Array.isArray(pet.homePosition))) {
+      pet.homeSceneId = HOME_SCENE_ID;
+      pet.homePosition = yardHomePosition(pet.id);
+      save();
+    }
     if (!avatar.root.visible && !follow) {
-      // 回到待命场景时从家园点出现；首次没有坐标就先放在玩家旁边。
-      if (!pet.homePosition) {
-        const lane = LANES[state.pets.findIndex(candidate => candidate.id === pet.id) % LANES.length];
-        const point = offsetTarget(ctx.player, ctx.heading, lane);
-        pet.homePosition = [point.x, groundAt(ctx.template, point.x, point.z, ctx.player.y), point.z];
-        save();
-      }
       avatar.root.position.fromArray(pet.homePosition);
       avatar.root.rotation.y = ctx.heading;
     }
@@ -334,12 +348,6 @@ export function mountPetSystem({
       if (avatar.sceneId !== ctx.sceneId || avatar.root.position.distanceTo(ctx.player) > 7) placeBehind(avatar, pet, ctx);
     } else {
       avatar.sceneId = ctx.sceneId;
-      if (!pet.homePosition) {
-        const lane = LANES[state.pets.findIndex(candidate => candidate.id === pet.id) % LANES.length];
-        const point = offsetTarget(ctx.player, ctx.heading, lane);
-        pet.homePosition = [point.x, groundAt(ctx.template, point.x, point.z, ctx.player.y), point.z];
-        save();
-      }
     }
     let target = null;
     if (food && food.petId === pet.id) target = { x: food.position.x, y: food.position.y, z: food.position.z };
@@ -436,7 +444,7 @@ export function mountPetSystem({
           </div>
           <div class="pet-modes">
             <label><input type="checkbox" data-role="follow" ${candidate.mode === 'follow' ? 'checked' : ''}> 跟随</label>
-            <label><input type="checkbox" data-role="standby" ${candidate.mode === 'standby' ? 'checked' : ''}> 家园待命</label>
+            <label><input type="checkbox" data-role="standby" ${candidate.mode === 'standby' ? 'checked' : ''}> 家园待命（花园）</label>
             <label><input type="checkbox" data-role="battle" ${candidate.battle ? 'checked' : ''}> 战斗</label>
           </div>
           <div class="pet-actions">
