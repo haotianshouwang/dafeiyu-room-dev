@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loadBaize, makeBaize } from '../characters/baize.js';
+import { PET_MODELS, PET_MODEL_BY_ID, loadPetModelAsset, createPetModel } from './pet-models.js';
 import { surfaceAt } from '../../shared/world/coastal.js';
 import { getTemplate } from '../../shared/world/templates.js';
 import { nearestFree, segmentWalkable } from '../../shared/world/navigation.js';
@@ -7,7 +7,7 @@ import { FOODS } from '../../shared/world/foods.js';
 import {
   PET_BOND_MAX, PET_BOND_HOURLY_CAP,
   loadPetState, savePetState, getPet, selectPet, setPetMode, toggleBattle,
-  petPet, evolvePet, petBattlePet, adoptPet, followingPets,
+  petPet, evolvePet, petBattlePet, followingPets, ensurePetSeeds,
 } from './pet-store.js';
 
 const HOME_SCENE_ID = 'yard';
@@ -16,11 +16,6 @@ const HOME_SPOTS = [[3.2, 0, -1.2], [-1.4, 0, -2.0], [1.0, 0, 3.4]];
 const LANES = [{ back: 1.05, side: -0.6 }, { back: 1.35, side: 0.6 }, { back: 1.75, side: 0 }];
 const FOOD_EMOJI = { rice: '🍚', hamburger: '🍔', pizza: '🍕', croissant: '🥐', apple: '🍎', strawberry: '🍓' };
 const FOOD_COLORS = { rice: 0xfff7e8, hamburger: 0xc98a4b, pizza: 0xe0a34a, croissant: 0xd9a35f, apple: 0xd94f4f, strawberry: 0xe45b6b };
-const GAITS = {
-  walk: { clip: 'CanineWalk', speed: 1.7 },
-  run: { clip: 'CanineLocoTrot', speed: 2.8 },
-  sprint: { clip: 'CanineGallop', speed: 5.5 },
-};
 const STYLE = `
 #pet-entry{position:relative}
 #pet-entry .pet-count{font-size:11px;opacity:.6}
@@ -51,9 +46,7 @@ const STYLE = `
 .pet-food-grid .emoji{font-size:26px;line-height:1}
 .pet-foot{margin:12px 0 0;font-size:11px;color:#8a7563}
 .pet-empty{color:#78665a;font-size:13px;padding:12px 0;text-align:center}
-.pet-adopt{display:flex;justify-content:center;margin-top:10px}
-.pet-adopt button{padding:8px 14px;border:1px dashed #c9b092;border-radius:11px;background:#fffdf7;color:#5d493b;font:inherit;font-size:13px;cursor:pointer}
-.pet-adopt button:hover{background:#fff1d9;border-color:#b79065}
+
 `;
 
 function circularLerp(from, to, t) {
@@ -77,7 +70,7 @@ export function mountPetSystem({
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const tmp = new THREE.Vector3();
-  let asset = null;
+  const assets = new Map();
   let ready = false;
   let food = null;
   let pointerDown = null;
@@ -107,7 +100,7 @@ export function mountPetSystem({
       <button type="button" data-tab="food" role="tab" aria-selected="false">食物</button>
     </div>
     <div class="pet-body"></div>
-    <p class="pet-foot">初始只有一只白泽，可在这里继续领养。抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，家园待命会待在院子花园里；战斗可独立勾选。</p>
+    <p class="pet-foot">宠物来自模型配置文件（白泽 / 缸盆小鱼），每只模型拥有自己的动作槽。抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，家园待命会待在院子花园里；战斗可独立勾选。</p>
   </div>`;
   document.body.append(dialog);
   const body = dialog.querySelector('.pet-body');
@@ -265,7 +258,7 @@ export function mountPetSystem({
   }
 
   function applyPetLook(avatar, pet) {
-    avatar.baseScale = pet.evolved ? 1.16 : 1;
+    avatar.baseScale = pet.evolved ? 1.16 : 1.0;
     avatar.root.scale.setScalar(avatar.baseScale);
     if (pet.evolved && !avatar.tinted) {
       avatar.root.traverse(node => {
@@ -282,8 +275,10 @@ export function mountPetSystem({
   }
 
   function createAvatar(pet) {
-    if (!asset) return null;
-    const model = makeBaize(asset, true, { inPlace: true });
+    const config = PET_MODEL_BY_ID[pet.modelId];
+    const asset = assets.get(pet.modelId);
+    if (!config || !asset) return null;
+    const model = createPetModel(asset, config);
     const avatar = { petId: pet.id, model, root: model.root, sceneId: null, baseScale: 1, bounce: 0, eating: 0, tinted: false };
     model.root.name = `pet-avatar-${pet.id}`;
     model.root.visible = false;
@@ -294,10 +289,21 @@ export function mountPetSystem({
   }
 
   async function load() {
-    asset = await loadBaize();
-    if (!asset) { onMessage('宠物模型加载失败，稍后再试'); return; }
+    const loaded = await Promise.all(PET_MODELS.map(async config => {
+      try {
+        return [config.modelId, await loadPetModelAsset(config)];
+      } catch (error) {
+        console.warn('宠物模型加载失败', config.id, error);
+        return null;
+      }
+    }));
+    for (const entry of loaded) if (entry) assets.set(entry[0], entry[1]);
+    if (!assets.size) { onMessage('宠物模型加载失败，稍后再试'); return; }
+    // 宠物由模型配置文件决定：每个模型配置对应一只宠物，不再有领养按钮。
+    ensurePetSeeds(state, PET_MODELS, Date.now());
     ready = true;
     for (const pet of state.pets) createAvatar(pet);
+    save();
     updateEntryCount();
   }
 
@@ -365,33 +371,20 @@ export function mountPetSystem({
   }
 
   function resetHomeAI(avatar) {
-    avatar.ai = { timer: 0.6 + Math.random() * 1.6, action: null, actionTime: 0, target: null, sprint: false };
+    avatar.ai = { timer: 0.6 + Math.random() * 1.6, target: null, sprint: false };
   }
 
   function playRandomAction(avatar) {
-    const choices = [
-      ['CanineStand', 1.7],
-      ['CanineAttackLeft', 1.5],
-      ['CanineJumpRun', 1.3],
-      ['CanineEating2', 2.0],
-    ];
-    const [clip, duration] = choices[Math.floor(Math.random() * choices.length)];
-    avatar.model.play(clip, duration, 1);
-    avatar.ai.action = clip;
-    avatar.ai.actionTime = duration + 0.35;
+    if (Math.random() < 0.55) avatar.model.chain('yardIdle');
+    else avatar.model.once('attack');
   }
 
-  // 家园待命的宠物：在花园小范围闲逛，随机原地动作、嗅闻、蹦跳，偶尔加速跑一段。
+  // 家园待命的宠物：在花园小范围闲逛，随机动作链/攻击动作，偶尔加速跑一段。
   function updateHomeAI(pet, avatar, dt, ctx) {
     if (!avatar.ai) resetHomeAI(avatar);
     const ai = avatar.ai;
-    if (ai.action) {
-      ai.actionTime -= dt;
+    if (avatar.model.busy) {
       avatar.model.update(dt);
-      if (ai.actionTime <= 0) {
-        ai.action = null;
-        avatar.model.play('CanineIdle');
-      }
       return;
     }
     ai.timer -= dt;
@@ -399,12 +392,13 @@ export function mountPetSystem({
       const roll = Math.random();
       if (roll < 0.3) {
         ai.timer = 2 + Math.random() * 3;
-        avatar.model.play('CanineIdle');
+        avatar.model.loop('idle');
         avatar.model.update(dt);
         return;
       }
-      if (roll < 0.52) {
+      if (roll < 0.55) {
         playRandomAction(avatar);
+        ai.timer = 1.8 + Math.random() * 2;
         avatar.model.update(dt);
         return;
       }
@@ -418,15 +412,16 @@ export function mountPetSystem({
     if (ai.target) {
       const speed = ai.sprint ? 4.2 : 1.35;
       const result = moveAvatar(avatar, ai.target, speed, ctx, dt);
-      avatar.model.play(ai.sprint ? 'CanineRun' : 'CanineWalk', undefined, THREE.MathUtils.clamp(speed / (ai.sprint ? 4.5 : 1.7), 0.5, 1.6));
+      const slot = ai.sprint ? 'runFast' : 'walk';
+      avatar.model.loop(slot, THREE.MathUtils.clamp(speed / (ai.sprint ? 5.5 : 1.7), 0.5, 1.6));
       if (result.reached || result.blocked || ai.timer <= 0) {
         ai.target = null;
         ai.sprint = false;
         ai.timer = 1.2 + Math.random() * 2.5;
-        avatar.model.play('CanineIdle');
+        avatar.model.loop('idle');
       }
     } else {
-      avatar.model.play('CanineIdle');
+      avatar.model.loop('idle');
       if (ctx.player.distanceTo(avatar.root.position) < 4) {
         const desired = Math.atan2(ctx.player.x - avatar.root.position.x, ctx.player.z - avatar.root.position.z);
         avatar.root.rotation.y = circularLerp(avatar.root.rotation.y, desired, Math.min(1, dt * 4));
@@ -454,7 +449,7 @@ export function mountPetSystem({
     avatar.root.visible = true;
     if (avatar.eating > 0) {
       avatar.eating -= dt;
-      avatar.model.play('CanineIdle');
+      avatar.model.loop('idle');
       avatar.model.update(dt);
       if (avatar.eating <= 0) finishEating(pet, avatar);
       return;
@@ -464,12 +459,12 @@ export function mountPetSystem({
       const distance = Math.hypot(food.position.x - avatar.root.position.x, food.position.z - avatar.root.position.z);
       if (distance < 0.55) {
         avatar.eating = 0.85;
-        avatar.model.play('CanineIdle');
+        avatar.model.loop('idle');
         avatar.model.update(dt);
         return;
       }
       const result = moveAvatar(avatar, { x: food.position.x, y: food.position.y, z: food.position.z }, 2.6, ctx, dt);
-      avatar.model.play(result.stepped > 0.05 ? 'CanineWalk' : 'CanineIdle', undefined, 1);
+      avatar.model.loop(result.stepped > 0.05 ? 'walk' : 'idle');
       avatar.model.update(dt);
       return;
     }
@@ -481,10 +476,11 @@ export function mountPetSystem({
       const speed = Math.min(distance * 5 + 0.4, 3.6);
       const result = moveAvatar(avatar, target, speed, ctx, dt);
       if (result.stepped > 0.05) {
-        const gait = speed > 2.8 ? GAITS.run : GAITS.walk;
-        avatar.model.play(gait.clip, undefined, THREE.MathUtils.clamp(speed / gait.speed, 0.4, 1.6));
+        const slot = speed > 2.8 ? 'runFast' : speed > 1.2 ? 'runSlow' : 'walk';
+        const nominal = speed > 2.8 ? 3.6 : speed > 1.2 ? 2.8 : 1.7;
+        avatar.model.loop(slot, THREE.MathUtils.clamp(speed / nominal, 0.5, 1.6));
       } else {
-        avatar.model.play('CanineIdle');
+        avatar.model.loop('idle');
       }
       avatar.model.update(dt);
     } else {
@@ -503,7 +499,7 @@ export function mountPetSystem({
     food = null;
     if (localSound) localSound.playAction?.('meal-soft');
     if (fx) fx.hearts(position.clone().add(new THREE.Vector3(0, 0.5, 0)), 5);
-    avatar.model.play('CanineIdle');
+    avatar.model.loop('idle');
     resetHomeAI(avatar);
     onMessage(`${pet.name} 吃完了，心情不错`);
   }
@@ -518,7 +514,7 @@ export function mountPetSystem({
     const ctx = { sceneId, snapshot, player: playerPosition ?? player.position, heading: player.heading ?? 0, template };
     for (const pet of state.pets) {
       let avatar = avatars.get(pet.id);
-      if (!avatar && asset) avatar = createAvatar(pet);
+      if (!avatar) avatar = createAvatar(pet);
       if (avatar) updateAvatar(pet, avatar, dt, ctx);
     }
     if (food && performance.now() - food.createdAt > 15000) {
@@ -527,20 +523,12 @@ export function mountPetSystem({
     }
   }
 
-  function adopt() {
-    const pet = adoptPet(state, { mode: 'follow' });
-    if (asset) createAvatar(pet);
-    save();
-    onMessage(`领养了${pet.name}，它开始跟着你了`);
-    render();
-  }
-
   function render() {
     const pet = selectedPet();
     updateEntryCount();
     if (activeTab === 'pets') {
       if (!state.pets.length) {
-        body.innerHTML = `<p class="pet-empty">还没有宠物。点击下面按钮领养第一只白泽。</p><div class="pet-adopt"><button type="button" data-action="adopt">＋ 领养一只白泽</button></div>`;
+        body.innerHTML = `<p class="pet-empty">宠物配置里还没有模型。</p>`;
         return;
       }
       body.innerHTML = `<div class="pet-list">${state.pets.map(candidate => {
@@ -562,7 +550,7 @@ export function mountPetSystem({
             <button type="button" data-action="evolve" class="primary" ${candidate.readyToEvolve ? '' : 'disabled'}>进化</button>
           </div>
         </article>`;
-      }).join('')}</div><div class="pet-adopt"><button type="button" data-action="adopt">＋ 领养一只白泽</button></div>`;
+      }).join('')}</div>`;
     } else {
       body.innerHTML = `<div class="pet-food-grid">${Object.entries(FOODS).map(([foodId, foodDef]) =>
         `<button type="button" data-food-id="${foodId}"><span class="emoji">${FOOD_EMOJI[foodId] ?? '🍽️'}</span><span>${foodDef.label}</span></button>`
@@ -607,7 +595,6 @@ export function mountPetSystem({
     }
   });
   body.addEventListener('click', event => {
-    if (event.target.closest('button[data-action="adopt"]')) { adopt(); return; }
     const card = event.target.closest('[data-pet-id]');
     const actionButton = event.target.closest('button[data-action]');
     if (card) {
@@ -672,7 +659,7 @@ export function mountPetSystem({
       id,
       visible: avatar.root.visible,
       pos: avatar.root.position.toArray().map((value) => +value.toFixed(2)),
-      ai: avatar.ai ? { action: avatar.ai.action, target: avatar.ai.target, sprint: avatar.ai.sprint, timer: +avatar.ai.timer.toFixed(2) } : null,
+      ai: avatar.ai ? { target: avatar.ai.target, sprint: avatar.ai.sprint, timer: +avatar.ai.timer.toFixed(2), busy: avatar.model.busy, clip: avatar.model.currentClip } : null,
     })),
     placeFood,
     _state: () => state,
