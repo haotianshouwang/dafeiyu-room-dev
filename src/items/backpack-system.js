@@ -166,6 +166,127 @@ function makeCompostModel() {
   return { root, light, label };
 }
 
+let stinkTexture = null;
+
+function makeStinkTexture() {
+  if (stinkTexture) return stinkTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = '#8fbf56';
+  ctx.shadowBlur = 8;
+  ctx.strokeStyle = '#c6ea91';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(23, 57);
+  ctx.bezierCurveTo(10, 47, 42, 40, 28, 30);
+  ctx.bezierCurveTo(16, 21, 43, 17, 33, 7);
+  ctx.stroke();
+  ctx.strokeStyle = '#9aca63';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(43, 54);
+  ctx.bezierCurveTo(55, 45, 38, 35, 49, 25);
+  ctx.bezierCurveTo(57, 18, 47, 12, 52, 5);
+  ctx.stroke();
+  stinkTexture = new THREE.CanvasTexture(canvas);
+  stinkTexture.colorSpace = THREE.SRGBColorSpace;
+  return stinkTexture;
+}
+
+function makeFly() {
+  const fly = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.017, 6, 5),
+    new THREE.MeshStandardMaterial({ color: 0x201a16, roughness: 0.7 }));
+  body.castShadow = true;
+  body.raycast = () => {};
+  fly.add(body);
+  const wingMaterial = new THREE.MeshBasicMaterial({
+    color: 0xd9e6cf, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const wings = [];
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.PlaneGeometry(0.042, 0.022), wingMaterial);
+    wing.position.set(side * 0.018, 0.012, -0.004);
+    wing.rotation.y = side * 0.35;
+    wing.raycast = () => {};
+    fly.add(wing);
+    wings.push(wing);
+  }
+  return { group: fly, wings };
+}
+
+function makeStinkFx(group) {
+  const texture = makeStinkTexture();
+  const wisps = [];
+  for (let index = 0; index < 3; index += 1) {
+    const material = new THREE.SpriteMaterial({
+      map: texture, transparent: true, opacity: 0, depthWrite: false, color: 0xd7f0ae,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.raycast = () => {};
+    sprite.scale.set(0.17, 0.17, 1);
+    sprite.position.set((Math.random() - 0.5) * 0.24, 0.22, (Math.random() - 0.5) * 0.18);
+    group.add(sprite);
+    wisps.push({
+      sprite,
+      phase: index / 3 + Math.random() * 0.14,
+      speed: 0.26 + Math.random() * 0.12,
+      baseX: (Math.random() - 0.5) * 0.18,
+      baseZ: (Math.random() - 0.5) * 0.14,
+      wobble: 0.55 + Math.random() * 0.5,
+    });
+  }
+  const flies = [];
+  for (let index = 0; index < 2; index += 1) {
+    const fly = makeFly();
+    group.add(fly.group);
+    flies.push({
+      ...fly,
+      phase: Math.random() * Math.PI * 2,
+      speed: 1.7 + Math.random() * 0.8,
+      radius: 0.17 + Math.random() * 0.09,
+      height: 0.28 + index * 0.09,
+    });
+  }
+  group.userData.stink = { wisps, flies };
+}
+
+function animatePoop(mesh, time) {
+  const stink = mesh.userData.stink;
+  if (!stink) return;
+  for (const wisp of stink.wisps) {
+    const progress = (time * wisp.speed + wisp.phase) % 1;
+    const y = 0.18 + progress * 0.72;
+    wisp.sprite.position.set(
+      wisp.baseX + Math.sin(time * wisp.wobble + wisp.phase * 9) * (0.025 + progress * 0.08),
+      y,
+      wisp.baseZ + Math.cos(time * wisp.wobble * 0.8 + wisp.phase * 7) * 0.035,
+    );
+    const fade = Math.sin(progress * Math.PI);
+    wisp.sprite.material.opacity = 0.08 + fade * 0.62;
+    const scale = 0.14 + progress * 0.16;
+    wisp.sprite.scale.set(scale, scale * 1.32, 1);
+  }
+  for (const fly of stink.flies) {
+    const angle = time * fly.speed + fly.phase;
+    fly.group.position.set(
+      Math.cos(angle) * fly.radius + Math.sin(angle * 2.3) * 0.035,
+      fly.height + Math.sin(angle * 2.7) * 0.045,
+      Math.sin(angle) * fly.radius * 0.8,
+    );
+    fly.group.rotation.y = angle * 1.4;
+    fly.group.rotation.z = Math.sin(angle * 4) * 0.18;
+    const flap = 0.35 + Math.abs(Math.sin(time * 28 + fly.phase)) * 0.75;
+    fly.wings[0].rotation.z = flap;
+    fly.wings[1].rotation.z = -flap;
+  }
+}
+
 function makePoopModel(itemId) {
   const group = new THREE.Group();
   group.name = `ground-${itemId}`;
@@ -192,6 +313,8 @@ function makePoopModel(itemId) {
   top.castShadow = true;
   group.add(top);
   group.rotation.y = Math.random() * Math.PI * 2;
+  group.scale.setScalar(1.2);
+  makeStinkFx(group);
   return group;
 }
 
@@ -222,6 +345,7 @@ export function mountBackpackSystem({
   let panelTimer = null;
   let lastLabelKey = '';
   let lastCompostTick = 0;
+  let itemTime = 0;
 
   if (!document.getElementById('backpack-style')) {
     const style = document.createElement('style');
@@ -450,7 +574,7 @@ export function mountBackpackSystem({
     if (!mesh) return;
     groundLayer.remove(mesh);
     mesh.traverse(node => {
-      if (node.isMesh) {
+      if (node.isMesh || node.isSprite || node.isPoints) {
         node.geometry?.dispose?.();
         if (Array.isArray(node.material)) node.material.forEach(material => material.dispose?.());
         else node.material?.dispose?.();
@@ -491,7 +615,7 @@ export function mountBackpackSystem({
     if (dialog.open) render();
     localSound?.playAction?.('ui-confirm');
     if (fx) fx.burst(new THREE.Vector3().fromArray(item.position).add(new THREE.Vector3(0, 0.3, 0)), 5);
-    onMessage(`捡起 ${def.name} ×1`);
+    onMessage(`捏着鼻子捡起${def.name} ×1`);
   }
 
   function dropSelected() {
@@ -681,6 +805,8 @@ export function mountBackpackSystem({
       const yard = getSceneId() === YARD_SCENE_ID;
       groundLayer.visible = yard;
       if (compost) compost.root.visible = yard;
+      itemTime += dt;
+      for (const mesh of meshes.values()) animatePoop(mesh, itemTime);
       ensureCompost();
       tick(Date.now());
     },
