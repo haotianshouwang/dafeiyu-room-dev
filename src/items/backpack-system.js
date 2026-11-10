@@ -22,11 +22,6 @@ const STYLE = `
 #bag-entry .bag-count{display:inline-flex;min-width:18px;height:18px;align-items:center;justify-content:center;
   padding:0 5px;border-radius:9px;background:#a8794f;color:#fff;font-size:10px;line-height:1;vertical-align:1px}
 .bag-panel{width:min(440px,calc(100vw - 32px))}
-.bag-tabs{display:flex;gap:6px;margin:8px 0 12px}
-.bag-tabs button{flex:1;padding:9px 10px;border:1px solid #d9c9b6;border-radius:10px;background:#fff9ee;color:#51454a;
-  font:inherit;cursor:pointer;min-height:42px;transition:background .15s,border-color .15s}
-.bag-tabs button:hover{background:#fff2df}
-.bag-tabs button.active{background:#e8d6bd;border-color:#b48a5f;font-weight:600}
 .bag-summary{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#78665a;margin:2px 0 10px}
 .bag-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .bag-slot{position:relative;aspect-ratio:1;min-width:0;padding:0;display:grid;place-items:center;
@@ -224,7 +219,6 @@ export function mountBackpackSystem({
   let hoverThrottle = 0;
   let selectedItemId = 'poop';
   let selectedEmpty = false;
-  let activeTab = 'items';
   let panelTimer = null;
   let lastLabelKey = '';
   let lastCompostTick = 0;
@@ -249,16 +243,23 @@ export function mountBackpackSystem({
   dialog.setAttribute('aria-labelledby', 'bag-panel-title');
   dialog.innerHTML = `<div class="settings-card">
     <header class="settings-header"><h2 id="bag-panel-title">背包</h2><button class="settings-close" type="button" aria-label="关闭背包">×</button></header>
-    <div class="bag-tabs" role="tablist">
-      <button type="button" data-bag-tab="items" class="active" role="tab" aria-selected="true">物品</button>
-      <button type="button" data-bag-tab="compost" role="tab" aria-selected="false">堆肥</button>
-    </div>
     <div class="bag-body"></div>
-    <p class="bag-foot">便便可以从地面捡进背包，也可以丢回院子；放进农田边的堆肥箱，等一会儿就能收肥料。</p>
+    <p class="bag-foot">便便可以从地面捡进背包，也可以丢回院子。堆肥箱在农田边，走过去点击它就能放入便便、收取肥料。</p>
   </div>`;
   document.body.append(dialog);
   const body = dialog.querySelector('.bag-body');
-  const tabs = dialog.querySelector('.bag-tabs');
+
+  const compostDialog = document.createElement('dialog');
+  compostDialog.id = 'compost-panel';
+  compostDialog.className = 'settings-dialog compost-panel';
+  compostDialog.setAttribute('aria-labelledby', 'compost-panel-title');
+  compostDialog.innerHTML = `<div class="settings-card">
+    <header class="settings-header"><h2 id="compost-panel-title">堆肥箱</h2><button class="settings-close" type="button" aria-label="关闭堆肥箱">×</button></header>
+    <div class="compost-body"></div>
+    <p class="bag-foot">便便会在约 2 分钟后变成肥料。肥料先存进背包，等种地系统接入后使用。</p>
+  </div>`;
+  document.body.append(compostDialog);
+  const compostBody = compostDialog.querySelector('.compost-body');
 
   function totalItems() { return inventoryTotal(state); }
 
@@ -272,12 +273,11 @@ export function mountBackpackSystem({
     updateBadge();
   }
 
-  function refreshPanelTimer() {
+  function refreshCompostTimer() {
     if (panelTimer) { clearInterval(panelTimer); panelTimer = null; }
-    if (!dialog.open) return;
+    if (!compostDialog.open) return;
     panelTimer = setInterval(() => {
-      if (!dialog.open) return;
-      refreshCompostLive();
+      if (compostDialog.open) refreshCompostLive();
     }, 500);
   }
 
@@ -324,8 +324,8 @@ export function mountBackpackSystem({
   }
 
   function refreshCompostLive() {
-    if (!dialog.open || activeTab !== 'compost') return;
-    const root = body.querySelector('.bag-compost');
+    if (!compostDialog.open) return;
+    const root = compostBody.querySelector('.bag-compost');
     if (!root) return;
     const live = getCompostStatus(state, Date.now());
     const near = nearCompost();
@@ -371,7 +371,7 @@ export function mountBackpackSystem({
     const progress = Math.round((live.status === 'ready' ? 1 : live.progress ?? 0) * 100);
     const depositDisabled = !near || live.status !== 'empty' || count <= 0;
     const collectDisabled = !near || live.status !== 'ready' || (state.inventory.fertilizer ?? 0) >= ITEMS.fertilizer.stackMax;
-    body.innerHTML = `
+    compostBody.innerHTML = `
       <div class="bag-compost">
         <div class="bag-status">
           <span class="badge" aria-hidden="true">${badge}</span>
@@ -389,29 +389,31 @@ export function mountBackpackSystem({
   }
 
   function render() {
-    tabs.querySelectorAll('button').forEach(button => {
-      const active = button.dataset.bagTab === activeTab;
-      button.classList.toggle('active', active);
-      button.setAttribute('aria-selected', String(active));
-    });
-    if (activeTab === 'items') renderItems();
-    else renderCompost();
+    renderItems();
   }
 
-  function open(tab = 'items') {
-    activeTab = tab;
-    if (tab === 'items') {
-      const occupied = occupiedItemIds();
-      selectedItemId = occupied[0] ?? null;
-      selectedEmpty = occupied.length === 0;
-    }
+  function open() {
+    const occupied = occupiedItemIds();
+    selectedItemId = occupied[0] ?? null;
+    selectedEmpty = occupied.length === 0;
     render();
     if (!dialog.open) dialog.showModal();
-    refreshPanelTimer();
   }
 
   function close() {
     if (dialog.open) dialog.close();
+  }
+
+  function openCompost() {
+    if (compostDialog.open) return;
+    ensureCompost();
+    renderCompost();
+    compostDialog.showModal();
+    refreshCompostTimer();
+  }
+
+  function closeCompost() {
+    if (compostDialog.open) compostDialog.close();
     if (panelTimer) { clearInterval(panelTimer); panelTimer = null; }
   }
 
@@ -525,7 +527,7 @@ export function mountBackpackSystem({
       return;
     }
     save();
-    render();
+    renderCompost();
     updateCompostVisual(true);
     localSound?.playAction?.('ui-confirm');
     onMessage('便便放进堆肥箱了，等一会儿就能收肥料');
@@ -540,7 +542,7 @@ export function mountBackpackSystem({
       return;
     }
     save();
-    render();
+    renderCompost();
     updateCompostVisual(true);
     localSound?.playAction?.('ui-confirm');
     if (fx && compost) fx.burst(compost.root.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 8);
@@ -608,7 +610,7 @@ export function mountBackpackSystem({
     if (now - lastCompostTick > 500) {
       lastCompostTick = now;
       updateCompostVisual();
-      if (dialog.open && activeTab === 'compost') render();
+      if (compostDialog.open) refreshCompostLive();
     }
   }
 
@@ -652,29 +654,26 @@ export function mountBackpackSystem({
     if (!target) return;
     if (target.tooFar) { onMessage('离得太远了，走近一点再操作'); return; }
     if (target.kind === 'poop') pickupItem(target.itemId);
-    else if (target.kind === 'compost') open('compost');
+    else if (target.kind === 'compost') openCompost();
   });
 
-  entry.addEventListener('click', () => open('items'));
-  tabs.addEventListener('click', event => {
-    const button = event.target.closest('button[data-bag-tab]');
-    if (!button) return;
-    activeTab = button.dataset.bagTab;
-    render();
-  });
+  entry.addEventListener('click', open);
   body.addEventListener('click', event => {
     const empty = event.target.closest('[data-empty-slot]');
     if (empty) { selectedEmpty = true; selectedItemId = null; render(); return; }
     const tab = event.target.closest('[data-bag-item]');
     if (tab) { selectedEmpty = false; selectedItemId = tab.dataset.bagItem; render(); return; }
+    if (event.target.closest('[data-bag-action="drop"]')) dropSelected();
+  });
+  compostBody.addEventListener('click', event => {
     const action = event.target.closest('[data-bag-action]')?.dataset.bagAction;
-    if (action === 'drop') dropSelected();
-    else if (action === 'deposit') depositCompost();
+    if (action === 'deposit') depositCompost();
     else if (action === 'collect') collectFertilizer();
   });
   dialog.querySelector('.settings-close').addEventListener('click', close);
-  dialog.addEventListener('close', () => { if (panelTimer) { clearInterval(panelTimer); panelTimer = null; } });
-  dialog.addEventListener('cancel', () => { if (panelTimer) { clearInterval(panelTimer); panelTimer = null; } });
+  compostDialog.querySelector('.settings-close').addEventListener('click', closeCompost);
+  compostDialog.addEventListener('close', () => { if (panelTimer) { clearInterval(panelTimer); panelTimer = null; } });
+  compostDialog.addEventListener('cancel', () => { if (panelTimer) { clearInterval(panelTimer); panelTimer = null; } });
 
   // 恢复上次保存在院子里的地面物品。
   syncGroundMeshes();
@@ -690,6 +689,7 @@ export function mountBackpackSystem({
     },
     spawnPoop,
     open,
+    openCompost,
     _debug: () => ({
       inventory: { ...state.inventory },
       ground: state.groundItems.map(item => ({ id: item.id, type: item.type, position: item.position })),
