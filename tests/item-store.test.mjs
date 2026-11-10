@@ -4,7 +4,7 @@ import {
   createDefaultItemState, normalizeItemState, loadItemState, saveItemState,
   inventoryTotal, addItem, removeItem, addGroundItem, removeGroundItem, getGroundItem,
   tickCompost, getCompostStatus, startCompost, collectCompost, markCompostNotified,
-  ITEM_STORAGE_KEY, GROUND_ITEM_CAP, COMPOST_DURATION_MS,
+  ITEM_STORAGE_KEY, GROUND_ITEM_CAP, COMPOST_DURATION_MS, BAG_SLOT_COUNT, ensureSlots, moveItemSlot,
 } from '../src/items/item-store.js';
 import { ITEMS } from '../shared/world/items.js';
 
@@ -125,4 +125,32 @@ test('localStorage 读写容错与通知标记', () => {
   assert.equal(loadItemState(storage, 1000).inventory.fertilizer, 0);
   markCompostNotified(state);
   assert.equal(state.compost.notified, true);
+});
+
+test('背包格子可持久化、移动和清理', () => {
+  const state = createDefaultItemState();
+  assert.equal(state.slots.length, BAG_SLOT_COUNT);
+  addItem(state, 'poop', 1);
+  addItem(state, 'fertilizer', 2);
+  assert.equal(state.slots[0], 'poop');
+  assert.equal(state.slots[1], 'fertilizer');
+  assert.equal(moveItemSlot(state, 0, 5), true);
+  assert.equal(state.slots[5], 'poop');
+  assert.equal(state.slots[0], null);
+  assert.equal(moveItemSlot(state, 5, 6), true);
+  assert.equal(state.slots[6], 'poop');
+  removeItem(state, 'poop', 1);
+  assert.equal(state.slots.includes('poop'), false);
+  const normalized = normalizeItemState({ version: 1, inventory: { poop: 1, fertilizer: 1 }, slots: [null, 'fertilizer', 'poop'] }, 1000);
+  assert.equal(normalized.slots[1], 'fertilizer');
+  assert.equal(normalized.slots[2], 'poop');
+  assert.equal(normalized.slots.filter(Boolean).length, 2);
+});
+
+test('直接改库存时 ensureSlots 会补格子', () => {
+  const state = createDefaultItemState();
+  state.inventory.poop = 3;
+  ensureSlots(state);
+  assert.equal(state.slots.filter(Boolean).length, 1);
+  assert.equal(state.slots[0], 'poop');
 });

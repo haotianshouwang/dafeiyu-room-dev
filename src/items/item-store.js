@@ -2,6 +2,7 @@ import { ITEMS, ITEM_IDS, getItemDef } from '../../shared/world/items.js';
 
 export const ITEM_STORAGE_KEY = 'dafeiyu.items.v1';
 export const ITEM_VERSION = 1;
+export const BAG_SLOT_COUNT = 12;
 export const GROUND_ITEM_CAP = 20;
 export const COMPOST_DURATION_MS = 120_000;
 export const COMPOST_OUTPUT = Object.freeze({ type: 'fertilizer', count: 1 });
@@ -18,6 +19,7 @@ export function createDefaultItemState() {
   return {
     version: ITEM_VERSION,
     inventory: Object.fromEntries(ITEM_IDS.map(id => [id, 0])),
+    slots: Array.from({ length: BAG_SLOT_COUNT }, () => null),
     groundItems: [],
     compost: {
       status: 'empty',
@@ -46,11 +48,61 @@ function normalizeGroundItem(raw, index, now) {
   };
 }
 
+export function ensureSlots(state) {
+  const total = Math.max(BAG_SLOT_COUNT, ITEM_IDS.length);
+  if (!Array.isArray(state.slots)) state.slots = [];
+  const present = new Set();
+  const slots = [];
+  for (let index = 0; index < total; index += 1) {
+    const id = state.slots[index];
+    if (typeof id === 'string' && ITEM_IDS.includes(id) && (state.inventory[id] ?? 0) > 0 && !present.has(id)) {
+      slots.push(id);
+      present.add(id);
+    } else {
+      slots.push(null);
+    }
+  }
+  for (const id of ITEM_IDS) {
+    if ((state.inventory[id] ?? 0) <= 0 || present.has(id)) continue;
+    const index = slots.indexOf(null);
+    if (index >= 0) { slots[index] = id; present.add(id); }
+  }
+  state.slots = slots;
+  return state.slots;
+}
+
+function removeSlot(state, id) {
+  if (!Array.isArray(state.slots)) return;
+  state.slots = state.slots.map(slot => (slot === id ? null : slot));
+}
+
+export function moveItemSlot(state, from, to) {
+  if (!Array.isArray(state.slots)) ensureSlots(state);
+  const length = state.slots.length;
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= length || to >= length || from === to) return false;
+  const moved = state.slots[from];
+  if (!moved) return false;
+  state.slots[from] = state.slots[to];
+  state.slots[to] = moved;
+  return true;
+}
+
 export function normalizeItemState(raw, now = Date.now()) {
   const state = createDefaultItemState();
   if (!raw || typeof raw !== 'object') return state;
   const inventory = raw.inventory && typeof raw.inventory === 'object' ? raw.inventory : {};
   for (const id of ITEM_IDS) state.inventory[id] = clampCount(inventory[id], ITEMS[id].stackMax);
+  if (Array.isArray(raw.slots)) {
+    const total = Math.max(BAG_SLOT_COUNT, ITEM_IDS.length);
+    const seen = new Set();
+    state.slots = Array.from({ length: total }, (_, index) => {
+      const id = raw.slots[index];
+      if (typeof id !== 'string' || !ITEM_IDS.includes(id) || (state.inventory[id] ?? 0) <= 0 || seen.has(id)) return null;
+      seen.add(id);
+      return id;
+    });
+  }
+  ensureSlots(state);
   if (Array.isArray(raw.groundItems)) {
     const seen = new Set();
     for (let index = 0; index < raw.groundItems.length && state.groundItems.length < GROUND_ITEM_CAP; index += 1) {
@@ -101,6 +153,7 @@ export function addItem(state, id, count = 1) {
   const next = Math.min(def.stackMax, current + Math.max(0, Math.trunc(count)));
   const added = next - current;
   state.inventory[id] = next;
+  if (added > 0 && next > 0) ensureSlots(state);
   return added;
 }
 
@@ -108,6 +161,7 @@ export function removeItem(state, id, count = 1) {
   const current = state.inventory[id] ?? 0;
   const removed = Math.min(current, Math.max(0, Math.trunc(count)));
   state.inventory[id] = current - removed;
+  if (state.inventory[id] <= 0) removeSlot(state, id);
   return removed;
 }
 

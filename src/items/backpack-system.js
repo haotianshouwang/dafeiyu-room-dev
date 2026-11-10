@@ -7,7 +7,7 @@ import {
   loadItemState, saveItemState, inventoryTotal, addItem, removeItem,
   addGroundItem, removeGroundItem, getGroundItem,
   tickCompost, getCompostStatus, startCompost, collectCompost, markCompostNotified,
-  COMPOST_DURATION_MS,
+  COMPOST_DURATION_MS, BAG_SLOT_COUNT, moveItemSlot, ensureSlots,
 } from './item-store.js';
 
 const YARD_SCENE_ID = 'yard';
@@ -15,7 +15,6 @@ const INTERACT_DISTANCE = 4.5;
 const DROP_FORWARD = 1.1;
 const COMPOST_FALLBACK = [-3.1, 0, -15.9];
 const COMPOST_OFFSET_X = 3.0;
-const BAG_SLOT_COUNT = 12;
 
 const STYLE = `
 #bag-entry{position:fixed;right:max(24px,env(safe-area-inset-right));bottom:max(24px,env(safe-area-inset-bottom));z-index:36;box-shadow:0 6px 18px #3b2a1c24}
@@ -25,18 +24,22 @@ const STYLE = `
 .bag-summary{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#78665a;margin:2px 0 10px}
 .bag-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .bag-slot{position:relative;aspect-ratio:1;min-width:0;padding:0;display:grid;place-items:center;
-  border:1px solid #e3d2bc;border-radius:12px;background:#fffdf7;color:#51454a;font:inherit;cursor:pointer;
-  transition:background .15s,border-color .15s,box-shadow .15s,transform .12s}
+  border:1px solid #e3d2bc;border-radius:12px;background:#fffdf7;color:#51454a;font:inherit;cursor:grab;
+  touch-action:none;transition:background .15s,border-color .15s,box-shadow .15s,transform .12s}
 .bag-slot:hover{background:#fff4e4;border-color:#c9a477;transform:translateY(-1px)}
 .bag-slot.selected{border-color:#b48a5f;box-shadow:0 0 0 2px #e3c9aa inset;background:#fff7e9}
-.bag-slot .emoji{font-size:30px;line-height:1;filter:drop-shadow(0 2px 2px #5a3a1a22)}
+.bag-slot .emoji{font-size:30px;line-height:1;filter:drop-shadow(0 2px 2px #5a3a1a22);display:grid;place-items:center}
+.bag-slot .emoji svg{width:34px;height:34px}
+.bag-slot.dragging{opacity:.35}
+.bag-slot.drop-target{border-color:#a8794f;background:#fff0d8;box-shadow:0 0 0 2px #cba77c inset}
 .bag-slot .count{position:absolute;right:6px;bottom:4px;font-size:11px;font-weight:600;color:#6a5546;
   font-variant-numeric:tabular-nums;background:#fffaf1d9;border-radius:7px;padding:0 3px;line-height:1.5}
 .bag-slot.empty{background:#faf3e8;border-style:dashed;cursor:default;opacity:.65}
 .bag-slot.empty:hover{background:#faf3e8;border-color:#e3d2bc;transform:none}
 .bag-detail{margin-top:12px;padding:12px;border:1px solid #eadcc9;border-radius:13px;background:#fffaf1}
 .bag-detail-head{display:flex;align-items:center;gap:7px;margin-bottom:6px}
-.bag-detail-head .emoji{font-size:20px}
+.bag-detail-head .emoji{font-size:20px;display:grid;place-items:center}
+.bag-detail-head .emoji svg{width:24px;height:24px}
 .bag-detail-head b{font-size:14px}
 .bag-detail-head em{margin-left:auto;font-style:normal;font-size:12px;color:#8a7563;font-variant-numeric:tabular-nums}
 .bag-detail p{margin:0;font-size:13px;line-height:1.55;color:#6b594b}
@@ -60,6 +63,11 @@ const STYLE = `
 .bag-hint{margin:0;font-size:11px;line-height:1.55;color:#8a7563}
 .bag-hint.warn{color:#9a5a32}
 .bag-foot{margin:12px 0 0;font-size:11px;color:#8a7563;line-height:1.55}
+body.bag-dragging, body.bag-dragging *{cursor:grabbing!important;user-select:none}
+.bag-drag-ghost{position:fixed;z-index:100;width:54px;height:54px;display:grid;place-items:center;pointer-events:none;
+  border:1px solid #c9a477;border-radius:12px;background:#fffdf7;box-shadow:0 8px 20px #3b2a1c30;
+  transform:translate(-50%,-50%) rotate(-5deg);font-size:30px;opacity:.94}
+.bag-drag-ghost svg{width:32px;height:32px}
 @media (max-width:760px){
   #bag-entry{right:max(14px,env(safe-area-inset-right));bottom:calc(max(16px,env(safe-area-inset-bottom)) + 74px);
     padding:10px 12px;font-size:12px}
@@ -346,6 +354,9 @@ export function mountBackpackSystem({
   let lastLabelKey = '';
   let lastCompostTick = 0;
   let itemTime = 0;
+  let drag = null;
+  let dragGhost = null;
+  let suppressClickUntil = 0;
 
   if (!document.getElementById('backpack-style')) {
     const style = document.createElement('style');
@@ -414,33 +425,34 @@ export function mountBackpackSystem({
     return ITEM_IDS.filter(id => (state.inventory[id] ?? 0) > 0);
   }
 
+  function itemIconHtml(def) {
+    return def.icon ?? `<span aria-hidden="true">${def.emoji}</span>`;
+  }
+
   function renderItems() {
-    const occupied = occupiedItemIds();
+    ensureSlots(state);
+    const occupied = state.slots.filter(Boolean);
     if (!selectedEmpty && (!selectedItemId || !occupied.includes(selectedItemId))) {
       selectedItemId = occupied[0] ?? null;
       if (!selectedItemId) selectedEmpty = true;
     }
-    const totalSlots = Math.max(BAG_SLOT_COUNT, occupied.length);
-    const slots = Array.from({ length: totalSlots }, (_, index) => occupied[index] ?? null);
+    const slots = state.slots;
     const selected = selectedEmpty ? null : (selectedItemId ? ITEMS[selectedItemId] : null);
     const count = selected ? state.inventory[selected.id] ?? 0 : 0;
     body.innerHTML = `
       <div class="bag-grid" role="list" aria-label="背包格子">
         ${slots.map((id, index) => {
-          if (!id) return `<button type="button" class="bag-slot empty" data-empty-slot="${index}" role="listitem" aria-label="空格子"></button>`;
+          if (!id) return `<button type="button" class="bag-slot empty" data-slot-index="${index}" role="listitem" aria-label="空格子"></button>`;
           const def = ITEMS[id];
           const owned = state.inventory[id] ?? 0;
-          return `<button type="button" class="bag-slot${id === selectedItemId ? ' selected' : ''}" data-bag-item="${id}" role="listitem" aria-label="${def.name} ${owned} 个">
-            <span class="emoji" aria-hidden="true">${def.emoji}</span>
+          return `<button type="button" class="bag-slot${id === selectedItemId ? ' selected' : ''}" data-slot-index="${index}" data-bag-item="${id}" role="listitem" aria-label="${def.name} ${owned} 个，拖出背包可丢弃">
+            <span class="emoji">${itemIconHtml(def)}</span>
             <span class="count">×${owned}</span>
           </button>`;
         }).join('')}
       </div>
-      ${selected ? `<div class="bag-detail" title="${selected.description}">
-        <div class="bag-detail-head"><span class="emoji" aria-hidden="true">${selected.emoji}</span><b>${selected.name}</b><em>×${count}</em></div>
-        <div class="bag-actions">
-          <button type="button" data-bag-action="drop" class="primary" ${!selected.placeable || count <= 0 ? 'disabled' : ''}>丢到地上</button>
-        </div>
+      ${selected ? `<div class="bag-detail" title="${selected.description} 拖出背包可丢弃">
+        <div class="bag-detail-head"><span class="emoji">${itemIconHtml(selected)}</span><b>${selected.name}</b><em>×${count}</em></div>
       </div>` : ''}
     `;
   }
@@ -618,25 +630,74 @@ export function mountBackpackSystem({
     onMessage(`捏着鼻子捡起${def.name} ×1`);
   }
 
-  function dropSelected() {
-    if (selectedEmpty) return;
-    const def = ITEMS[selectedItemId];
-    if (!def || !def.placeable) return;
-    if ((state.inventory[selectedItemId] ?? 0) <= 0) { onMessage(`背包里没有${def.name}了`); return; }
-    if (getSceneId() !== YARD_SCENE_ID) { onMessage('回到院子才能把东西丢到地上'); return; }
-    const position = groundSpot();
-    const removed = removeItem(state, selectedItemId, 1);
-    const result = addGroundItem(state, { type: selectedItemId, sceneId: YARD_SCENE_ID, position, now: Date.now() });
+  function groundPointFromClient(clientX, clientY) {
+    const camera = getCamera?.();
+    if (!camera) return null;
+    const rect = canvas.getBoundingClientRect();
+    ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    const player = getPlayer();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(player.position.y ?? 0));
+    const point = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, point)) return null;
+    let x = point.x;
+    let z = point.z;
+    let y = player.position.y;
+    const snapshot = getSnapshot();
+    const sceneId = getSceneId();
+    try {
+      const free = nearestFree(snapshot, sceneId, [x, y, z]);
+      x = free[0]; z = free[2];
+      if (Number.isFinite(free[1])) y = free[1];
+    } catch { /* 保留指针落点 */ }
+    try {
+      const entry = snapshot.scenes?.find(scene => scene.sceneId === sceneId);
+      const template = entry ? getTemplate(entry.templateId) : null;
+      y = surfaceAt(template, x, z)?.height ?? y;
+    } catch { /* 保持玩家高度 */ }
+    return [x, y, z];
+  }
+
+  function dropItemToGround(id, clientX, clientY) {
+    const def = ITEMS[id];
+    if (!def) return false;
+    if (!def.placeable) { onMessage(`${def.name}不能丢到地上`); return false; }
+    if ((state.inventory[id] ?? 0) <= 0) { onMessage(`背包里没有${def.name}了`); return false; }
+    if (getSceneId() !== YARD_SCENE_ID) { onMessage('回到院子才能把东西丢到地上'); return false; }
+    const position = groundPointFromClient(clientX, clientY) ?? groundSpot();
+    const removed = removeItem(state, id, 1);
+    const result = addGroundItem(state, { type: id, sceneId: YARD_SCENE_ID, position, now: Date.now() });
     if (!result.ok) {
-      if (removed) addItem(state, selectedItemId, removed);
+      if (removed) addItem(state, id, removed);
       onMessage(result.reason === 'ground-full' ? '地上东西太多了，先捡一些吧' : '这里放不下，换个地方试试');
-      return;
+      return false;
     }
     createGroundMesh(result.item);
     save();
     close();
     localSound?.playAction?.('ui-confirm');
-    onMessage(`${def.name}丢在脚边了`);
+    onMessage(`${def.name}丢在院子里了`);
+    return true;
+  }
+
+  function itemGhost(def) {
+    const ghost = document.createElement('div');
+    ghost.className = 'bag-drag-ghost';
+    ghost.innerHTML = itemIconHtml(def);
+    document.body.append(ghost);
+    return ghost;
+  }
+
+  function clearDropTargets() {
+    for (const node of body.querySelectorAll('.bag-slot.drop-target, .bag-slot.dragging')) {
+      node.classList.remove('drop-target', 'dragging');
+    }
+  }
+
+  function slotAtPoint(clientX, clientY) {
+    const element = document.elementFromPoint(clientX, clientY);
+    const slot = element?.closest?.('[data-slot-index]');
+    return slot && dialog.contains(slot) ? slot : null;
   }
 
   function depositCompost() {
@@ -779,12 +840,82 @@ export function mountBackpackSystem({
   });
 
   entry.addEventListener('click', open);
+  body.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    const slot = event.target.closest('[data-slot-index]');
+    if (!slot?.dataset.bagItem) return;
+    drag = {
+      id: slot.dataset.bagItem,
+      from: Number(slot.dataset.slotIndex),
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+    };
+    slot.setPointerCapture?.(event.pointerId);
+  });
+  window.addEventListener('pointermove', event => {
+    if (!drag) return;
+    const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+    if (!drag.moved) {
+      if (distance < 6) return;
+      drag.moved = true;
+      dragGhost = itemGhost(ITEMS[drag.id]);
+      document.body.classList.add('bag-dragging');
+      body.querySelector(`[data-slot-index="${drag.from}"]`)?.classList.add('dragging');
+    }
+    dragGhost.style.left = `${event.clientX}px`;
+    dragGhost.style.top = `${event.clientY}px`;
+    for (const node of body.querySelectorAll('.bag-slot.drop-target')) node.classList.remove('drop-target');
+    slotAtPoint(event.clientX, event.clientY)?.classList.add('drop-target');
+  });
+  function finishDrag(event) {
+    if (!drag) return;
+    const current = drag;
+    drag = null;
+    dragGhost?.remove();
+    dragGhost = null;
+    document.body.classList.remove('bag-dragging');
+    clearDropTargets();
+    if (!current.moved) return;
+    suppressClickUntil = performance.now() + 320;
+    const target = slotAtPoint(event.clientX, event.clientY);
+    if (target) {
+      const to = Number(target.dataset.slotIndex);
+      if (moveItemSlot(state, current.from, to)) {
+        selectedEmpty = false;
+        selectedItemId = current.id;
+        save();
+        render();
+      }
+      return;
+    }
+    const rect = dialog.getBoundingClientRect();
+    const insidePanel = event.clientX >= rect.left && event.clientX <= rect.right
+      && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    if (!insidePanel) dropItemToGround(current.id, event.clientX, event.clientY);
+  }
+  window.addEventListener('pointerup', finishDrag);
+  window.addEventListener('pointercancel', event => {
+    if (!drag) return;
+    drag = null;
+    dragGhost?.remove();
+    dragGhost = null;
+    document.body.classList.remove('bag-dragging');
+    clearDropTargets();
+  });
   body.addEventListener('click', event => {
-    const empty = event.target.closest('[data-empty-slot]');
-    if (empty) { selectedEmpty = true; selectedItemId = null; render(); return; }
-    const tab = event.target.closest('[data-bag-item]');
-    if (tab) { selectedEmpty = false; selectedItemId = tab.dataset.bagItem; render(); return; }
-    if (event.target.closest('[data-bag-action="drop"]')) dropSelected();
+    if (performance.now() < suppressClickUntil) return;
+    const slot = event.target.closest('[data-slot-index]');
+    if (!slot) return;
+    if (!slot.dataset.bagItem) {
+      selectedEmpty = true;
+      selectedItemId = null;
+      render();
+      return;
+    }
+    selectedEmpty = false;
+    selectedItemId = slot.dataset.bagItem;
+    render();
   });
   compostBody.addEventListener('click', event => {
     const action = event.target.closest('[data-bag-action]')?.dataset.bagAction;
