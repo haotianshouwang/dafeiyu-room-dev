@@ -1,6 +1,7 @@
 import {poolAt,waterAt} from '/shared/world/water.js';
 import {forestLakeDepth} from '/shared/world/forest.js';
 import {createBaizeEncounter} from './core/baize-encounter.js';
+import {mountPetSystem} from './pets/pet-system.js';
 import {createBaizeFollower} from './characters/baize.js';
 import {mountBaizeBattle} from './ui/baize-battle.js';
 import {createTeleportEffect} from "./ui/teleport-effect.js";
@@ -75,6 +76,7 @@ import {PLAYER_SPEED} from "/shared/world/movement.js";
 
 setupBackdrop();
 const R=createRenderer(document.getElementById('app')),scene=new THREE.Scene(),iso=new IsoCamera(),camera=iso.camera;
+const canvas=R.renderer.domElement;
 setupEnvironment(R.renderer,scene);const lights=setupLights(scene,{windowPos:new THREE.Vector3(.05,1.6,-3.4)});
 const lightDefaults=Object.fromEntries(Object.entries(lights).map(([key,light])=>[key,{intensity:light.intensity,color:light.color.clone()}]));
 const defaultGroundLight=lights.hemi.groundColor.clone();
@@ -378,7 +380,22 @@ const baizeEncounter=createBaizeEncounter();
 let encounterPending=false,encounterSceneId;
 const player=new PlayerController({onStep:checkBaizeEncounter,takeControl:()=>control(true),send:payload=>client.dispatch({kind:'actor.input',payload},{refresh:false}),onRelease:last=>{if(last)actorTimeline.handoff(last,performance.now());},onError:error=>{baizeEncounter.clearGrass();keys.clear();showMessage(`移动未同步：${error.message}`);}});
 const baizeFollower=createBaizeFollower(scene);
+const petSystem=mountPetSystem({
+ scene,canvas,
+ getCamera:()=>game.camera,
+ getSnapshot:()=>client.snapshot,
+ getSceneId:()=>activeScene,
+ getPlayer:()=>({position:renderPosition,heading:actor?.rotation??0}),
+ isEditing:()=>Boolean(editor?.active),
+ isFirstPerson:()=>fpActive,
+ isBattle:()=>Boolean(baizeBattle?.active),
+ onMessage:showMessage,
+ localSound,fx,
+});
+window.__petSystem=petSystem;
 const baizeBattle=mountBaizeBattle(client,{
+ getBattlePet:()=>petSystem.getBattlePet(),
+
  character:original,
  playSound:cue=>localSound.playAction(cue),
  onEnter:showIntro=>{
@@ -675,7 +692,6 @@ function pauseKeyboardWalking(){
 }
 function stopMovement(){sprintHeld=false;diveRequested=undefined;const moving=keys.size>0;keys.clear();if(moving&&!editor?.active){player.stop();player.flush().catch(()=>{});}}window.addEventListener('blur',stopMovement);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMovement();});
 const pointer=new THREE.Vector2();window.addEventListener('pointermove',e=>{pointer.set(e.clientX/window.innerWidth*2-1,-e.clientY/window.innerHeight*2+1);iso.setPointer(pointer.x,pointer.y);});
-const canvas=R.renderer.domElement;
 const spellBar=mountSpellBar({canvas,scene,playSound:cue=>localSound.playAction(cue),startCast:({start,end},release)=>{
  if(whale!==original||actor.actionId||crawling||travelAction||performance.now()<slideUntil||
     ['tree-climbing','climbing','sleeping','seated','eating','jumping'].includes(actor.pose))return false;
@@ -966,7 +982,8 @@ function frame(){
  if(freezeLog.lastFrameAt){const gap=frameStart-freezeLog.lastFrameAt;if(gap>600)freezeLog.gaps.push({t:Date.now()-freezeLog.startedAt,gap:Math.round(gap),fpActive,locked:document.pointerLockElement===canvas});if(gap>1500&&fpActive){setTimeout(()=>escapePointerTrap('检测到明显卡顿，已退出第一视角以免光标被锁住'),0);}}
  freezeLog.lastFrameAt=frameStart;
  try{
-  const dt=Math.min(.05,clock.getDelta());if(baizeBattle.active){baizeBattle.render(R.renderer,dt);return;}time+=dt;if(!encounterPending)updateKeyboard(dt,frameStart);updateControlStatus(frameStart);registry.update(dt,time);updateAuthorProgress();const visual=renderActor(dt,time);baizeFollower.update(dt,client.snapshot,visual,renderPosition);iso.update(dt);if(fpActive){fp.setEye(renderPosition,currentPose);fpShadow.position.set(renderPosition.x,renderPosition.y+0.015,renderPosition.z);if(R.renderPass)R.renderPass.camera=fp.camera;}else if(thirdActive){const isBlob=whale===blob;tp.setBaseDistance(isBlob?6.4:3.6);tp.follow(renderPosition,dt,isBlob?1.9:(currentPose==='sleeping'?0.5:1.15));clampThirdCameraToRoom();if(R.renderPass)R.renderPass.camera=tp.camera;}else if(R.renderPass)R.renderPass.camera=camera;spellBar.update(dt,frameStart,renderedSpellCast,spellHand);fx.update(dt,time);hud.updateBubble(dt,fpActive?fp.camera:camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0){if(forestLighting)followForestSun();lights.sun.shadow.needsUpdate=true;}R.composer.render();performanceStats.frames.push(performance.now()-frameStart);if(performanceStats.frames.length>1200)performanceStats.frames.shift();
+  const dt=Math.min(.05,clock.getDelta());if(baizeBattle.active){baizeBattle.render(R.renderer,dt);return;}time+=dt;if(!encounterPending)updateKeyboard(dt,frameStart);updateControlStatus(frameStart);registry.update(dt,time);updateAuthorProgress();const visual=renderActor(dt,time);if(petSystem.hasFollowers())baizeFollower.hide();else baizeFollower.update(dt,client.snapshot,visual,renderPosition);
+  petSystem.update(dt,client.snapshot,visual,renderPosition);iso.update(dt);if(fpActive){fp.setEye(renderPosition,currentPose);fpShadow.position.set(renderPosition.x,renderPosition.y+0.015,renderPosition.z);if(R.renderPass)R.renderPass.camera=fp.camera;}else if(thirdActive){const isBlob=whale===blob;tp.setBaseDistance(isBlob?6.4:3.6);tp.follow(renderPosition,dt,isBlob?1.9:(currentPose==='sleeping'?0.5:1.15));clampThirdCameraToRoom();if(R.renderPass)R.renderPass.camera=tp.camera;}else if(R.renderPass)R.renderPass.camera=camera;spellBar.update(dt,frameStart,renderedSpellCast,spellHand);fx.update(dt,time);hud.updateBubble(dt,fpActive?fp.camera:camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0){if(forestLighting)followForestSun();lights.sun.shadow.needsUpdate=true;}R.composer.render();performanceStats.frames.push(performance.now()-frameStart);if(performanceStats.frames.length>1200)performanceStats.frames.shift();
  }catch(error){
   if(!frameErrorAt||performance.now()-frameErrorAt>3000){frameErrorAt=performance.now();console.error('frame loop failed',error);freezeLog.errors.push({t:Date.now()-freezeLog.startedAt,message:String(error?.message||error)});escapePointerTrap('运行出错，已退回等距视角：'+(error?.message||error));}
  }
@@ -1003,7 +1020,7 @@ window.dafeiyuDesktop?.onRenderSuspended?.(suspended=>{
  updateRenderVisibility();
 });
 document.addEventListener('visibilitychange',updateRenderVisibility);
-async function start(){const session=await ownerSession.ensure();client.csrfToken=session.csrfToken;void baizeFollower.load();registerLocalFurniture(await discoverLocalAssets());mountAudioPlayer(client,localSound,settings.muteButton);await client.connect('default');editor=new RoomEditor({group:registry.contexts[activeScene].group,scene,camera,canvas,getScene:()=>activeScene,contexts:registry.contexts,worldClient:client,registry,onClickSound:confirmClick,onOrbit:(dx,dy)=>{if(thirdActive)tp.look(dx,dy);else iso.addDrag(dx*.005);},onToggle:active=>{if(active&&fpActive)setFirstPerson(false);if(active)editor.camera=thirdActive?tp.camera:iso.camera;game.editing=active;stopOrbit();stopMovement();if(player.active){player.stop();player.drain().then(()=>player.release()).catch(()=>{});}keys.clear();if(!active)iso.target.copy(iso.homeTarget);},onChange:()=>yard?.refreshLandscape?.()});toolbar.insertBefore(editor.toggle,toolbar.querySelector('#settings-entry'));editor.setContext(activeScene);window.__editor=editor;mountAuthorExamples({renderActivity,onOpen:()=>{stopMovement();keys.clear();game.editing=true;},onClose:()=>{game.editing=editor.active;}});document.getElementById('loading')?.classList.add('gone');for(const id of ['title','hint','status'])document.getElementById(id)?.classList.add('in');updateControlStatus();}
+async function start(){const session=await ownerSession.ensure();client.csrfToken=session.csrfToken;void baizeFollower.load();void petSystem.load();registerLocalFurniture(await discoverLocalAssets());mountAudioPlayer(client,localSound,settings.muteButton);await client.connect('default');editor=new RoomEditor({group:registry.contexts[activeScene].group,scene,camera,canvas,getScene:()=>activeScene,contexts:registry.contexts,worldClient:client,registry,onClickSound:confirmClick,onOrbit:(dx,dy)=>{if(thirdActive)tp.look(dx,dy);else iso.addDrag(dx*.005);},onToggle:active=>{if(active&&fpActive)setFirstPerson(false);if(active)editor.camera=thirdActive?tp.camera:iso.camera;game.editing=active;stopOrbit();stopMovement();if(player.active){player.stop();player.drain().then(()=>player.release()).catch(()=>{});}keys.clear();if(!active)iso.target.copy(iso.homeTarget);},onChange:()=>yard?.refreshLandscape?.()});toolbar.insertBefore(editor.toggle,toolbar.querySelector('#settings-entry'));editor.setContext(activeScene);window.__editor=editor;mountAuthorExamples({renderActivity,onOpen:()=>{stopMovement();keys.clear();game.editing=true;},onClose:()=>{game.editing=editor.active;}});document.getElementById('loading')?.classList.add('gone');for(const id of ['title','hint','status'])document.getElementById(id)?.classList.add('in');updateControlStatus();}
 // Loading overlay must never hide the owner pairing dialog or block recovery.
 document.getElementById('loadBar').style.width='100%';document.getElementById('loadText').textContent='正在连接世界';start().catch(error=>{document.getElementById('loading')?.classList.add('gone');showMessage(`连接失败：${error.message} · 请刷新重试`);});
 Object.assign(window,{

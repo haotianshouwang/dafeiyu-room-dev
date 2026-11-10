@@ -14,7 +14,7 @@ const badge=move=>{
  return `<span class="baize-element" style="--element-color:${color}">${label}</span>`;
 };
 
-export function mountBaizeBattle(client,{onEnter,onExit,playSound,character}){
+export function mountBaizeBattle(client,{onEnter,onExit,playSound,character,getBattlePet=null}){
  const panel=document.createElement('section');
  panel.className='baize-battle';
  panel.hidden=true;
@@ -338,6 +338,10 @@ export function mountBaizeBattle(client,{onEnter,onExit,playSound,character}){
     return;
    }
    if(next.battleId===closedId)return;
+   if(getBattlePet){
+    const ally=getBattlePet();
+    if(ally&&next.units?.pet)next={...next,units:{...next.units,pet:{...next.units.pet,name:ally.name}}};
+   }
    if(battle?.battleId!==next.battleId){
     hoverEnemy(null);
     battle=next;actorId=id;played=next.lastTurn?.turn??0;event=null;queue=[];tickRound=0;lastTick=6;
