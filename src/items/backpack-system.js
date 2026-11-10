@@ -17,7 +17,7 @@ const COMPOST_FALLBACK = [-3.1, 0, -15.9];
 const COMPOST_OFFSET_X = 3.0;
 
 const STYLE = `
-#bag-entry{position:relative}
+#bag-entry{position:fixed;right:max(24px,env(safe-area-inset-right));bottom:max(24px,env(safe-area-inset-bottom));z-index:36;box-shadow:0 6px 18px #3b2a1c24}
 #bag-entry .bag-count{display:inline-flex;min-width:18px;height:18px;align-items:center;justify-content:center;
   padding:0 5px;border-radius:9px;background:#a8794f;color:#fff;font-size:10px;line-height:1;vertical-align:1px}
 .bag-panel{width:min(440px,calc(100vw - 32px))}
@@ -59,6 +59,10 @@ const STYLE = `
 .bag-hint{margin:0;font-size:11px;line-height:1.55;color:#8a7563}
 .bag-hint.warn{color:#9a5a32}
 .bag-foot{margin:12px 0 0;font-size:11px;color:#8a7563;line-height:1.55}
+@media (max-width:760px){
+  #bag-entry{right:max(14px,env(safe-area-inset-right));bottom:calc(max(16px,env(safe-area-inset-bottom)) + 74px);
+    padding:10px 12px;font-size:12px}
+}
 @media (max-width:520px){
   .bag-panel{width:calc(100vw - 20px)}
   .bag-card{min-height:60px;padding:9px}
@@ -230,7 +234,7 @@ export function mountBackpackSystem({
   entry.id = 'bag-entry';
   entry.className = 'toolbar-action';
   entry.innerHTML = '<span aria-hidden="true">🎒</span> 背包 <span class="bag-count"></span>';
-  document.getElementById('actions')?.prepend(entry);
+  document.body.append(entry);
 
   const dialog = document.createElement('dialog');
   dialog.id = 'bag-panel';
