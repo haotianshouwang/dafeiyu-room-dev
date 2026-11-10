@@ -15,6 +15,7 @@ const INTERACT_DISTANCE = 4.5;
 const DROP_FORWARD = 1.1;
 const COMPOST_FALLBACK = [-3.1, 0, -15.9];
 const COMPOST_OFFSET_X = 3.0;
+const BAG_SLOT_COUNT = 12;
 
 const STYLE = `
 #bag-entry{position:fixed;right:max(24px,env(safe-area-inset-right));bottom:max(24px,env(safe-area-inset-bottom));z-index:36;box-shadow:0 6px 18px #3b2a1c24}
@@ -27,17 +28,22 @@ const STYLE = `
 .bag-tabs button:hover{background:#fff2df}
 .bag-tabs button.active{background:#e8d6bd;border-color:#b48a5f;font-weight:600}
 .bag-summary{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#78665a;margin:2px 0 10px}
-.bag-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.bag-card{display:flex;align-items:center;gap:10px;min-height:64px;padding:10px;border:1px solid #e3d2bc;border-radius:13px;
-  background:#fffdf7;color:#51454a;font:inherit;text-align:left;cursor:pointer;transition:background .15s,border-color .15s,box-shadow .15s}
-.bag-card:hover{background:#fff4e4;border-color:#c9a477}
-.bag-card.selected{border-color:#b48a5f;box-shadow:0 0 0 2px #e3c9aa inset;background:#fff7e9}
-.bag-card .emoji{font-size:28px;line-height:1;flex:none}
-.bag-card .meta{display:grid;gap:2px;min-width:0}
-.bag-card b{font-size:14px;font-weight:600}
-.bag-card span{font-size:11px;color:#8a7563}
-.bag-card .num{margin-left:auto;font-size:13px;font-variant-numeric:tabular-nums;color:#6a5546}
+.bag-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.bag-slot{position:relative;aspect-ratio:1;min-width:0;padding:0;display:grid;place-items:center;
+  border:1px solid #e3d2bc;border-radius:12px;background:#fffdf7;color:#51454a;font:inherit;cursor:pointer;
+  transition:background .15s,border-color .15s,box-shadow .15s,transform .12s}
+.bag-slot:hover{background:#fff4e4;border-color:#c9a477;transform:translateY(-1px)}
+.bag-slot.selected{border-color:#b48a5f;box-shadow:0 0 0 2px #e3c9aa inset;background:#fff7e9}
+.bag-slot .emoji{font-size:30px;line-height:1;filter:drop-shadow(0 2px 2px #5a3a1a22)}
+.bag-slot .count{position:absolute;right:6px;bottom:4px;font-size:11px;font-weight:600;color:#6a5546;
+  font-variant-numeric:tabular-nums;background:#fffaf1d9;border-radius:7px;padding:0 3px;line-height:1.5}
+.bag-slot.empty{background:#faf3e8;border-style:dashed;cursor:default;opacity:.65}
+.bag-slot.empty:hover{background:#faf3e8;border-color:#e3d2bc;transform:none}
 .bag-detail{margin-top:12px;padding:12px;border:1px solid #eadcc9;border-radius:13px;background:#fffaf1}
+.bag-detail-head{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.bag-detail-head .emoji{font-size:20px}
+.bag-detail-head b{font-size:14px}
+.bag-detail-head em{margin-left:auto;font-style:normal;font-size:12px;color:#8a7563;font-variant-numeric:tabular-nums}
 .bag-detail p{margin:0;font-size:13px;line-height:1.55;color:#6b594b}
 .bag-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
 .bag-actions button,.bag-compost button{padding:9px 14px;min-height:42px;border:1px solid #d6bfa5;border-radius:10px;
@@ -65,8 +71,8 @@ const STYLE = `
 }
 @media (max-width:520px){
   .bag-panel{width:calc(100vw - 20px)}
-  .bag-card{min-height:60px;padding:9px}
-  .bag-card .emoji{font-size:24px}
+  .bag-grid{gap:6px}
+  .bag-slot .emoji{font-size:25px}
   .bag-status .badge{width:40px;height:40px;font-size:21px}
 }
 `;
@@ -217,6 +223,7 @@ export function mountBackpackSystem({
   let pointerDown = null;
   let hoverThrottle = 0;
   let selectedItemId = 'poop';
+  let selectedEmpty = false;
   let activeTab = 'items';
   let panelTimer = null;
   let lastLabelKey = '';
@@ -280,29 +287,39 @@ export function mountBackpackSystem({
     return Math.hypot(compost.root.position.x - player.position.x, compost.root.position.z - player.position.z) <= INTERACT_DISTANCE;
   }
 
+  function occupiedItemIds() {
+    return ITEM_IDS.filter(id => (state.inventory[id] ?? 0) > 0);
+  }
+
   function renderItems() {
-    const selected = ITEMS[selectedItemId] ?? ITEMS.poop;
-    const count = state.inventory[selected.id] ?? 0;
+    const occupied = occupiedItemIds();
+    if (!selectedEmpty && (!selectedItemId || !occupied.includes(selectedItemId))) {
+      selectedItemId = occupied[0] ?? null;
+      if (!selectedItemId) selectedEmpty = true;
+    }
+    const totalSlots = Math.max(BAG_SLOT_COUNT, occupied.length);
+    const slots = Array.from({ length: totalSlots }, (_, index) => occupied[index] ?? null);
+    const selected = selectedEmpty ? null : (selectedItemId ? ITEMS[selectedItemId] : null);
+    const count = selected ? state.inventory[selected.id] ?? 0 : 0;
     body.innerHTML = `
-      <div class="bag-summary"><span>身上的物品</span><span>便便 ×${state.inventory.poop} · 肥料 ×${state.inventory.fertilizer}</span></div>
-      <div class="bag-grid">
-        ${ITEM_IDS.map(id => {
+      <div class="bag-summary"><span>物品格 ${occupied.length}/${totalSlots}</span><span>便便 ×${state.inventory.poop} · 肥料 ×${state.inventory.fertilizer}</span></div>
+      <div class="bag-grid" role="list" aria-label="背包格子">
+        ${slots.map((id, index) => {
+          if (!id) return `<button type="button" class="bag-slot empty" data-empty-slot="${index}" role="listitem" aria-label="空格子"></button>`;
           const def = ITEMS[id];
           const owned = state.inventory[id] ?? 0;
-          return `<button type="button" class="bag-card${id === selected.id ? ' selected' : ''}" data-bag-item="${id}">
+          return `<button type="button" class="bag-slot${id === selectedItemId ? ' selected' : ''}" data-bag-item="${id}" role="listitem" aria-label="${def.name} ${owned} 个">
             <span class="emoji" aria-hidden="true">${def.emoji}</span>
-            <span class="meta"><b>${def.name}</b><span>${def.placeable ? '可丢到地上' : '种地时使用'}</span></span>
-            <span class="num">×${owned}</span>
+            <span class="count">×${owned}</span>
           </button>`;
         }).join('')}
       </div>
       <div class="bag-detail">
-        <p>${selected.description}</p>
-        <div class="bag-actions">
-          <button type="button" data-bag-action="drop" class="primary" ${!selected.placeable || count <= 0 ? 'disabled' : ''}>丢到地上</button>
-        </div>
+        ${selected ? `<div class="bag-detail-head"><span class="emoji" aria-hidden="true">${selected.emoji}</span><b>${selected.name}</b><em>×${count}</em></div><p>${selected.description}</p>
+          <div class="bag-actions">
+            <button type="button" data-bag-action="drop" class="primary" ${!selected.placeable || count <= 0 ? 'disabled' : ''}>丢到地上</button>
+          </div>` : '<p class="bag-empty">点一个物品格查看它是什么。空格子以后可以放更多东西。</p>'}
       </div>
-      ${totalItems() === 0 ? '<p class="bag-empty">背包还是空的。去院子看看宠物留下了什么。</p>' : ''}
     `;
   }
 
@@ -383,6 +400,11 @@ export function mountBackpackSystem({
 
   function open(tab = 'items') {
     activeTab = tab;
+    if (tab === 'items') {
+      const occupied = occupiedItemIds();
+      selectedItemId = occupied[0] ?? null;
+      selectedEmpty = occupied.length === 0;
+    }
     render();
     if (!dialog.open) dialog.showModal();
     refreshPanelTimer();
@@ -474,6 +496,7 @@ export function mountBackpackSystem({
   }
 
   function dropSelected() {
+    if (selectedEmpty) return;
     const def = ITEMS[selectedItemId];
     if (!def || !def.placeable) return;
     if ((state.inventory[selectedItemId] ?? 0) <= 0) { onMessage(`背包里没有${def.name}了`); return; }
@@ -640,8 +663,10 @@ export function mountBackpackSystem({
     render();
   });
   body.addEventListener('click', event => {
+    const empty = event.target.closest('[data-empty-slot]');
+    if (empty) { selectedEmpty = true; selectedItemId = null; render(); return; }
     const tab = event.target.closest('[data-bag-item]');
-    if (tab) { selectedItemId = tab.dataset.bagItem; render(); return; }
+    if (tab) { selectedEmpty = false; selectedItemId = tab.dataset.bagItem; render(); return; }
     const action = event.target.closest('[data-bag-action]')?.dataset.bagAction;
     if (action === 'drop') dropSelected();
     else if (action === 'deposit') depositCompost();
