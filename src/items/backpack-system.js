@@ -332,7 +332,7 @@ export function mountBackpackSystem({
       hint.classList.toggle('warn', !near);
     }
     if (deposit) deposit.disabled = !near || live.status !== 'empty' || count <= 0;
-    if (collect) collect.disabled = !near || live.status !== 'ready';
+    if (collect) collect.disabled = !near || live.status !== 'ready' || (state.inventory.fertilizer ?? 0) >= ITEMS.fertilizer.stackMax;
   }
 
   function renderCompost() {
@@ -349,7 +349,7 @@ export function mountBackpackSystem({
     const badge = live.status === 'processing' ? '⏳' : live.status === 'ready' ? '🌿' : '🪵';
     const progress = Math.round((live.status === 'ready' ? 1 : live.progress ?? 0) * 100);
     const depositDisabled = !near || live.status !== 'empty' || count <= 0;
-    const collectDisabled = !near || live.status !== 'ready';
+    const collectDisabled = !near || live.status !== 'ready' || (state.inventory.fertilizer ?? 0) >= ITEMS.fertilizer.stackMax;
     body.innerHTML = `
       <div class="bag-compost">
         <div class="bag-status">
@@ -586,6 +586,7 @@ export function mountBackpackSystem({
   }
 
   function raycastTarget(clientX, clientY) {
+    if (getSceneId() !== YARD_SCENE_ID) return null;
     const rect = canvas.getBoundingClientRect();
     ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, getCamera());
