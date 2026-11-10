@@ -33,9 +33,16 @@ const STYLE = `
 .pet-bond .pet-bond-top{display:flex;justify-content:space-between;font-size:12px;color:#78665a}
 .pet-bond i{display:block;height:8px;border-radius:99px;background:#efe0cf;overflow:hidden;margin-top:4px}
 .pet-bond i em{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#ffb26b,#ff7f9b)}
-.pet-modes{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}
-.pet-modes label{display:flex;align-items:center;gap:4px;font-size:13px;color:#51454a}
-.pet-modes input{accent-color:#a8794f}
+.pet-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:9px 0}
+.pet-mode{display:flex;border:1px solid #d6bfa5;border-radius:10px;overflow:hidden;background:#fff9ee}
+.pet-mode button{border:0;background:transparent;color:#5d493b;font:inherit;font-size:12px;line-height:1;
+  padding:0 11px;min-height:38px;cursor:pointer;transition:background .15s,color .15s}
+.pet-mode button:hover:not(.active){background:#fff0d8}
+.pet-mode button.active{background:#a8794f;color:#fff;font-weight:600}
+.pet-battle{border:1px solid #d6bfa5;border-radius:10px;background:#fff9ee;color:#5d493b;font:inherit;font-size:12px;
+  padding:0 11px;min-height:38px;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.pet-battle:hover:not(.active){background:#fff0d8}
+.pet-battle.active{background:#8b4d37;border-color:#8b4d37;color:#fff;font-weight:600}
 .pet-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
 .pet-actions button{padding:6px 12px;border:1px solid #d6bfa5;border-radius:10px;background:#fff9ee;color:#5d493b;font:inherit;font-size:13px;cursor:pointer}
 .pet-actions button:disabled{opacity:.45;cursor:default}
@@ -104,7 +111,7 @@ export function mountPetSystem({
       <button type="button" data-tab="food" role="tab" aria-selected="false">食物</button>
     </div>
     <div class="pet-body"></div>
-    <p class="pet-foot">宠物来自模型配置文件（白泽 / 缸盆小鱼），每只模型拥有自己的动作槽。抚摸可以提升羁绊（每小时最多 +10）；羁绊满 100 后可以进化。跟随与家园待命互斥，家园待命会待在院子花园里；跟随和战斗各只能有一只宠物。</p>
+    <p class="pet-foot">抚摸提升羁绊（每小时最多 +10），满 100 可进化；跟随和出战各只能有一只。</p>
   </div>`;
   document.body.append(dialog);
   const body = dialog.querySelector('.pet-body');
@@ -586,10 +593,12 @@ export function mountPetSystem({
             <div class="pet-bond-top"><span>羁绊</span><span>${bound}/${PET_BOND_MAX} · 本小时 +${candidate.bondWindowPoints}/${PET_BOND_HOURLY_CAP}</span></div>
             <i><em style="width:${Math.round((bound / PET_BOND_MAX) * 100)}%"></em></i>
           </div>
-          <div class="pet-modes">
-            <label><input type="checkbox" data-role="follow" ${candidate.mode === 'follow' ? 'checked' : ''}> 跟随（仅一只）</label>
-            <label><input type="checkbox" data-role="standby" ${candidate.mode === 'standby' ? 'checked' : ''}> 家园待命（花园）</label>
-            <label><input type="checkbox" data-role="battle" ${candidate.battle ? 'checked' : ''}> 战斗（仅一只）</label>
+          <div class="pet-status">
+            <div class="pet-mode" role="group" aria-label="宠物状态">
+              <button type="button" data-mode="follow" class="${candidate.mode === 'follow' ? 'active' : ''}" aria-pressed="${candidate.mode === 'follow'}">跟随</button>
+              <button type="button" data-mode="standby" class="${candidate.mode === 'standby' ? 'active' : ''}" aria-pressed="${candidate.mode === 'standby'}">家园待命</button>
+            </div>
+            <button type="button" class="pet-battle${candidate.battle ? ' active' : ''}" data-mode="battle" aria-pressed="${candidate.battle}">⚔ 出战</button>
           </div>
           <div class="pet-actions">
             <button type="button" data-action="pet">抚摸</button>
@@ -621,28 +630,25 @@ export function mountPetSystem({
     activeTab = button.dataset.tab;
     open(activeTab);
   });
-  body.addEventListener('change', event => {
-    const card = event.target.closest('[data-pet-id]');
-    const input = event.target.closest('input[data-role]');
-    if (!card || !input) return;
-    const id = card.dataset.petId;
-    const pet = getPet(state, id);
-    if (!pet) return;
-    if (input.dataset.role === 'battle') {
-      toggleBattle(state, id);
-      save();
-      render();
-      return;
-    }
-    if (input.checked) {
-      setMode(id, input.dataset.role);
-    } else if (pet.mode === input.dataset.role) {
-      setMode(id, null);
-    }
-  });
   body.addEventListener('click', event => {
     const card = event.target.closest('[data-pet-id]');
+    const modeButton = event.target.closest('button[data-mode]');
     const actionButton = event.target.closest('button[data-action]');
+    if (modeButton && card) {
+      const pet = getPet(state, card.dataset.petId);
+      if (!pet) return;
+      const role = modeButton.dataset.mode;
+      if (role === 'battle') {
+        const wasBattling = pet.battle;
+        toggleBattle(state, pet.id);
+        save();
+        render();
+        onMessage(`${pet.name} ${wasBattling ? '取消出战' : '出战'}`);
+        return;
+      }
+      if (pet.mode !== role) setMode(pet.id, role);
+      return;
+    }
     if (card) {
       selectPet(state, card.dataset.petId);
       save();
