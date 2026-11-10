@@ -484,16 +484,27 @@ export function mountPetSystem({
       return;
     }
     if (follow) {
-      if (avatar.sceneId !== ctx.sceneId || avatar.root.position.distanceTo(ctx.player) > 7) placeBehind(avatar, pet, ctx);
+      // 玩家冲刺速度是 5.64m/s。宠物的跟随上限要高于玩家，否则一按 Shift 就会被甩开。
+      if (avatar.sceneId !== ctx.sceneId || avatar.root.position.distanceTo(ctx.player) > 9) placeBehind(avatar, pet, ctx);
       const lane = LANES[state.pets.findIndex(candidate => candidate.id === pet.id) % LANES.length];
       const target = offsetTarget(ctx.player, ctx.heading, lane);
       const distance = Math.hypot(target.x - avatar.root.position.x, target.z - avatar.root.position.z);
-      const speed = Math.min(distance * 5 + 0.4, 3.6);
+      const maxSpeed = distance > 3.4 ? 8.0 : distance > 1.5 ? 6.4 : 4.2;
+      const speed = Math.min(distance * 6 + 0.4, maxSpeed);
       const result = moveAvatar(avatar, target, speed, ctx, dt);
+      if (result.blocked && distance > 2.2) {
+        avatar.followBlocked = (avatar.followBlocked ?? 0) + dt;
+        if (avatar.followBlocked > 1.2) {
+          placeBehind(avatar, pet, ctx);
+          avatar.followBlocked = 0;
+        }
+      } else {
+        avatar.followBlocked = 0;
+      }
       if (result.stepped > 0.05) {
-        const slot = speed > 2.8 ? 'runFast' : speed > 1.2 ? 'runSlow' : 'walk';
-        const nominal = speed > 2.8 ? 3.6 : speed > 1.2 ? 2.8 : 1.7;
-        avatar.model.loop(slot, THREE.MathUtils.clamp(speed / nominal, 0.5, 1.6));
+        const slot = speed > 3.8 ? 'runFast' : speed > 1.2 ? 'runSlow' : 'walk';
+        const nominal = speed > 3.8 ? 5.6 : speed > 1.2 ? 2.8 : 1.7;
+        avatar.model.loop(slot, THREE.MathUtils.clamp(speed / nominal, 0.5, 1.8));
       } else {
         avatar.model.loop('idle');
       }
