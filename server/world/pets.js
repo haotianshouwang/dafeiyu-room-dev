@@ -1,15 +1,13 @@
 import {PET_BOND_MAX, PET_BOND_HOURLY_CAP} from '../../shared/creatures/stats.js';
 import {normalizePetInstance,createPetInstance} from '../../shared/creatures/instance.js';
 import {getSpecies} from '../../shared/creatures/species.js';
+import {EGG_CATALOG_VERSION,initialEggs,upgradeEggs} from '../../shared/creatures/eggs.js';
 import {randomUUID} from 'node:crypto';
 import {normalizeRoster, setFollowPet, setBattlePet} from '../../shared/creatures/roster.js';
 
 const PET_LIMIT=20;
 const HOUR_MS=60*60*1000;
-const STARTER_EGGS=[
- {eggId:'starter-baize',speciesId:'baize'},
- {eggId:'starter-fish',speciesId:'fish-bowl'},
-];
+
 
 function ensurePets(snapshot){
  if(!snapshot.pets||typeof snapshot.pets!=='object'||snapshot.pets.version!==1||!snapshot.pets.owners){
@@ -26,13 +24,18 @@ function actorOf(snapshot,actorId){
 
 function ensureEggs(bucket,now=Date.now()){
  if(!bucket)return null;
+ const hasPets=Object.keys(bucket.instances??{}).length>0;
  if(!Array.isArray(bucket.eggs)){
-  // 已有宠物的老存档不补发初始蛋；真正的新玩家才拿到两只初始蛋。
-  bucket.eggs=Object.keys(bucket.instances??{}).length
-   ? []
-   : STARTER_EGGS.map(egg=>({...egg,hatched:false,createdAt:now}));
-  bucket.eggsInitialized=true;
+  // 新玩家/空名册发初始蛋；已有宠物的老存档不追发初始蛋。
+  bucket.eggs=hasPets?[]:initialEggs(now);
+  bucket.eggCatalogVersion=EGG_CATALOG_VERSION;
+ }else{
+  // 老快照没有版本号时按 0 处理；只补 grantToExisting 的新版本蛋。
+  const fromVersion=Number.isFinite(bucket.eggCatalogVersion)?bucket.eggCatalogVersion:0;
+  bucket.eggs=upgradeEggs(bucket.eggs,fromVersion,now);
+  bucket.eggCatalogVersion=EGG_CATALOG_VERSION;
  }
+ bucket.eggsInitialized=true;
  return bucket.eggs;
 }
 
@@ -93,7 +96,7 @@ export const petHandlers={
   bucket.roster=normalizeRoster({followPetId:command.payload.followPetId??null,battlePetId:command.payload.battlePetId??null},instances,actorId);
   bucket.migration={localVersion:Number.isFinite(command.payload.localVersion)?command.payload.localVersion:3,importedAt:now};
   // 从旧本地存档迁移过来的玩家已经有宠物，不再补发初始蛋。
-  bucket.eggs=[];bucket.eggsInitialized=true;
+  bucket.eggs=[];bucket.eggsInitialized=true;bucket.eggCatalogVersion=EGG_CATALOG_VERSION;
   emit('pets.imported',{actorId,count:Object.keys(instances).length});
   return {status:'imported',count:Object.keys(instances).length,roster:{...bucket.roster}};
  },
@@ -105,7 +108,7 @@ export const petHandlers={
   const bucket=bucketOf(snapshot,actorId,true);
   const eggs=ensureEggs(bucket,now);
   emit('pets.eggs_initialized',{actorId,eggs:eggs.length});
-  return {eggs:structuredClone(eggs),roster:{...bucket.roster}};
+  return {eggs:structuredClone(eggs),eggCatalogVersion:bucket.eggCatalogVersion,roster:{...bucket.roster}};
  },
 
  'pet.hatchEgg':({snapshot,command,principal,now,emit})=>{
