@@ -6,7 +6,7 @@ import {getSpecies} from '../../shared/creatures/species.js';
 
 const YARD_SCENE_ID = 'yard';
 const INTERACT_DISTANCE = 4.5;
-const WINDOW_Z = -1.65;
+const TREE_CHEST_OFFSET = [0.65, 0.95];
 
 const STYLE = `
 #egg-panel{width:min(420px,calc(100vw - 32px))}
@@ -60,10 +60,12 @@ function makeLabelSprite() {
 function makeChestModel() {
   const root = new THREE.Group();
   root.name = 'yard-egg-chest';
-  const wood = new THREE.MeshStandardMaterial({color: 0x8a5a34, roughness: 0.82});
-  const dark = new THREE.MeshStandardMaterial({color: 0x5b3a22, roughness: 0.9});
-  const brass = new THREE.MeshStandardMaterial({color: 0xc9a45e, roughness: 0.45, metalness: 0.45});
-  const eggMat = new THREE.MeshStandardMaterial({color: 0xfff3cf, roughness: 0.65, emissive: 0x5b451e, emissiveIntensity: 0.15});
+  const wood = new THREE.MeshStandardMaterial({ color: 0x9a6138, roughness: 0.78 });
+  const woodLight = new THREE.MeshStandardMaterial({ color: 0xb77a45, roughness: 0.72 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x52331f, roughness: 0.9 });
+  const iron = new THREE.MeshStandardMaterial({ color: 0x3d342d, roughness: 0.62, metalness: 0.35 });
+  const brass = new THREE.MeshStandardMaterial({ color: 0xe0b968, roughness: 0.35, metalness: 0.55 });
+  const eggMat = new THREE.MeshStandardMaterial({ color: 0xfff4cf, roughness: 0.48, emissive: 0xffcf72, emissiveIntensity: 0.42 });
   const add = (geometry, material, position, rotation = null) => {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(...position);
@@ -73,26 +75,59 @@ function makeChestModel() {
     root.add(mesh);
     return mesh;
   };
-  // 箱体
-  add(new THREE.BoxGeometry(1.0, 0.46, 0.66), wood, [0, 0.23, 0]);
-  add(new THREE.BoxGeometry(1.04, 0.08, 0.7), dark, [0, 0.02, 0]);
-  for (const x of [-0.35, 0.35]) add(new THREE.BoxGeometry(0.06, 0.5, 0.7), brass, [x, 0.25, 0]);
-  // 打开一条缝的盖子
-  const lid = add(new THREE.BoxGeometry(1.05, 0.1, 0.7), wood, [0, 0.56, -0.16], [-0.52, 0, 0]);
-  lid.geometry.translate(0, 0, 0.02);
-  add(new THREE.BoxGeometry(0.22, 0.16, 0.05), brass, [0, 0.43, 0.35]);
-  // 箱内露出的两颗蛋
-  for (const [x, z, s] of [[-0.19, -0.04, 0.12], [0.2, -0.03, 0.105]]) {
-    const egg = add(new THREE.SphereGeometry(1, 14, 10), eggMat, [x, 0.56, z]);
-    egg.scale.set(s * 0.82, s * 1.08, s * 0.82);
+  // 箱体：加宽加高，放到树下也能一眼看到。
+  add(new THREE.BoxGeometry(1.22, 0.56, 0.78), wood, [0, 0.34, 0]);
+  add(new THREE.BoxGeometry(1.3, 0.1, 0.86), dark, [0, 0.06, 0]);
+  // 四角金属包边
+  for (const x of [-0.58, 0.58]) for (const z of [-0.34, 0.34]) {
+    add(new THREE.BoxGeometry(0.08, 0.5, 0.08), iron, [x, 0.34, z]);
   }
-  const glow = new THREE.PointLight(0xffd893, 0.65, 2.2, 2);
-  glow.position.set(0, 0.7, 0);
+  // 两条横向铁箍
+  for (const x of [-0.32, 0.32]) add(new THREE.BoxGeometry(0.075, 0.58, 0.82), brass, [x, 0.35, 0]);
+  // 箱脚
+  for (const x of [-0.46, 0.46]) for (const z of [-0.27, 0.27]) {
+    add(new THREE.BoxGeometry(0.12, 0.12, 0.12), dark, [x, 0.07, z]);
+  }
+  // 掀起的盖子
+  const lid = new THREE.Group();
+  lid.position.set(0, 0.64, -0.26);
+  lid.rotation.x = -0.82;
+  const lidPanel = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.12, 0.82), woodLight);
+  lidPanel.position.set(0, 0.06, 0.36);
+  lidPanel.castShadow = true;
+  lidPanel.receiveShadow = true;
+  lid.add(lidPanel);
+  for (const x of [-0.32, 0.32]) {
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.13, 0.86), brass);
+    band.position.set(x, 0.07, 0.36);
+    lid.add(band);
+  }
+  root.add(lid);
+  // 内衬和露出来的两颗蛋
+  add(new THREE.BoxGeometry(1.04, 0.08, 0.62), dark, [0, 0.6, 0]);
+  for (const [x, z, s] of [[-0.23, 0.02, 0.16], [0.24, 0.04, 0.145]]) {
+    const egg = add(new THREE.SphereGeometry(1, 18, 12), eggMat, [x, 0.72, z]);
+    egg.scale.set(s * 0.82, s * 1.15, s * 0.82);
+  }
+  // 锁扣和钥匙孔
+  add(new THREE.BoxGeometry(0.24, 0.2, 0.06), brass, [0, 0.54, 0.4]);
+  add(new THREE.BoxGeometry(0.055, 0.09, 0.025), dark, [0, 0.52, 0.435]);
+  // 地面金色光圈，远处也能定位
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.72, 0.84, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffd47a, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.02;
+  root.add(ring);
+  const glow = new THREE.PointLight(0xffd184, 1.2, 3.2, 2);
+  glow.position.set(0, 0.95, 0);
   root.add(glow);
   const label = makeLabelSprite();
+  label.sprite.position.y = 1.38;
   root.add(label.sprite);
   root.traverse(node => { if (node.isMesh) node.frustumCulled = false; });
-  return {root, label, lid, glow};
+  return { root, label, ring, glow };
 }
 
 export function mountEggChest({
@@ -127,7 +162,7 @@ export function mountEggChest({
   dialog.className = 'settings-dialog';
   dialog.setAttribute('aria-labelledby', 'egg-panel-title');
   dialog.innerHTML = `<div class="settings-card">
-    <header class="settings-header"><h2 id="egg-panel-title">窗下的宝箱</h2><button class="settings-close" type="button" aria-label="关闭宝箱">×</button></header>
+    <header class="settings-header"><h2 id="egg-panel-title">树下的宝箱</h2><button class="settings-close" type="button" aria-label="关闭宝箱">×</button></header>
     <div class="egg-body"></div>
     <p class="egg-foot">打开宠物蛋，它会成为你的新伙伴。</p>
   </div>`;
@@ -161,11 +196,14 @@ export function mountEggChest({
     if (!yard) return;
     let template = null;
     try { template = getTemplate(yard.templateId); } catch { template = null; }
-    let point = [template ? template.bounds.x0 + 0.85 : -7.65, 0, WINDOW_Z];
+    const tree = snapshot.entities?.find(entity => entity.type === 'yardTree' && entity.sceneId === YARD_SCENE_ID);
+    let point = tree
+      ? [tree.position[0] + TREE_CHEST_OFFSET[0], 0, tree.position[2] + TREE_CHEST_OFFSET[1]]
+      : [5.0, 0, 0.6];
     try {
       const free = nearestFree(snapshot, YARD_SCENE_ID, point);
       if (Math.hypot(free[0] - point[0], free[2] - point[2]) <= 2.2) point = free;
-    } catch { /* 保持窗下位置 */ }
+    } catch { /* 保持树下位置 */ }
     let y = point[1] ?? 0;
     try { y = surfaceAt(template, point[0], point[2])?.height ?? y; } catch { /* 保持 */ }
     const built = makeChestModel();
@@ -239,7 +277,7 @@ export function mountEggChest({
     const key = `${available}`;
     if (key === labelKey) return;
     labelKey = key;
-    chest.label.draw(available ? `宝箱 · ${available} 颗宠物蛋` : '宝箱空了');
+    chest.label.draw(available ? `树下的宝箱 · ${available} 颗蛋` : '树下的宝箱空了');
   }
 
   function raycastChest(clientX, clientY) {
@@ -254,7 +292,7 @@ export function mountEggChest({
   }
 
   function open() {
-    if (!nearChest()) { onMessage('走近院子窗户下的宝箱'); return; }
+    if (!nearChest()) { onMessage('走近院子大树下的宝箱'); return; }
     bootstrap();
     render();
     if (!dialog.open) dialog.showModal();

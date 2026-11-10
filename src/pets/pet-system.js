@@ -505,7 +505,7 @@ export function mountPetSystem({
     }));
     for (const entry of loaded) if (entry) assets.set(entry[0], entry[1]);
     if (!assets.size) { onMessage('宠物模型加载失败，稍后再试'); return; }
-    // 新玩家不预置宠物；宠物从院子窗户下的宝箱蛋里领取。
+    // 新玩家不预置宠物；宠物从院子大树下的宝箱蛋里领取。
     // 旧 localStorage 有宠物时仍保留，用于首次迁移到服务端。
     ready = true;
     for (const pet of state.pets) createAvatar(pet);
@@ -789,7 +789,7 @@ export function mountPetSystem({
     updateEntryCount();
     if (activeTab === 'pets') {
       if (!state.pets.length) {
-        body.innerHTML = `<p class="pet-empty">还没有宠物。去院子窗户下打开宝箱领取宠物蛋。</p>`;
+        body.innerHTML = `<p class="pet-empty">还没有宠物。去院子的大树下打开宝箱领取宠物蛋。</p>`;
         return;
       }
       body.innerHTML = `<div class="pet-list">${state.pets.map(candidate => {
