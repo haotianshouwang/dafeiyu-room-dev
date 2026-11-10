@@ -2,7 +2,7 @@ import {
   createDefaultItemState, normalizeItemState, addItem, removeItem,
   addGroundItem, removeGroundItem, getGroundItem, startCompost, collectCompost,
   getCompostStatus, inventoryTotal,
-} from '../../src/items/item-store.js';
+} from '../../shared/items/item-store.js';
 
 const INTERACT_DISTANCE=5;
 

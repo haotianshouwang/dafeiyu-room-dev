@@ -7,7 +7,7 @@ import {migrateWorld} from '../server/storage/migrations.js';
 import {createRuntimeHandlers} from '../server/world/runtime.js';
 import {defaultManifest} from '../shared/world/default-manifest.js';
 import {projectSnapshot} from '../server/mcp/resources.js';
-import {createDefaultItemState} from '../src/items/item-store.js';
+import {createDefaultItemState} from '../shared/items/item-store.js';
 
 const setup=()=>{
  const db=new DatabaseSync(':memory:');

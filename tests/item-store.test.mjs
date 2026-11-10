@@ -5,7 +5,7 @@ import {
   inventoryTotal, addItem, removeItem, addGroundItem, removeGroundItem, getGroundItem,
   tickCompost, getCompostStatus, startCompost, collectCompost, markCompostNotified,
   ITEM_STORAGE_KEY, GROUND_ITEM_CAP, COMPOST_DURATION_MS, BAG_SLOT_COUNT, ensureSlots, moveItemSlot,
-} from '../src/items/item-store.js';
+} from '../shared/items/item-store.js';
 import { ITEMS } from '../shared/world/items.js';
 
 const memoryStorage = () => {

@@ -8,7 +8,7 @@ import {
   addGroundItem, removeGroundItem, getGroundItem,
   tickCompost, getCompostStatus, startCompost, collectCompost, markCompostNotified,
   COMPOST_DURATION_MS, BAG_SLOT_COUNT, moveItemSlot, ensureSlots, normalizeItemState,
-} from './item-store.js';
+} from '../../shared/items/item-store.js';
 
 const YARD_SCENE_ID = 'yard';
 const INTERACT_DISTANCE = 4.5;
