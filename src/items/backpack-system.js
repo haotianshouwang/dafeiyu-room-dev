@@ -244,7 +244,6 @@ export function mountBackpackSystem({
   dialog.innerHTML = `<div class="settings-card">
     <header class="settings-header"><h2 id="bag-panel-title">背包</h2><button class="settings-close" type="button" aria-label="关闭背包">×</button></header>
     <div class="bag-body"></div>
-    <p class="bag-foot">便便可以从地面捡进背包，也可以丢回院子。堆肥箱在农田边，走过去点击它就能放入便便、收取肥料。</p>
   </div>`;
   document.body.append(dialog);
   const body = dialog.querySelector('.bag-body');
@@ -302,7 +301,6 @@ export function mountBackpackSystem({
     const selected = selectedEmpty ? null : (selectedItemId ? ITEMS[selectedItemId] : null);
     const count = selected ? state.inventory[selected.id] ?? 0 : 0;
     body.innerHTML = `
-      <div class="bag-summary"><span>物品格 ${occupied.length}/${totalSlots}</span><span>便便 ×${state.inventory.poop} · 肥料 ×${state.inventory.fertilizer}</span></div>
       <div class="bag-grid" role="list" aria-label="背包格子">
         ${slots.map((id, index) => {
           if (!id) return `<button type="button" class="bag-slot empty" data-empty-slot="${index}" role="listitem" aria-label="空格子"></button>`;
@@ -314,12 +312,12 @@ export function mountBackpackSystem({
           </button>`;
         }).join('')}
       </div>
-      <div class="bag-detail">
-        ${selected ? `<div class="bag-detail-head"><span class="emoji" aria-hidden="true">${selected.emoji}</span><b>${selected.name}</b><em>×${count}</em></div><p>${selected.description}</p>
-          <div class="bag-actions">
-            <button type="button" data-bag-action="drop" class="primary" ${!selected.placeable || count <= 0 ? 'disabled' : ''}>丢到地上</button>
-          </div>` : '<p class="bag-empty">点一个物品格查看它是什么。空格子以后可以放更多东西。</p>'}
-      </div>
+      ${selected ? `<div class="bag-detail" title="${selected.description}">
+        <div class="bag-detail-head"><span class="emoji" aria-hidden="true">${selected.emoji}</span><b>${selected.name}</b><em>×${count}</em></div>
+        <div class="bag-actions">
+          <button type="button" data-bag-action="drop" class="primary" ${!selected.placeable || count <= 0 ? 'disabled' : ''}>丢到地上</button>
+        </div>
+      </div>` : ''}
     `;
   }
 
@@ -393,9 +391,8 @@ export function mountBackpackSystem({
   }
 
   function open() {
-    const occupied = occupiedItemIds();
-    selectedItemId = occupied[0] ?? null;
-    selectedEmpty = occupied.length === 0;
+    selectedItemId = null;
+    selectedEmpty = true;
     render();
     if (!dialog.open) dialog.showModal();
   }
