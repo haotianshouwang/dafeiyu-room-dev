@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { loadBaize, makeBaize } from '../characters/baize.js';
 import { surfaceAt } from '../../shared/world/coastal.js';
 import { getTemplate } from '../../shared/world/templates.js';
-import { nearestFree } from '../../shared/world/navigation.js';
+import { nearestFree, segmentWalkable } from '../../shared/world/navigation.js';
 import { FOODS } from '../../shared/world/foods.js';
 import {
   PET_BOND_MAX, PET_BOND_HOURLY_CAP,
@@ -192,7 +192,7 @@ export function mountPetSystem({
       // 家园待命固定待在院子的花园，不留在当前场景
       setPetMode(state, id, 'standby', { sceneId: HOME_SCENE_ID, position: yardHomePosition(id) });
       const avatar = avatars.get(id);
-      if (avatar) avatar.sceneId = HOME_SCENE_ID;
+      if (avatar) { avatar.sceneId = HOME_SCENE_ID; avatar.ai = null; }
     } else {
       setPetMode(state, id, mode);
     }
@@ -326,20 +326,130 @@ export function mountPetSystem({
     avatar.sceneId = ctx.sceneId;
   }
 
+  function moveAvatar(avatar, target, speed, ctx, dt) {
+    const dx = target.x - avatar.root.position.x;
+    const dz = target.z - avatar.root.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.07) return { stepped: 0, reached: true, blocked: false };
+    const step = Math.min(distance, dt * speed);
+    const x = avatar.root.position.x + (dx / distance) * step;
+    const z = avatar.root.position.z + (dz / distance) * step;
+    const y = groundAt(ctx.template, x, z, avatar.root.position.y);
+    try {
+      if (ctx.snapshot && !segmentWalkable(ctx.snapshot, ctx.sceneId, avatar.root.position.toArray(), [x, y, z])) {
+        return { stepped: 0, reached: false, blocked: true };
+      }
+    } catch { /* 没有导航数据时放行 */ }
+    avatar.root.position.set(x, y, z);
+    const desired = Math.atan2(dx, dz);
+    avatar.root.rotation.y = circularLerp(avatar.root.rotation.y, desired, Math.min(1, dt * 12));
+    return { stepped: speed, reached: distance <= step + 0.02, blocked: false };
+  }
+
+  function randomHomePoint(pet, ctx, radius) {
+    const home = pet.homePosition;
+    if (!home) return null;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 0.7 + Math.random() * radius;
+      let x = home[0] + Math.cos(angle) * distance;
+      let z = home[2] + Math.sin(angle) * distance;
+      try {
+        const free = nearestFree(ctx.snapshot, HOME_SCENE_ID, [x, home[1], z]);
+        x = free[0]; z = free[2];
+      } catch { /* 保持原点 */ }
+      if (Math.hypot(x - home[0], z - home[2]) > radius + 1.6) continue;
+      return { x, y: groundAt(ctx.template, x, z, home[1]), z };
+    }
+    return null;
+  }
+
+  function resetHomeAI(avatar) {
+    avatar.ai = { timer: 0.6 + Math.random() * 1.6, action: null, actionTime: 0, target: null, sprint: false };
+  }
+
+  function playRandomAction(avatar) {
+    const choices = [
+      ['CanineStand', 1.7],
+      ['CanineAttackLeft', 1.5],
+      ['CanineJumpRun', 1.3],
+      ['CanineEating2', 2.0],
+    ];
+    const [clip, duration] = choices[Math.floor(Math.random() * choices.length)];
+    avatar.model.play(clip, duration, 1);
+    avatar.ai.action = clip;
+    avatar.ai.actionTime = duration + 0.35;
+  }
+
+  // 家园待命的宠物：在花园小范围闲逛，随机原地动作、嗅闻、蹦跳，偶尔加速跑一段。
+  function updateHomeAI(pet, avatar, dt, ctx) {
+    if (!avatar.ai) resetHomeAI(avatar);
+    const ai = avatar.ai;
+    if (ai.action) {
+      ai.actionTime -= dt;
+      avatar.model.update(dt);
+      if (ai.actionTime <= 0) {
+        ai.action = null;
+        avatar.model.play('CanineIdle');
+      }
+      return;
+    }
+    ai.timer -= dt;
+    if (!ai.target && ai.timer <= 0) {
+      const roll = Math.random();
+      if (roll < 0.3) {
+        ai.timer = 2 + Math.random() * 3;
+        avatar.model.play('CanineIdle');
+        avatar.model.update(dt);
+        return;
+      }
+      if (roll < 0.52) {
+        playRandomAction(avatar);
+        avatar.model.update(dt);
+        return;
+      }
+      const sprint = roll > 0.72;
+      const target = randomHomePoint(pet, ctx, sprint ? 3.4 : 2.0);
+      if (!target) { ai.timer = 1; return; }
+      ai.target = target;
+      ai.sprint = sprint;
+      ai.timer = 2.2 + Math.random() * 2.6;
+    }
+    if (ai.target) {
+      const speed = ai.sprint ? 4.2 : 1.35;
+      const result = moveAvatar(avatar, ai.target, speed, ctx, dt);
+      avatar.model.play(ai.sprint ? 'CanineRun' : 'CanineWalk', undefined, THREE.MathUtils.clamp(speed / (ai.sprint ? 4.5 : 1.7), 0.5, 1.6));
+      if (result.reached || result.blocked || ai.timer <= 0) {
+        ai.target = null;
+        ai.sprint = false;
+        ai.timer = 1.2 + Math.random() * 2.5;
+        avatar.model.play('CanineIdle');
+      }
+    } else {
+      avatar.model.play('CanineIdle');
+      if (ctx.player.distanceTo(avatar.root.position) < 4) {
+        const desired = Math.atan2(ctx.player.x - avatar.root.position.x, ctx.player.z - avatar.root.position.z);
+        avatar.root.rotation.y = circularLerp(avatar.root.rotation.y, desired, Math.min(1, dt * 4));
+      }
+    }
+    avatar.model.update(dt);
+  }
+
   function updateAvatar(pet, avatar, dt, ctx) {
     const follow = pet.mode === 'follow';
     const standby = pet.mode === 'standby';
-    // 跟随：一直跟着；家园待命：只在院子花园出现；未设置模式的宠物不露面。
     const visible = follow || (standby && ctx.sceneId === HOME_SCENE_ID);
     if (!visible) { avatar.root.visible = false; avatar.eating = 0; return; }
     if (standby && (pet.homeSceneId !== HOME_SCENE_ID || !Array.isArray(pet.homePosition))) {
       pet.homeSceneId = HOME_SCENE_ID;
       pet.homePosition = yardHomePosition(pet.id);
+      resetHomeAI(avatar);
       save();
     }
     if (!avatar.root.visible && !follow) {
       avatar.root.position.fromArray(pet.homePosition);
       avatar.root.rotation.y = ctx.heading;
+      resetHomeAI(avatar);
     }
     avatar.root.visible = true;
     if (avatar.eating > 0) {
@@ -349,55 +459,37 @@ export function mountPetSystem({
       if (avatar.eating <= 0) finishEating(pet, avatar);
       return;
     }
-    if (follow) {
-      if (avatar.sceneId !== ctx.sceneId || avatar.root.position.distanceTo(ctx.player) > 7) placeBehind(avatar, pet, ctx);
-    } else {
-      avatar.sceneId = ctx.sceneId;
-    }
-    let target = null;
-    if (food && food.petId === pet.id) target = { x: food.position.x, y: food.position.y, z: food.position.z };
-    else if (follow) {
-      const lane = LANES[state.pets.findIndex(candidate => candidate.id === pet.id) % LANES.length];
-      target = offsetTarget(ctx.player, ctx.heading, lane);
-    } else if (pet.homePosition) target = { x: pet.homePosition[0], y: pet.homePosition[1], z: pet.homePosition[2] };
-
-    let stepped = 0;
-    if (target) {
-      const dx = target.x - avatar.root.position.x;
-      const dz = target.z - avatar.root.position.z;
-      const distance = Math.hypot(dx, dz);
-      if (food && food.petId === pet.id && distance < 0.55) {
+    // 有食物：无论跟随还是待命都先过去吃
+    if (food && food.petId === pet.id) {
+      const distance = Math.hypot(food.position.x - avatar.root.position.x, food.position.z - avatar.root.position.z);
+      if (distance < 0.55) {
         avatar.eating = 0.85;
         avatar.model.play('CanineIdle');
         avatar.model.update(dt);
         return;
       }
-      if (distance > 0.07) {
-        const speed = Math.min(distance * 5, food && food.petId === pet.id ? 2.6 : 3.4);
-        const step = Math.min(distance, dt * speed);
-        const x = avatar.root.position.x + (dx / distance) * step;
-        const z = avatar.root.position.z + (dz / distance) * step;
-        avatar.root.position.x = x;
-        avatar.root.position.z = z;
-        avatar.root.position.y = groundAt(ctx.template, x, z, avatar.root.position.y);
-        const desired = Math.atan2(dx, dz);
-        avatar.root.rotation.y = circularLerp(avatar.root.rotation.y, desired, Math.min(1, dt * 12));
-        stepped = speed;
+      const result = moveAvatar(avatar, { x: food.position.x, y: food.position.y, z: food.position.z }, 2.6, ctx, dt);
+      avatar.model.play(result.stepped > 0.05 ? 'CanineWalk' : 'CanineIdle', undefined, 1);
+      avatar.model.update(dt);
+      return;
+    }
+    if (follow) {
+      if (avatar.sceneId !== ctx.sceneId || avatar.root.position.distanceTo(ctx.player) > 7) placeBehind(avatar, pet, ctx);
+      const lane = LANES[state.pets.findIndex(candidate => candidate.id === pet.id) % LANES.length];
+      const target = offsetTarget(ctx.player, ctx.heading, lane);
+      const distance = Math.hypot(target.x - avatar.root.position.x, target.z - avatar.root.position.z);
+      const speed = Math.min(distance * 5 + 0.4, 3.6);
+      const result = moveAvatar(avatar, target, speed, ctx, dt);
+      if (result.stepped > 0.05) {
+        const gait = speed > 2.8 ? GAITS.run : GAITS.walk;
+        avatar.model.play(gait.clip, undefined, THREE.MathUtils.clamp(speed / gait.speed, 0.4, 1.6));
       } else {
         avatar.model.play('CanineIdle');
-        if (!follow && ctx.player.distanceTo(avatar.root.position) < 4) {
-          const desired = Math.atan2(ctx.player.x - avatar.root.position.x, ctx.player.z - avatar.root.position.z);
-          avatar.root.rotation.y = circularLerp(avatar.root.rotation.y, desired, Math.min(1, dt * 5));
-        }
       }
-    }
-    if (stepped > 0.05) {
-      const gait = stepped > 3.4 ? GAITS.sprint : stepped > 2.1 ? GAITS.run : GAITS.walk;
-      avatar.model.play(gait.clip, undefined, THREE.MathUtils.clamp(stepped / gait.speed, 0.4, 1.6));
+      avatar.model.update(dt);
     } else {
-      avatar.model.play('CanineIdle');
+      updateHomeAI(pet, avatar, dt, ctx);
     }
-    avatar.model.update(dt);
     if (avatar.bounce > 0) {
       avatar.bounce = Math.max(0, avatar.bounce - dt * 3.2);
       avatar.root.scale.setScalar(avatar.baseScale * (1 + avatar.bounce * 0.09));
@@ -412,6 +504,7 @@ export function mountPetSystem({
     if (localSound) localSound.playAction?.('meal-soft');
     if (fx) fx.hearts(position.clone().add(new THREE.Vector3(0, 0.5, 0)), 5);
     avatar.model.play('CanineIdle');
+    resetHomeAI(avatar);
     onMessage(`${pet.name} 吃完了，心情不错`);
   }
 
@@ -575,6 +668,12 @@ export function mountPetSystem({
     hasFollowingPets: () => followingPets(state).length > 0,
     getBattlePet: () => petBattlePet(state),
     isReady: () => ready,
+    _debug: () => [...avatars.entries()].map(([id, avatar]) => ({
+      id,
+      visible: avatar.root.visible,
+      pos: avatar.root.position.toArray().map((value) => +value.toFixed(2)),
+      ai: avatar.ai ? { action: avatar.ai.action, target: avatar.ai.target, sprint: avatar.ai.sprint, timer: +avatar.ai.timer.toFixed(2) } : null,
+    })),
     placeFood,
     _state: () => state,
   };
