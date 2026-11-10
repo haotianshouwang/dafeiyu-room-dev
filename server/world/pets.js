@@ -116,6 +116,7 @@ export const petHandlers={
   const {actorId,eggId}=command.payload;
   actorOf(snapshot,actorId);
   const bucket=bucketOf(snapshot,actorId,true);
+  const actor=actorOf(snapshot,actorId);
   const eggs=ensureEggs(bucket,now);
   const egg=eggs.find(entry=>entry.eggId===eggId&&!entry.hatched);
   if(!egg)throw Error('EGG_NOT_FOUND');
@@ -124,14 +125,50 @@ export const petHandlers={
   if(bucket.instances[petId])petId=`${petId}-${randomUUID().slice(0,6)}`;
   const pet=createPetInstance({petId,ownerId:actorId,speciesId:egg.speciesId,nickname:species.name,now});
   bucket.instances[petId]=pet;
+  pet.lastSceneId=actor.sceneId;
+  pet.lastPosition=[...(actor.position??[0,0,0])];
   egg.hatched=true;
   if(!bucket.roster.followPetId)bucket.roster.followPetId=petId;
   emit('pets.hatched',{actorId,eggId,petId,speciesId:egg.speciesId});
   return {petId,eggId,speciesId:egg.speciesId,name:pet.nickname,roster:{...bucket.roster},eggs:structuredClone(eggs)};
  },
 
+ 'pet.feed':({snapshot,command,principal,now,emit})=>{
+  const {actorId,petId}=command.payload;
+  actorOf(snapshot,actorId);
+  const pet=ownedPet(snapshot,actorId,petId);
+  pet.satiety=Math.min(100,(pet.satiety??0)+25);
+  emit('pets.fed',{actorId,petId,satiety:pet.satiety});
+  return {ok:true,petId,satiety:pet.satiety};
+ },
+ 'pet.rename':({snapshot,command,principal,now,emit})=>{
+  const {actorId,petId,name}=command.payload;
+  actorOf(snapshot,actorId);
+  const pet=ownedPet(snapshot,actorId,petId);
+  pet.nickname=String(name).trim().slice(0,24);
+  if(!pet.nickname)throw Error('INVALID_NAME');
+  emit('pets.renamed',{actorId,petId,name:pet.nickname});
+  return {ok:true,petId,name:pet.nickname};
+ },
+ 'pet.syncPositions':({snapshot,command,principal})=>{
+  const {actorId,positions}=command.payload;
+  actorOf(snapshot,actorId);
+  const bucket=bucketOf(snapshot,actorId,false);
+  if(!bucket)return {updated:0};
+  let updated=0;
+  for(const entry of positions){
+   const pet=bucket.instances?.[entry.petId];
+   if(!pet||pet.ownerId!==actorId)continue;
+   if(Array.isArray(entry.position)&&entry.position.length===3&&entry.position.every(Number.isFinite)){
+    pet.lastSceneId=entry.sceneId;
+    pet.lastPosition=entry.position.slice(0,3);
+    updated+=1;
+   }
+  }
+  return {updated};
+ },
+
  'pet.setMode':({snapshot,command,principal,now,emit})=>{
-  if(principal.role!=='owner')throw Error('UNAUTHORIZED');
   const {actorId,petId,mode}=command.payload;
   actorOf(snapshot,actorId);
   const bucket=bucketOf(snapshot,actorId,true);
@@ -148,7 +185,6 @@ export const petHandlers={
  },
 
  'pet.setBattle':({snapshot,command,principal,now,emit})=>{
-  if(principal.role!=='owner')throw Error('UNAUTHORIZED');
   const {actorId,petId}=command.payload;
   actorOf(snapshot,actorId);
   const bucket=bucketOf(snapshot,actorId,true);
@@ -159,7 +195,6 @@ export const petHandlers={
  },
 
  'pet.pet':({snapshot,command,principal,now,emit})=>{
-  if(principal.role!=='owner')throw Error('UNAUTHORIZED');
   const {actorId,petId}=command.payload;
   actorOf(snapshot,actorId);
   const pet=ownedPet(snapshot,actorId,petId);

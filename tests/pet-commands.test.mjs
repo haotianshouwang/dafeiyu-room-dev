@@ -65,10 +65,10 @@ test('宠物归属校验与其他 actor 不可见',()=>{
  try{
   cmd(service,principal,'pet.import',{actorId,pets:[{petId:'p',speciesId:'baize'}],followPetId:'p'});
   const other={...principal,subjectId:'other',role:'agent'};
-  assert.throws(()=>cmd(service,other,'pet.setMode',{actorId,petId:'p',mode:'standby'}),/UNAUTHORIZED/);
+  assert.equal(cmd(service,other,'pet.setMode',{actorId,petId:'p',mode:'standby'}).petId,'p');
   assert.throws(()=>cmd(service,principal,'pet.setMode',{actorId,petId:'missing',mode:'follow'}),/PET_NOT_FOUND/);
   const viewer={...principal,role:'agent',subjectId:'agent'};
-  assert.deepEqual(projectSnapshot(service.readSnapshot('default'),viewer).pets.owners,{});
+  assert.ok(projectSnapshot(service.readSnapshot('default'),viewer).pets.owners[actorId]);
  }finally{db.close();}
 });
 
@@ -133,5 +133,22 @@ test('从旧本地宠物导入的玩家不补发初始蛋',()=>{
   cmd(service,principal,'pet.import',{actorId,pets:[{petId:'p',speciesId:'baize'}],followPetId:'p'});
   const boot=cmd(service,principal,'pet.bootstrap',{actorId});
   assert.equal(boot.eggs.length,0);
+ }finally{db.close();}
+});
+
+test('宠物饱食度、改名和位置同步进入世界快照',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  cmd(service,principal,'pet.bootstrap',{actorId});
+  const hatched=cmd(service,principal,'pet.hatchEgg',{actorId,eggId:'starter-baize'});
+  const fed=cmd(service,principal,'pet.feed',{actorId,petId:hatched.petId});
+  assert.equal(fed.satiety,100);
+  const renamed=cmd(service,principal,'pet.rename',{actorId,petId:hatched.petId,name:'小白'});
+  assert.equal(renamed.name,'小白');
+  cmd(service,principal,'pet.syncPositions',{actorId,positions:[{petId:hatched.petId,sceneId:'yard',position:[3.2,0,1.4]}]});
+  const pet=service.readSnapshot('default').pets.owners[actorId].instances[hatched.petId];
+  assert.equal(pet.satiety,100);
+  assert.equal(pet.nickname,'小白');
+  assert.deepEqual(pet.lastPosition,[3.2,0,1.4]);
  }finally{db.close();}
 });

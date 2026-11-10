@@ -396,7 +396,7 @@ const petSystem=mountPetSystem({
  localSound,fx,
  onPoop:position=>backpack?.spawnPoop(position),
  getActor:()=>actor,
- dispatchPet:(kind,payload)=>client.dispatch({kind,payload}),
+ dispatchPet:(kind,payload,options)=>client.dispatch({kind,payload},options),
  isConnected:()=>client.connectionStatus==='connected',
 });
 window.__petSystem=petSystem;
@@ -406,6 +406,9 @@ backpack=mountBackpackSystem({
  getSnapshot:()=>client.snapshot,
  getSceneId:()=>activeScene,
  getPlayer:()=>({position:renderPosition,heading:actor?.rotation??0}),
+ getActor:()=>actor,
+ dispatchItems:(kind,payload,options)=>client.dispatch({kind,payload},options),
+ isConnected:()=>client.connectionStatus==='connected',
  isEditing:()=>Boolean(editor?.active),
  isFirstPerson:()=>fpActive,
  isBattle:()=>Boolean(baizeBattle?.active),
@@ -420,7 +423,7 @@ const eggChest=mountEggChest({
  getSceneId:()=>activeScene,
  getPlayer:()=>({position:renderPosition,heading:actor?.rotation??0}),
  getActor:()=>actor,
- dispatchPet:(kind,payload)=>client.dispatch({kind,payload}),
+ dispatchPet:(kind,payload,options)=>client.dispatch({kind,payload},options),
  isConnected:()=>client.connectionStatus==='connected',
  isEditing:()=>Boolean(editor?.active),
  isFirstPerson:()=>fpActive,

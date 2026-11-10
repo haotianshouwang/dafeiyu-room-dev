@@ -99,6 +99,7 @@ export function mountPetSystem({
   let migrationAttempted = false;
   let bootstrapAttempted = false;
   let appliedServerPets = null;
+  let lastPositionSync = 0;
 
   if (!document.getElementById('pet-system-style')) {
     const style = document.createElement('style');
@@ -716,6 +717,7 @@ export function mountPetSystem({
 
   function finishEating(pet, avatar) {
     if (!food) return;
+    const foodId = food.foodId;
     const position = food.mesh.position.clone();
     scene.remove(food.mesh);
     food = null;
@@ -724,6 +726,13 @@ export function mountPetSystem({
     avatar.model.loop('idle');
     resetHomeAI(avatar);
     onMessage(`${pet.name} 吃完了，心情不错`);
+    if (dispatchPet && serverReady) {
+      void petCommand('pet.feed', {petId: pet.id, foodId}).then(result => {
+        if (!result || result.satiety === undefined) return;
+        pet.satiety = result.satiety;
+        if (dialog.open) render();
+      }).catch(() => {});
+    }
   }
 
   function randomPoopDelay() {
@@ -782,6 +791,20 @@ export function mountPetSystem({
       onMessage('宠物没来得及吃，食物先收起来了');
       removeFood();
     }
+    if (serverReady && dispatchPet && isConnected() && performance.now() - lastPositionSync > 1200) {
+      lastPositionSync = performance.now();
+      const actor = getActor?.();
+      const positions = state.pets
+        .map(pet => {
+          const avatar = avatars.get(pet.id);
+          if (!avatar?.root.visible) return null;
+          return {petId: pet.id, sceneId, position: avatar.root.position.toArray()};
+        })
+        .filter(Boolean);
+      if (actor?.actorId && positions.length) {
+        void dispatchPet('pet.syncPositions', {actorId: actor.actorId, positions}, {refresh: false}).catch(() => {});
+      }
+    }
   }
 
   function render() {
@@ -801,7 +824,7 @@ export function mountPetSystem({
             <div class="pet-bond-top"><span>羁绊</span><span>${bound}/${PET_BOND_MAX} · 本小时 +${candidate.bondWindowPoints}/${PET_BOND_HOURLY_CAP}</span></div>
             <i><em style="width:${Math.round((bound / PET_BOND_MAX) * 100)}%"></em></i>
           </div>
-          <div class="pet-meta">Lv.${candidate.level ?? 1} · HP ${petStatsFor(candidate).maxHp} · 攻击 ${petStatsFor(candidate).attack} · 速度 ${petStatsFor(candidate).speed}</div>
+          <div class="pet-meta">Lv.${candidate.level ?? 1} · HP ${petStatsFor(candidate).maxHp} · 攻击 ${petStatsFor(candidate).attack} · 速度 ${petStatsFor(candidate).speed} · 饱食 ${candidate.satiety ?? 0}/100</div>
           <div class="pet-skills">技能 ${petSkillNames(candidate).join(' / ') || '—'}</div>
           <div class="pet-status">
             <div class="pet-mode" role="group" aria-label="宠物状态">

@@ -7,7 +7,7 @@ import {
   loadItemState, saveItemState, inventoryTotal, addItem, removeItem,
   addGroundItem, removeGroundItem, getGroundItem,
   tickCompost, getCompostStatus, startCompost, collectCompost, markCompostNotified,
-  COMPOST_DURATION_MS, BAG_SLOT_COUNT, moveItemSlot, ensureSlots,
+  COMPOST_DURATION_MS, BAG_SLOT_COUNT, moveItemSlot, ensureSlots, normalizeItemState,
 } from './item-store.js';
 
 const YARD_SCENE_ID = 'yard';
@@ -332,12 +332,15 @@ export function mountBackpackSystem({
   isEditing = () => false,
   isFirstPerson = () => false,
   isBattle = () => false,
+  getActor = () => null,
+  dispatchItems = null,
+  isConnected = () => false,
   onMessage = () => {},
   localSound = null,
   fx = null,
 } = {}) {
   const storage = (() => { try { return globalThis.localStorage; } catch { return null; } })();
-  const state = loadItemState(storage, Date.now());
+  let state = loadItemState(storage, Date.now());
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const groundLayer = new THREE.Group();
@@ -354,6 +357,8 @@ export function mountBackpackSystem({
   let lastLabelKey = '';
   let lastCompostTick = 0;
   let itemTime = 0;
+  let appliedServerItems = null;
+  let serverSyncAttempted = false;
   let drag = null;
   let dragGhost = null;
   let suppressClickUntil = 0;
@@ -400,6 +405,37 @@ export function mountBackpackSystem({
   function updateBadge() {
     const count = entry.querySelector('.bag-count');
     if (count) count.textContent = String(totalItems());
+  }
+
+  function actorId() {
+    return getActor?.()?.actorId ?? getSnapshot()?.actors?.[0]?.actorId ?? null;
+  }
+
+  function pushItems() {
+    const id = actorId();
+    if (!dispatchItems || !isConnected() || !id) return;
+    void dispatchItems('item.sync', {actorId: id, state}, {refresh: false}).catch(() => {});
+  }
+
+  function syncServerItems() {
+    const id = actorId();
+    if (!id) return;
+    const owner = getSnapshot()?.items?.owners?.[id];
+    if (owner) {
+      if (owner === appliedServerItems) return;
+      appliedServerItems = owner;
+      state = normalizeItemState(owner, Date.now());
+      saveItemState(storage, state);
+      syncGroundMeshes();
+      updateBadge();
+      if (dialog.open) render();
+      if (compostDialog.open) renderCompost();
+      return;
+    }
+    if (!serverSyncAttempted && dispatchItems && isConnected()) {
+      serverSyncAttempted = true;
+      pushItems();
+    }
   }
 
   function save() {
@@ -610,6 +646,7 @@ export function mountBackpackSystem({
     }
     createGroundMesh(result.item);
     save();
+    pushItems();
     if (dialog.open) render();
     return true;
   }
@@ -624,6 +661,7 @@ export function mountBackpackSystem({
     removeGroundItem(state, id);
     removeGroundMesh(id);
     save();
+    pushItems();
     if (dialog.open) render();
     localSound?.playAction?.('ui-confirm');
     if (fx) fx.burst(new THREE.Vector3().fromArray(item.position).add(new THREE.Vector3(0, 0.3, 0)), 5);
@@ -674,6 +712,7 @@ export function mountBackpackSystem({
     }
     createGroundMesh(result.item);
     save();
+    pushItems();
     close();
     localSound?.playAction?.('ui-confirm');
     onMessage(`${def.name}丢在院子里了`);
@@ -709,6 +748,7 @@ export function mountBackpackSystem({
       return;
     }
     save();
+    pushItems();
     renderCompost();
     updateCompostVisual(true);
     localSound?.playAction?.('ui-confirm');
@@ -724,6 +764,7 @@ export function mountBackpackSystem({
       return;
     }
     save();
+    pushItems();
     renderCompost();
     updateCompostVisual(true);
     localSound?.playAction?.('ui-confirm');
@@ -885,6 +926,7 @@ export function mountBackpackSystem({
         selectedEmpty = false;
         selectedItemId = current.id;
         save();
+        pushItems();
         render();
       }
       return;
@@ -936,6 +978,7 @@ export function mountBackpackSystem({
       const yard = getSceneId() === YARD_SCENE_ID;
       groundLayer.visible = yard;
       if (compost) compost.root.visible = yard;
+      syncServerItems();
       itemTime += dt;
       for (const mesh of meshes.values()) animatePoop(mesh, itemTime);
       ensureCompost();
