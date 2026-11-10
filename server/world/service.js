@@ -6,7 +6,7 @@ import {protectFarm} from './starter.js';
 import {nearestFree} from '../../shared/world/navigation.js';
 import {getTemplate} from '../../shared/world/templates.js';
 import {appendEvent,readEvents,readLatestCursor,projectEventPage} from './events.js';
-const scopeFor=kind=>kind.startsWith('build.')?'build:write':kind.startsWith('control.')||kind.startsWith('action.')||kind.startsWith('actor.')||kind.startsWith('battle.')?'actor:control':'world:read';
+const scopeFor=kind=>kind.startsWith('build.')?'build:write':kind.startsWith('control.')||kind.startsWith('action.')||kind.startsWith('actor.')||kind.startsWith('battle.')||kind.startsWith('pet.')?'actor:control':'world:read';
 // Trusted adapter-only principal: {subjectId,worldIds,actorIds,scopes,role,
 // expiresAt?,revoked?}. Never construct this object from command/request JSON.
 export function authorizePrincipal(principal,worldId,scope,actorId,now=Date.now()){
@@ -133,7 +133,7 @@ export class WorldService{
  execute(principal,command){
   if(!validateCommand(command).ok)throw Error('INVALID_COMMAND');
   authorizePrincipal(principal,command.worldId,scopeFor(command.kind),command.payload.actorId,this.clock());
-  if((['control.takeover','actor.teleport'].includes(command.kind)||command.kind.startsWith('battle.'))&&principal.role!=='owner')throw Error('UNAUTHORIZED');
+  if((['control.takeover','actor.teleport'].includes(command.kind)||command.kind.startsWith('battle.')||command.kind.startsWith('pet.'))&&principal.role!=='owner')throw Error('UNAUTHORIZED');
   const movement=command.kind==='actor.input';
   const canBuffer=movement&&this.memoryPosition;
   const serialized=canonical(command);const db=this.db;

@@ -394,6 +394,9 @@ const petSystem=mountPetSystem({
  onMessage:showMessage,
  localSound,fx,
  onPoop:position=>backpack?.spawnPoop(position),
+ getActor:()=>actor,
+ dispatchPet:(kind,payload)=>client.dispatch({kind,payload}),
+ isConnected:()=>client.connectionStatus==='connected',
 });
 window.__petSystem=petSystem;
 backpack=mountBackpackSystem({
@@ -410,8 +413,6 @@ backpack=mountBackpackSystem({
 });
 window.__backpack=backpack;
 const baizeBattle=mountBaizeBattle(client,{
- getBattlePet:()=>petSystem.getBattlePet(),
-
  character:original,
  playSound:cue=>localSound.playAction(cue),
  onEnter:showIntro=>{

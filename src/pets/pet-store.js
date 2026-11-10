@@ -1,5 +1,8 @@
-// 家园宠物状态：纯函数 + localStorage 持久化，便于单测与以后迁移到服务端存档。
+// 家园宠物状态：本地迁移/缓存纯函数；权威数据由服务端世界快照管理。
+import {deriveStats} from '../../shared/creatures/stats.js';
+import {PET_SKILLS as SKILLS} from '../../shared/creatures/skills.js';
 export const PET_STORAGE_KEY = 'dafeiyu.pets.v3';
+export const PET_MIGRATED_KEY = 'dafeiyu.pets.migrated.v3';
 export const PET_BOND_MAX = 100;
 export const PET_BOND_HOURLY_CAP = 10;
 export const PET_BOND_GAIN = 1;
@@ -100,6 +103,71 @@ export function savePetState(storage, state) {
   } catch {
     // 隐私模式/配额满时不阻塞游戏。
   }
+}
+
+
+/** 旧本地宠物 → 服务端 pet.import 载荷。 */
+export function buildServerImport(state) {
+  const pets = state.pets.map(pet => ({
+    petId: pet.id,
+    speciesId: pet.modelId || pet.species || 'baize',
+    nickname: pet.name,
+    level: pet.level ?? 1,
+    exp: pet.exp ?? 0,
+    bond: pet.bond ?? 0,
+    evolved: Boolean(pet.evolved),
+    learnedSkills: pet.learnedSkills ?? undefined,
+    skillLoadout: pet.skillLoadout ?? undefined,
+    homeSceneId: pet.homeSceneId || 'yard',
+    homePosition: pet.homePosition ?? undefined,
+    bondWindowStart: pet.bondWindowStart,
+    bondWindowPoints: pet.bondWindowPoints,
+  }));
+  return {
+    localVersion: 3,
+    pets,
+    followPetId: state.pets.find(pet => pet.mode === 'follow')?.id ?? null,
+    battlePetId: state.pets.find(pet => pet.battle)?.id ?? null,
+  };
+}
+
+/** 服务端 owner bucket → 客户端渲染结构（只做展示缓存，不作为权威）。 */
+export function serverPetsToLocal(owner) {
+  if (!owner?.instances) return null;
+  const instances = Object.values(owner.instances);
+  if (!instances.length) return null;
+  const followPetId = owner.roster?.followPetId ?? null;
+  const battlePetId = owner.roster?.battlePetId ?? null;
+  const pets = instances.map(pet => {
+    const stats = deriveStats(pet.speciesId, pet.level, pet.bond, pet.evolved);
+    return {
+      id: pet.petId,
+      name: pet.nickname,
+      species: pet.speciesId,
+      modelId: pet.speciesId,
+      level: pet.level,
+      exp: pet.exp,
+      bond: pet.bond,
+      bondWindowStart: pet.bondWindowStart,
+      bondWindowPoints: pet.bondWindowPoints ?? 0,
+      evolved: pet.evolved,
+      readyToEvolve: pet.bond >= PET_BOND_MAX && !pet.evolved,
+      mode: followPetId === pet.petId ? 'follow' : 'standby',
+      battle: battlePetId === pet.petId,
+      learnedSkills: pet.learnedSkills,
+      skillLoadout: pet.skillLoadout,
+      stats,
+      skillNames: (pet.skillLoadout ?? []).map(id => SKILLS[id]?.name).filter(Boolean),
+      homeSceneId: pet.homeSceneId,
+      homePosition: pet.homePosition,
+      createdAt: pet.createdAt,
+    };
+  });
+  return {
+    version: 3,
+    selectedPetId: followPetId ?? pets[0]?.id ?? null,
+    pets,
+  };
 }
 
 export function getPet(state, petId) {

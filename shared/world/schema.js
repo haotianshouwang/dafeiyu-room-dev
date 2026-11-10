@@ -47,6 +47,12 @@ export const commandSchema=z.discriminatedUnion('kind',[
  cmd('battle.start',obj({actorId:idSchema,leaseId:idSchema,leaseVersion:rev,sequence:z.number().int().positive()})),
  cmd('battle.choose',obj({actorId:idSchema,battleId:idSchema,turn:rev,choice:z.enum([...PET_SKILL_CHOICES,'wait']),unitId:idSchema.optional(),target:idSchema.optional()})),
  cmd('battle.leave',obj({actorId:idSchema,battleId:idSchema})),
+ cmd('pet.import',obj({actorId:idSchema,localVersion:z.number().int().optional(),followPetId:idSchema.nullable().optional(),battlePetId:idSchema.nullable().optional(),
+  pets:z.array(obj({petId:idSchema,speciesId:idSchema,nickname:z.string().min(1).max(24).optional(),level:z.number().int().min(1).max(50).optional(),exp:z.number().int().min(0).optional(),bond:z.number().int().min(0).max(100).optional(),evolved:z.boolean().optional(),learnedSkills:z.array(idSchema).max(12).optional(),skillLoadout:z.array(idSchema).max(4).optional(),homeSceneId:idSchema.optional(),homePosition:vectorSchema.optional(),bondWindowStart:z.number().finite().optional(),bondWindowPoints:z.number().int().min(0).max(10).optional()})).min(1).max(20)})),
+ cmd('pet.setMode',obj({actorId:idSchema,petId:idSchema,mode:z.enum(['follow','standby']),homeSceneId:idSchema.optional(),homePosition:vectorSchema.optional()})),
+ cmd('pet.setBattle',obj({actorId:idSchema,petId:idSchema.nullable()})),
+ cmd('pet.pet',obj({actorId:idSchema,petId:idSchema})),
+ cmd('pet.evolve',obj({actorId:idSchema,petId:idSchema})),
  cmd('actor.teleport',z.union([
   obj({actorId:idSchema,sceneId:idSchema,landmarkId:idSchema.optional()}),
   obj({actorId:idSchema,templateId:z.literal('forest_v1'),landmarkId:idSchema}),

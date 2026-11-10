@@ -8,7 +8,11 @@ import {
   PET_BOND_MAX, PET_BOND_HOURLY_CAP,
   loadPetState, savePetState, getPet, selectPet, setPetMode, toggleBattle,
   petPet, evolvePet, petBattlePet, followingPets, ensurePetSeeds,
+  buildServerImport, serverPetsToLocal, PET_MIGRATED_KEY,
 } from './pet-store.js';
+import {deriveStats} from '../../shared/creatures/stats.js';
+import {getSpecies} from '../../shared/creatures/species.js';
+import {PET_SKILLS} from '../../shared/creatures/skills.js';
 
 const HOME_SCENE_ID = 'yard';
 // 待命宠物待在院子花园里的固定位置（院子出生点在 [1,0,1] 附近）
@@ -33,6 +37,8 @@ const STYLE = `
 .pet-bond .pet-bond-top{display:flex;justify-content:space-between;font-size:12px;color:#78665a}
 .pet-bond i{display:block;height:8px;border-radius:99px;background:#efe0cf;overflow:hidden;margin-top:4px}
 .pet-bond i em{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#ffb26b,#ff7f9b)}
+.pet-meta{margin:7px 0 2px;font-size:11px;color:#8a7563;font-variant-numeric:tabular-nums}
+.pet-skills{margin-bottom:2px;font-size:11px;color:#8a7563;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pet-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:9px 0}
 .pet-mode{display:flex;border:1px solid #d6bfa5;border-radius:10px;overflow:hidden;background:#fff9ee}
 .pet-mode button{border:0;background:transparent;color:#5d493b;font:inherit;font-size:12px;line-height:1;
@@ -71,6 +77,9 @@ export function mountPetSystem({
   localSound = null,
   fx = null,
   onPoop = null,
+  getActor = () => null,
+  dispatchPet = null,
+  isConnected = () => false,
 } = {}) {
   const storage = (() => { try { return globalThis.localStorage; } catch { return null; } })();
   let state = loadPetState(storage);
@@ -85,6 +94,10 @@ export function mountPetSystem({
   const poopTimers = new Map();
   const POOP_MIN_MS = 240_000;
   const POOP_MAX_MS = 480_000;
+  let serverReady = false;
+  let migrationPending = false;
+  let migrationAttempted = false;
+  let appliedServerPets = null;
 
   if (!document.getElementById('pet-system-style')) {
     const style = document.createElement('style');
@@ -133,7 +146,102 @@ export function mountPetSystem({
     return getPet(state, state.selectedPetId) ?? state.pets[0] ?? null;
   }
 
-  function petById(id) {
+  function currentActorId() {
+    return getActor?.()?.actorId ?? getSnapshot()?.actors?.[0]?.actorId ?? null;
+  }
+
+  function applyRosterToLocal(roster, changedPet = null) {
+    if (!roster) return;
+    for (const pet of state.pets) {
+      pet.mode = roster.followPetId === pet.id ? 'follow' : 'standby';
+      pet.battle = roster.battlePetId === pet.id;
+    }
+    if (changedPet?.homeSceneId) changedPet.pet.homeSceneId = changedPet.homeSceneId;
+    if (changedPet?.homePosition) changedPet.pet.homePosition = changedPet.homePosition;
+  }
+
+  function reconcileServerPets(next) {
+    const known = new Set(next.pets.map(pet => pet.id));
+    state.pets = next.pets;
+    state.selectedPetId = next.selectedPetId;
+    for (const pet of state.pets) {
+      let avatar = avatars.get(pet.id);
+      if (!avatar) avatar = createAvatar(pet);
+      if (avatar) applyPetLook(avatar, pet);
+    }
+    for (const [id, avatar] of [...avatars]) {
+      if (known.has(id)) continue;
+      scene.remove(avatar.root);
+      avatar.root.traverse(node => {
+        if (!node.isMesh) return;
+        node.geometry?.dispose?.();
+        if (Array.isArray(node.material)) node.material.forEach(material => material.dispose?.());
+        else node.material?.dispose?.();
+      });
+      avatars.delete(id);
+    }
+    savePetState(storage, state);
+    updateEntryCount();
+    if (dialog.open) render();
+  }
+
+  function syncServerPets(snapshot) {
+    if (!dispatchPet) return;
+    const actorId = currentActorId();
+    if (!actorId) return;
+    const owner = snapshot?.pets?.owners?.[actorId];
+    if (owner && Object.keys(owner.instances ?? {}).length) {
+      if (owner === appliedServerPets) return;
+      appliedServerPets = owner;
+      const next = serverPetsToLocal(owner);
+      if (next) {
+        serverReady = true;
+        migrationPending = false;
+        migrationAttempted = true;
+        reconcileServerPets(next);
+        try { storage?.setItem(PET_MIGRATED_KEY, '1'); } catch { /* ignore */ }
+      }
+      return;
+    }
+    if (serverReady || migrationPending || migrationAttempted || !isConnected()) return;
+    const payload = buildServerImport(state);
+    if (!payload.pets.length) return;
+    migrationPending = true;
+    migrationAttempted = true;
+    void dispatchPet('pet.import', { actorId, ...payload })
+      .then(() => { migrationPending = false; })
+      .catch(error => {
+        migrationPending = false;
+        onMessage(`宠物数据迁移失败：${error.message}`);
+      });
+  }
+
+  async function petCommand(kind, payload) {
+    if (!dispatchPet || !serverReady) {
+      onMessage(dispatchPet ? '宠物数据还在同步，稍等一下' : '连接世界后才能操作宠物');
+      return null;
+    }
+    const actorId = currentActorId();
+    if (!actorId) return null;
+    try {
+      return await dispatchPet(kind, { actorId, ...payload });
+    } catch (error) {
+      onMessage(`宠物操作失败：${error.message}`);
+      return null;
+    }
+  }
+
+  function petStatsFor(pet) {
+    return pet.stats ?? deriveStats(pet.modelId ?? pet.species ?? 'baize', pet.level ?? 1, pet.bond ?? 0, pet.evolved);
+  }
+
+  function petSkillNames(pet) {
+    if (Array.isArray(pet.skillNames) && pet.skillNames.length) return pet.skillNames;
+    const loadout = pet.skillLoadout ?? getSpecies(pet.modelId ?? pet.species ?? 'baize').defaultLoadout;
+    return loadout.map(id => PET_SKILLS[id]?.name).filter(Boolean);
+  }
+
+  async function petById(id) {
     const pet = getPet(state, id);
     if (!pet) return;
     const avatar = avatars.get(id);
@@ -144,6 +252,29 @@ export function mountPetSystem({
     // 点击头部触发的专属反应动作（由模型配置的 pet 动作槽定义）。
     avatar.petting = 2.3;
     if (avatar.model?.chain) avatar.model.chain('pet');
+    if (dispatchPet) {
+      if (!serverReady) { onMessage('宠物数据还在同步，稍等一下'); return; }
+      const result = await petCommand('pet.pet', { petId: id });
+      if (!result) return;
+      if (!result.ok) {
+        if (result.reason === 'hourly-cap') onMessage(`这一小时已经摸满 ${PET_BOND_HOURLY_CAP} 点了，等会儿再陪${pet.name}玩吧`);
+        else if (result.reason === 'max') onMessage(`${pet.name} 的羁绊已经满了${pet.evolved ? '，正在陪着你' : '，可以进化了'}`);
+        else onMessage('现在摸不到它');
+        save();
+        render();
+        return;
+      }
+      pet.bond = result.bond;
+      pet.evolved = result.evolved;
+      pet.readyToEvolve = Boolean(result.readyToEvolve);
+      avatar.bounce = 1;
+      if (fx) fx.hearts(avatar.root.position.clone().add(new THREE.Vector3(0, 0.72, 0)), 6);
+      save();
+      if (pet.readyToEvolve) onMessage(`抚摸${pet.name}：羁绊 +${result.gain}（${pet.bond}/${PET_BOND_MAX}）· 可以进化了！`);
+      else onMessage(`抚摸${pet.name}：羁绊 +${result.gain}（${pet.bond}/${PET_BOND_MAX}）`);
+      render();
+      return;
+    }
     const result = petPet(state, id, Date.now());
     if (!result.ok) {
       if (result.reason === 'hourly-cap') onMessage(`这一小时已经摸满 ${PET_BOND_HOURLY_CAP} 点了，等会儿再陪${pet.name}玩吧`);
@@ -161,11 +292,19 @@ export function mountPetSystem({
     render();
   }
 
-  function evolve(id) {
+  async function evolve(id) {
     const pet = getPet(state, id);
     if (!pet) return;
-    const result = evolvePet(state, id, Date.now());
-    if (!result.ok) { onMessage(`${pet.name} 的羁绊还没满`); return; }
+    if (dispatchPet) {
+      const result = await petCommand('pet.evolve', { petId: id });
+      if (!result) return;
+      if (!result.ok) { onMessage(`${pet.name} 的羁绊还没满`); return; }
+      pet.evolved = true;
+      pet.readyToEvolve = false;
+    } else {
+      const result = evolvePet(state, id, Date.now());
+      if (!result.ok) { onMessage(`${pet.name} 的羁绊还没满`); return; }
+    }
     const avatar = avatars.get(id);
     if (avatar) {
       avatar.baseScale = 1.16;
@@ -192,14 +331,28 @@ export function mountPetSystem({
     return [x, y, z];
   }
 
-  function setMode(id, mode) {
+  async function setMode(id, mode) {
     const pet = getPet(state, id);
     if (!pet) return;
     const demoted = mode === 'follow'
       ? state.pets.filter(candidate => candidate.id !== id && candidate.mode === 'follow').map(candidate => candidate.name)
       : [];
-    if (mode === 'standby') {
-      // 家园待命固定待在院子的花园，不留在当前场景
+    if (dispatchPet) {
+      if (!serverReady) { onMessage('宠物数据还在同步，稍等一下'); return; }
+      const payload = { petId: id, mode };
+      if (mode === 'standby') {
+        payload.homeSceneId = HOME_SCENE_ID;
+        payload.homePosition = yardHomePosition(id);
+      }
+      const result = await petCommand('pet.setMode', payload);
+      if (!result?.roster) return;
+      applyRosterToLocal(result.roster, { pet, ...result });
+      if (mode === 'standby') {
+        const avatar = avatars.get(id);
+        if (avatar) { avatar.sceneId = HOME_SCENE_ID; avatar.ai = null; }
+      }
+    } else if (mode === 'standby') {
+      // 离线回退：沿用旧的本地逻辑。
       setPetMode(state, id, 'standby', { sceneId: HOME_SCENE_ID, position: yardHomePosition(id) });
       const avatar = avatars.get(id);
       if (avatar) { avatar.sceneId = HOME_SCENE_ID; avatar.ai = null; }
@@ -211,6 +364,26 @@ export function mountPetSystem({
     const label = mode === 'follow' ? '开始跟随你' : mode === 'standby' ? '留在家园待命' : '自由活动';
     const demotedHint = demoted.length ? `；${demoted.join('、')}回家园待命` : '';
     onMessage(`${pet.name} ${label}${demotedHint}`);
+  }
+
+  async function setBattle(id) {
+    const pet = getPet(state, id);
+    if (!pet) return;
+    if (dispatchPet) {
+      if (!serverReady) { onMessage('宠物数据还在同步，稍等一下'); return; }
+      const wasBattling = pet.battle;
+      const result = await petCommand('pet.setBattle', { petId: wasBattling ? null : id });
+      if (!result?.roster) return;
+      for (const candidate of state.pets) candidate.battle = result.roster.battlePetId === candidate.id;
+      save();
+      render();
+      onMessage(`${pet.name} ${wasBattling ? '取消出战' : '出战'}`);
+      return;
+    }
+    toggleBattle(state, id);
+    save();
+    render();
+    onMessage(`${pet.name} ${pet.battle ? '出战' : '取消出战'}`);
   }
 
   function placeFood(foodId) {
@@ -578,6 +751,7 @@ export function mountPetSystem({
 
   function update(dt, snapshot, visual, playerPosition) {
     if (!ready || !snapshot) return;
+    syncServerPets(snapshot);
     const sceneId = getSceneId();
     const player = getPlayer();
     const sceneEntry = snapshot.scenes?.find(entry => entry.sceneId === sceneId);
@@ -612,6 +786,8 @@ export function mountPetSystem({
             <div class="pet-bond-top"><span>羁绊</span><span>${bound}/${PET_BOND_MAX} · 本小时 +${candidate.bondWindowPoints}/${PET_BOND_HOURLY_CAP}</span></div>
             <i><em style="width:${Math.round((bound / PET_BOND_MAX) * 100)}%"></em></i>
           </div>
+          <div class="pet-meta">Lv.${candidate.level ?? 1} · HP ${petStatsFor(candidate).maxHp} · 攻击 ${petStatsFor(candidate).attack} · 速度 ${petStatsFor(candidate).speed}</div>
+          <div class="pet-skills">技能 ${petSkillNames(candidate).join(' / ') || '—'}</div>
           <div class="pet-status">
             <div class="pet-mode" role="group" aria-label="宠物状态">
               <button type="button" data-mode="follow" class="${candidate.mode === 'follow' ? 'active' : ''}" aria-pressed="${candidate.mode === 'follow'}">跟随</button>
@@ -656,15 +832,8 @@ export function mountPetSystem({
       const pet = getPet(state, card.dataset.petId);
       if (!pet) return;
       const role = modeButton.dataset.mode;
-      if (role === 'battle') {
-        const wasBattling = pet.battle;
-        toggleBattle(state, pet.id);
-        save();
-        render();
-        onMessage(`${pet.name} ${wasBattling ? '取消出战' : '出战'}`);
-        return;
-      }
-      if (pet.mode !== role) setMode(pet.id, role);
+      if (role === 'battle') { void setBattle(pet.id); return; }
+      if (pet.mode !== role) void setMode(pet.id, role);
       return;
     }
     if (card) {
@@ -673,7 +842,7 @@ export function mountPetSystem({
     }
     if (actionButton && card) {
       const id = card.dataset.petId;
-      if (actionButton.dataset.action === 'evolve') evolve(id);
+      if (actionButton.dataset.action === 'evolve') void evolve(id);
       return;
     }
     const foodButton = event.target.closest('button[data-food-id]');

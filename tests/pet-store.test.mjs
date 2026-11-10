@@ -4,6 +4,7 @@ import {
   createDefaultPetState, normalizePetState, loadPetState, savePetState,
   getPet, selectPet, setPetMode, toggleBattle, petPet, evolvePet, ensurePetSeeds,
   followingPets, standbyPetsInScene, petBattlePet, setPetHome,
+  buildServerImport, serverPetsToLocal,
   PET_BOND_MAX, PET_BOND_HOURLY_CAP, PET_STORAGE_KEY,
 } from '../src/pets/pet-store.js';
 
@@ -145,4 +146,29 @@ test('规范化会修复越界字段，旧版本存档回落到空状态', () =>
   assert.equal(state.pets[0].bondWindowPoints, PET_BOND_HOURLY_CAP);
   assert.equal(state.pets[0].homePosition, null);
   assert.equal(normalizePetState({ version: 2, pets: [{ id: 'pet-1', name: '白泽' }] }, 6000).pets.length, 0);
+});
+
+test('本地宠物可生成服务端迁移载荷并还原为展示缓存', () => {
+  const state = createDefaultPetState();
+  ensurePetSeeds(state, SEEDS, 1000);
+  setPetMode(state, 'pet-fish-bowl', 'follow');
+  toggleBattle(state, 'pet-fish-bowl');
+  const payload = buildServerImport(state);
+  assert.equal(payload.localVersion, 3);
+  assert.equal(payload.followPetId, 'pet-fish-bowl');
+  assert.equal(payload.battlePetId, 'pet-fish-bowl');
+  assert.ok(payload.pets.every(pet => pet.speciesId && pet.petId));
+  const owner = {
+    instances: {
+      'pet-baize': { petId: 'pet-baize', speciesId: 'baize', nickname: '白泽', level: 2, bond: 20, evolved: false, homeSceneId: 'yard', homePosition: null, learnedSkills: ['frost'], skillLoadout: ['frost'] },
+      'fish': { petId: 'fish', speciesId: 'fish-bowl', nickname: '小鱼', level: 1, bond: 5, evolved: false, homeSceneId: 'yard', homePosition: [1, 0, 2], learnedSkills: ['tackle'], skillLoadout: ['tackle'] },
+    },
+    roster: { followPetId: 'fish', battlePetId: 'pet-baize' },
+  };
+  const local = serverPetsToLocal(owner);
+  assert.equal(local.selectedPetId, 'fish');
+  assert.equal(local.pets.find(pet => pet.id === 'fish').mode, 'follow');
+  assert.equal(local.pets.find(pet => pet.id === 'pet-baize').battle, true);
+  assert.ok(local.pets.find(pet => pet.id === 'fish').stats.maxHp > 0);
+  assert.deepEqual(local.pets.find(pet => pet.id === 'fish').skillNames, ['撞击']);
 });
