@@ -63,6 +63,7 @@ export function mountPetSystem({
   onMessage = () => {},
   localSound = null,
   fx = null,
+  onPoop = null,
 } = {}) {
   const storage = (() => { try { return globalThis.localStorage; } catch { return null; } })();
   let state = loadPetState(storage);
@@ -74,6 +75,9 @@ export function mountPetSystem({
   let ready = false;
   let food = null;
   let pointerDown = null;
+  const poopTimers = new Map();
+  const POOP_MIN_MS = 60_000;
+  const POOP_MAX_MS = 120_000;
 
   if (!document.getElementById('pet-system-style')) {
     const style = document.createElement('style');
@@ -504,6 +508,44 @@ export function mountPetSystem({
     onMessage(`${pet.name} 吃完了，心情不错`);
   }
 
+  function randomPoopDelay() {
+    return POOP_MIN_MS + Math.random() * (POOP_MAX_MS - POOP_MIN_MS);
+  }
+
+  function makePoopSpot(avatar, ctx) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 0.4 + Math.random() * 0.35;
+    let x = avatar.root.position.x + Math.cos(angle) * radius;
+    let z = avatar.root.position.z + Math.sin(angle) * radius;
+    let y = avatar.root.position.y;
+    try {
+      const free = nearestFree(ctx.snapshot, HOME_SCENE_ID, [x, y, z]);
+      x = free[0]; z = free[2];
+      if (Number.isFinite(free[1])) y = free[1];
+    } catch { /* 用宠物脚边 */ }
+    y = groundAt(ctx.template, x, z, y);
+    return [x, y, z];
+  }
+
+  function spawnPoopFor(petId, ctx) {
+    if (!onPoop) return false;
+    const avatar = avatars.get(petId);
+    if (!avatar || !avatar.root.visible) return false;
+    return Boolean(onPoop(makePoopSpot(avatar, ctx)));
+  }
+
+  function updatePoop(pet, avatar, ctx, dt) {
+    if (!onPoop || ctx.sceneId !== HOME_SCENE_ID || !avatar.root.visible || avatar.eating > 0) return;
+    let timer = poopTimers.get(pet.id);
+    if (timer === undefined) { poopTimers.set(pet.id, randomPoopDelay()); return; }
+    timer -= dt * 1000;
+    if (timer > 0) { poopTimers.set(pet.id, timer); return; }
+    poopTimers.set(pet.id, randomPoopDelay());
+    if (!onPoop(makePoopSpot(avatar, ctx))) {
+      // 地面满了就安静地等下一轮，避免每帧刷提示。
+    }
+  }
+
   function update(dt, snapshot, visual, playerPosition) {
     if (!ready || !snapshot) return;
     const sceneId = getSceneId();
@@ -515,7 +557,7 @@ export function mountPetSystem({
     for (const pet of state.pets) {
       let avatar = avatars.get(pet.id);
       if (!avatar) avatar = createAvatar(pet);
-      if (avatar) updateAvatar(pet, avatar, dt, ctx);
+      if (avatar) { updateAvatar(pet, avatar, dt, ctx); updatePoop(pet, avatar, ctx, dt); }
     }
     if (food && performance.now() - food.createdAt > 15000) {
       onMessage('宠物没来得及吃，食物先收起来了');
@@ -662,6 +704,19 @@ export function mountPetSystem({
       ai: avatar.ai ? { target: avatar.ai.target, sprint: avatar.ai.sprint, timer: +avatar.ai.timer.toFixed(2), busy: avatar.model.busy, clip: avatar.model.currentClip } : null,
     })),
     placeFood,
+    _forcePoop: (petId) => {
+      const snapshot = getSnapshot();
+      if (!snapshot) return false;
+      const sceneId = getSceneId();
+      const player = getPlayer();
+      const sceneEntry = snapshot.scenes?.find(entry => entry.sceneId === sceneId);
+      let template = null;
+      try { template = sceneEntry ? getTemplate(sceneEntry.templateId) : null; } catch { template = null; }
+      const ctx = { sceneId, snapshot, player: player.position, heading: player.heading ?? 0, template };
+      const pet = petId ? getPet(state, petId) : state.pets[0];
+      if (!pet) return false;
+      return spawnPoopFor(pet.id, ctx);
+    },
     _state: () => state,
   };
 }
