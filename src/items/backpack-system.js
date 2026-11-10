@@ -358,7 +358,7 @@ export function mountBackpackSystem({
   let lastCompostTick = 0;
   let itemTime = 0;
   let appliedServerItems = null;
-  let serverSyncAttempted = false;
+  let lastServerSyncAttempt = 0;
   let drag = null;
   let dragGhost = null;
   let suppressClickUntil = 0;
@@ -432,8 +432,8 @@ export function mountBackpackSystem({
       if (compostDialog.open) renderCompost();
       return;
     }
-    if (!serverSyncAttempted && dispatchItems && isConnected()) {
-      serverSyncAttempted = true;
+    if (dispatchItems && isConnected() && Date.now() - lastServerSyncAttempt > 2000) {
+      lastServerSyncAttempt = Date.now();
       pushItems();
     }
   }
