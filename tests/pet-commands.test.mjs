@@ -186,3 +186,18 @@ test('宠物拉屎速度可切换并重排下一次时间',()=>{
   assert.throws(()=>cmd(service,principal,'pet.setPoopSpeed',{actorId,petId,speed:'broken'}),/INVALID_COMMAND|INVALID_POOP_SPEED/);
  }finally{db.close();}
 });
+
+test('空的排便结算不写快照和命令回执',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  cmd(service,principal,'pet.import',{actorId,pets:[{petId:'p1',speciesId:'baize'}],followPetId:'p1'});
+  service.transactRuntime('default',({snapshot})=>{const a=snapshot.actors.find(x=>x.actorId===actorId);a.sceneId='yard';a.position=[5,0,1];});
+  cmd(service,principal,'pet.settlePoops',{actorId,sceneId:'yard'});
+  const before=db.prepare('SELECT COUNT(*) AS count FROM command_results').get().count;
+  const snapshotBefore=db.prepare('SELECT snapshot FROM worlds LIMIT 1').get().snapshot;
+  const result=cmd(service,principal,'pet.settlePoops',{actorId,sceneId:'yard'});
+  assert.equal(result.count,0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM command_results').get().count,before);
+  assert.equal(db.prepare('SELECT snapshot FROM worlds LIMIT 1').get().snapshot,snapshotBefore);
+ }finally{db.close();}
+});

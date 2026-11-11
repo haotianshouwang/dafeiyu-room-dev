@@ -419,6 +419,7 @@ export function mountPetSystem({
       const result = await petCommand('pet.setPoopSpeed', { petId: id, speed });
       if (!result?.speed) return;
       pet.poopSpeed = result.speed;
+      if (Number.isFinite(result.nextPoopAt)) pet.nextPoopAt = result.nextPoopAt;
     } else {
       pet.poopSpeed = speed;
     }
@@ -766,6 +767,12 @@ export function mountPetSystem({
     const actor = getActor?.();
     if (!actor?.actorId) return;
     const now = Date.now();
+    // 只有院子里且确实有宠物到期时才请求结算；MCP/场景变化仍会显式触发。
+    if (!force) {
+      if (sceneId !== HOME_SCENE_ID) return;
+      const due = state.pets.some(pet => !Number.isFinite(pet.nextPoopAt) || pet.nextPoopAt <= now);
+      if (!due) return;
+    }
     if (!force && sceneId === lastPoopSettleScene && now - lastPoopSettleAt < 20_000) return;
     lastPoopSettleScene = sceneId;
     lastPoopSettleAt = now;

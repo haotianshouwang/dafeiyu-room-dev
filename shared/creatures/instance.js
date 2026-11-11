@@ -1,5 +1,6 @@
 import {getSpecies} from './species.js';
 import {PET_BOND_MAX} from './stats.js';
+import {petPoopInterval} from './poop.js';
 
 export const PET_LEVEL_MAX=50;
 export const PET_SKILL_SLOT_MAX=4;
@@ -58,6 +59,7 @@ export function normalizePetInstance(raw,ownerId){
  if(!speciesId)return null;
  const petId=typeof raw.petId==='string'&&raw.petId?raw.petId:null;
  if(!petId)return null;
+ const hadPoopSpeed=Object.hasOwn(raw,'poopSpeed')&&['slow','normal','fast'].includes(raw.poopSpeed);
  const pet=createPetInstance({
   petId,ownerId:raw.ownerId||ownerId,speciesId,
   nickname:typeof raw.nickname==='string'&&raw.nickname?raw.nickname.slice(0,24):null,
@@ -72,6 +74,10 @@ export function normalizePetInstance(raw,ownerId){
  if(raw.poopSpeed==='slow'||raw.poopSpeed==='normal'||raw.poopSpeed==='fast')pet.poopSpeed=raw.poopSpeed;
  if(Number.isFinite(raw.lastPoopAt))pet.lastPoopAt=raw.lastPoopAt;
  if(Number.isFinite(raw.nextPoopAt))pet.nextPoopAt=raw.nextPoopAt;
+ if(!hadPoopSpeed&&(Number.isFinite(raw.lastPoopAt)||Number.isFinite(raw.nextPoopAt))){
+  pet.lastPoopAt=Date.now();
+  pet.nextPoopAt=pet.lastPoopAt+petPoopInterval(pet);
+ }
  return pet;
 }
 

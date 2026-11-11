@@ -41,6 +41,14 @@ export function settlePetPoops({
 } = {}) {
   const spawned = [];
   for (const pet of pets ?? []) {
+    // 旧存档没有速度字段：补默认中档，并从现在开始重排，避免第一次仍按旧排程排便。
+    if (!Object.hasOwn(PET_POOP_SPEEDS, pet.poopSpeed)) {
+      pet.poopSpeed = PET_POOP_DEFAULT_SPEED;
+      if (Number.isFinite(pet.lastPoopAt) || Number.isFinite(pet.nextPoopAt)) {
+        pet.lastPoopAt = now;
+        pet.nextPoopAt = now + petPoopInterval(pet);
+      }
+    }
     const scene = resolvePetScene(pet, roster, actor);
     if (pet.poopSceneId !== scene) {
       if (scene === null) {

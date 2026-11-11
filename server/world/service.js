@@ -6,6 +6,7 @@ import {protectFarm} from './starter.js';
 import {nearestFree} from '../../shared/world/navigation.js';
 import {getTemplate} from '../../shared/world/templates.js';
 import {appendEvent,readEvents,readLatestCursor,projectEventPage} from './events.js';
+import {settlePetPoops} from '../../shared/creatures/poop.js';
 const scopeFor=kind=>kind.startsWith('build.')?'build:write':kind.startsWith('control.')||kind.startsWith('action.')||kind.startsWith('actor.')||kind.startsWith('battle.')||kind.startsWith('pet.')||kind.startsWith('item.')?'actor:control':'world:read';
 // Trusted adapter-only principal: {subjectId,worldIds,actorIds,scopes,role,
 // expiresAt?,revoked?}. Never construct this object from command/request JSON.
@@ -170,6 +171,18 @@ export class WorldService{
   if(!validateCommand(command).ok)throw Error('INVALID_COMMAND');
   authorizePrincipal(principal,command.worldId,scopeFor(command.kind),command.payload.actorId,this.clock());
   if((['control.takeover','actor.teleport'].includes(command.kind)||command.kind.startsWith('battle.'))&&principal.role!=='owner')throw Error('UNAUTHORIZED');
+  if(command.kind==='pet.settlePoops'){
+   const snapshot=this.readSnapshot(command.worldId);
+   const actor=snapshot.actors?.find(entry=>entry.actorId===command.payload.actorId);
+   if(actor){
+    const owner=snapshot.pets?.owners?.[command.payload.actorId];
+    const before=JSON.stringify(Object.values(owner?.instances??{}).map(pet=>[pet.petId,pet.poopSceneId,pet.poopSpeed,pet.lastPoopAt,pet.nextPoopAt]));
+    const probe=structuredClone(owner?.instances??{});
+    const plans=settlePetPoops({pets:Object.values(probe),roster:owner?.roster,actor,sceneId:command.payload.sceneId,now:this.clock()});
+    const after=JSON.stringify(Object.values(probe).map(pet=>[pet.petId,pet.poopSceneId,pet.poopSpeed,pet.lastPoopAt,pet.nextPoopAt]));
+    if(!plans.length&&before===after)return {count:0,items:[],pets:[],requestId:command.requestId,worldId:command.worldId};
+   }
+  }
   if(command.kind==='pet.syncPositions'&&this.memoryPosition)return this.rememberLivePetPositions(principal,command.worldId,command);
   const movement=command.kind==='actor.input';
   const canBuffer=movement&&this.memoryPosition;

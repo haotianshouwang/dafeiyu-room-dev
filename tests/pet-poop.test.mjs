@@ -69,3 +69,12 @@ test('离开场景暂停，回来重新计时',()=>{
  assert.equal(p.poopSceneId,'yard');
  assert.equal(p.lastPoopAt,600000);
 });
+
+test('旧宠物没有速度字段时迁移为中档并重算下一次',()=>{
+ const p=pet({poopSpeed:undefined,poopSceneId:'yard',lastPoopAt:1000,nextPoopAt:2000});
+ const result=settlePetPoops({pets:[p],roster:{followPetId:null},actor,sceneId:'yard',now:5000});
+ assert.equal(result.length,0);
+ assert.equal(p.poopSpeed,'normal');
+ assert.equal(p.lastPoopAt,5000);
+ assert.equal(p.nextPoopAt,5000+2*60*60*1000);
+});
