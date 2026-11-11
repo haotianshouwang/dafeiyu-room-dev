@@ -172,6 +172,13 @@ export class WorldService{
   authorizePrincipal(principal,command.worldId,scopeFor(command.kind),command.payload.actorId,this.clock());
   if((['control.takeover','actor.teleport'].includes(command.kind)||command.kind.startsWith('battle.'))&&principal.role!=='owner')throw Error('UNAUTHORIZED');
   if(command.kind==='pet.settlePoops'){
+   // 先查历史回执，避免同 requestId 重试被空结算预检吞成空结果。
+   const serialized=canonical(command);
+   const prior=this.db.prepare('SELECT command,result FROM command_results WHERE subject_id=? AND world_id=? AND request_id=?').get(principal.subjectId,command.worldId,command.requestId);
+   if(prior){
+    if(prior.command!==serialized)throw Error('REQUEST_ID_REUSED');
+    return JSON.parse(prior.result);
+   }
    const snapshot=this.readSnapshot(command.worldId);
    const actor=snapshot.actors?.find(entry=>entry.actorId===command.payload.actorId);
    if(actor){

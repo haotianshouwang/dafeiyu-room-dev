@@ -201,3 +201,20 @@ test('空的排便结算不写快照和命令回执',()=>{
   assert.equal(db.prepare('SELECT snapshot FROM worlds LIMIT 1').get().snapshot,snapshotBefore);
  }finally{db.close();}
 });
+
+test('排便结算成功后用同一 requestId 重试保留原结果',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  cmd(service,principal,'pet.import',{actorId,pets:[{petId:'p1',speciesId:'baize'}],followPetId:'p1'});
+  service.transactRuntime('default',({snapshot})=>{const a=snapshot.actors.find(x=>x.actorId===actorId);a.sceneId='yard';a.position=[5,0,1];});
+  cmd(service,principal,'pet.settlePoops',{actorId,sceneId:'yard'});
+  service.transactRuntime('default',({snapshot})=>{const p=snapshot.pets.owners[actorId].instances.p1;p.nextPoopAt=Date.now()-1;});
+  const requestId='settle-retry';
+  const first=service.execute(principal,{kind:'pet.settlePoops',worldId:'default',requestId,payload:{actorId,sceneId:'yard'}});
+  assert.ok(first.count>=1);
+  const receipts=db.prepare('SELECT COUNT(*) AS count FROM command_results WHERE request_id=?').get(requestId).count;
+  const second=service.execute(principal,{kind:'pet.settlePoops',worldId:'default',requestId,payload:{actorId,sceneId:'yard'}});
+  assert.deepEqual(second,first);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM command_results WHERE request_id=?').get(requestId).count,receipts);
+ }finally{db.close();}
+});
