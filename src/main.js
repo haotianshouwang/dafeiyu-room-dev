@@ -965,7 +965,8 @@ function renderActor(dt,t){if(!actor)return;const local=player.sample();let visu
   const moving=Boolean(axis.x||axis.z);
   const moveAngle=moving?thirdPersonMoveFacing(tp.yaw,axis.x,axis.z):null;
   const seated=['seated','sleeping','tree-climbing'].includes(visual.pose);
-  const resolved=resolveThirdPersonFacing(tpFacingState,{yaw:tp.yaw,moving,moveAngle,pose:visual.pose,sceneId:visual.sceneId??activeScene,serverRotation:visual.rotation,dt});
+  const serverMoving=!local&&(visual.moving===true||visual.speed>0.02||visual.pose==='walking');
+  const resolved=resolveThirdPersonFacing(tpFacingState,{yaw:tp.yaw,moving,moveAngle,pose:visual.pose,sceneId:visual.sceneId??activeScene,serverRotation:visual.rotation,serverMoving,dt});
   tp.yaw=resolved.yaw;
   // 未接管时保留服务端给出的坐姿和睡姿朝向。
   if(!seated||moving)visual.rotation=resolved.rotation;
