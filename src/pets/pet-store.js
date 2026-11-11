@@ -148,7 +148,7 @@ export function serverPetsToLocal(owner) {
       level: pet.level,
       exp: pet.exp,
       bond: pet.bond,
-      satiety: pet.satiety ?? 0,
+      satiety: Number.isFinite(pet.satiety) ? pet.satiety : 80,
       lastSceneId: pet.lastSceneId ?? null,
       lastPosition: pet.lastPosition ?? null,
       bondWindowStart: pet.bondWindowStart,

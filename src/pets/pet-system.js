@@ -428,14 +428,14 @@ export function mountPetSystem({
       const avatar = avatars.get(pet.id);
       return avatar && avatar.root.visible;
     });
-    const pet = candidates.find(candidate => candidate.id === state.selectedPetId) ?? candidates[0];
-    if (!pet) { onMessage('附近没有宠物，先让一只宠物跟随或留在家园待命'); return; }
+    if (!candidates.length) { onMessage('附近没有宠物，先让一只宠物跟随或留在家园待命'); return; }
     const mesh = createFoodMesh(foodId);
     mesh.position.set(x, y, z);
     scene.add(mesh);
-    food = { foodId, petId: pet.id, mesh, position: new THREE.Vector3(x, y, z), createdAt: performance.now() };
+    // 不绑定宠物：同一场景里谁先跑到，谁吃这一份。
+    food = { foodId, mesh, position: new THREE.Vector3(x, y, z), createdAt: performance.now() };
     dialog.close();
-    onMessage(`${pet.name} 闻到香味，过来吃了`);
+    onMessage('闻到香味了，宠物们谁先跑到谁吃');
   }
 
   function createFoodMesh(foodId) {
@@ -669,10 +669,11 @@ export function mountPetSystem({
       avatar.model.update(dt);
       return;
     }
-    // 有食物：无论跟随还是待命都先过去吃
-    if (food && food.petId === pet.id) {
+    // 有食物：同一场景里所有宠物都去抢；谁先进入范围谁锁定这一份。
+    if (food && (!food.claimedBy || food.claimedBy === pet.id)) {
       const distance = Math.hypot(food.position.x - avatar.root.position.x, food.position.z - avatar.root.position.z);
       if (distance < 0.55) {
+        if (!food.claimedBy) food.claimedBy = pet.id;
         avatar.eating = 0.85;
         avatar.model.loop('idle');
         avatar.model.update(dt);
@@ -856,7 +857,7 @@ export function mountPetSystem({
             <div class="pet-bond-top"><span>羁绊</span><span>${bound}/${PET_BOND_MAX} · 本小时 +${candidate.bondWindowPoints}/${PET_BOND_HOURLY_CAP}</span></div>
             <i><em style="width:${Math.round((bound / PET_BOND_MAX) * 100)}%"></em></i>
           </div>
-          <div class="pet-meta">Lv.${candidate.level ?? 1} · HP ${petStatsFor(candidate).maxHp} · 攻击 ${petStatsFor(candidate).attack} · 速度 ${petStatsFor(candidate).speed} · 饱食 ${candidate.satiety ?? 0}/100</div>
+          <div class="pet-meta">Lv.${candidate.level ?? 1} · HP ${petStatsFor(candidate).maxHp} · 攻击 ${petStatsFor(candidate).attack} · 速度 ${petStatsFor(candidate).speed} · 饱食 ${candidate.satiety ?? 80}/100</div>
           <div class="pet-skills">技能 ${petSkillNames(candidate).join(' / ') || '—'}</div>
           <div class="pet-status">
             <div class="pet-mode" role="group" aria-label="宠物状态">

@@ -137,7 +137,7 @@ export const petHandlers={
   const {actorId,petId}=command.payload;
   actorOf(snapshot,actorId);
   const pet=ownedPet(snapshot,actorId,petId);
-  pet.satiety=Math.min(100,(pet.satiety??0)+25);
+  pet.satiety=Math.min(100,(Number.isFinite(pet.satiety)?pet.satiety:80)+25);
   emit('pets.fed',{actorId,petId,satiety:pet.satiety});
   return {ok:true,petId,satiety:pet.satiety};
  },
