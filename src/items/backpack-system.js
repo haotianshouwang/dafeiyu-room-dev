@@ -356,6 +356,8 @@ export function mountBackpackSystem({
   let lastCompostTick = 0;
   let itemTime = 0;
   let appliedServerItems = null;
+  let migrationGround = null;
+  let migrationOwner = null;
   let compostPositionKey = '';
   let drag = null;
   let dragGhost = null;
@@ -426,11 +428,21 @@ export function mountBackpackSystem({
       });
   }
 
+  function visibleGroundItems() {
+    return migrationGround ?? state.groundItems;
+  }
+
+  function visibleInventory() {
+    return migrationGround ? (migrationOwner?.inventory ?? state.inventory) : state.inventory;
+  }
+
   function syncServerItems() {
     const id = actorId();
     if (!id) return;
     const owner = getSnapshot()?.items?.owners?.[id];
     if (owner && owner.legacyImported === true) {
+      migrationGround = null;
+      migrationOwner = null;
       if (owner === appliedServerItems) return;
       appliedServerItems = owner;
       state = normalizeItemState(owner, Date.now());
@@ -443,8 +455,15 @@ export function mountBackpackSystem({
       return;
     }
     // 服务端可能已经先生成了便便；在迁移完成前不要把本地旧背包写掉。
+    // 但必须把服务端地面物品显示出来，否则玩家无法按提示清出空间。
+    const ownerChanged = owner !== migrationOwner;
+    migrationGround = owner && Array.isArray(owner.groundItems) ? owner.groundItems : null;
+    migrationOwner = owner ?? null;
+    if (ownerChanged) syncGroundMeshes();
     if (importBlocked) {
-      if ((owner?.groundItems?.length ?? GROUND_ITEM_CAP) >= GROUND_ITEM_CAP) return;
+      const serverIds = new Set(migrationGround.map(item => item.id));
+      const incoming = state.groundItems.filter(item => !serverIds.has(item.id)).length;
+      if (migrationGround.length + incoming > GROUND_ITEM_CAP) return;
       importBlocked = false;
       importAttempted = false;
     }
@@ -645,8 +664,10 @@ export function mountBackpackSystem({
   }
 
   function syncGroundMeshes() {
-    for (const item of state.groundItems) if (!meshes.has(item.id)) createGroundMesh(item);
-    for (const id of [...meshes.keys()]) if (!getGroundItem(state, id)) removeGroundMesh(id);
+    const items = visibleGroundItems();
+    const wanted = new Set(items.map(item => item.id));
+    for (const item of items) if (!meshes.has(item.id)) createGroundMesh(item);
+    for (const id of [...meshes.keys()]) if (!wanted.has(id)) removeGroundMesh(id);
   }
 
   function spawnPoop(position, { sceneId = YARD_SCENE_ID, silent = false } = {}) {
@@ -661,11 +682,11 @@ export function mountBackpackSystem({
   }
 
   async function pickupItem(id) {
-    const item = getGroundItem(state, id);
+    const item = visibleGroundItems().find(entry => entry.id === id) ?? getGroundItem(state, id);
     if (!item) return;
     const def = getItemDef(item.type);
     if (!def) return;
-    if ((state.inventory[item.type] ?? 0) >= def.stackMax) { onMessage(`背包里的${def.name}已经满了`); return; }
+    if ((visibleInventory()[item.type] ?? 0) >= def.stackMax) { onMessage(`背包里的${def.name}已经满了`); return; }
     const owner = actorId();
     if (!dispatchItems || !isConnected() || !owner) { onMessage('连接世界后才能捡东西'); return; }
     try {
@@ -999,7 +1020,7 @@ export function mountBackpackSystem({
     openCompost,
     _debug: () => ({
       inventory: { ...state.inventory },
-      ground: state.groundItems.map(item => ({ id: item.id, type: item.type, position: item.position })),
+      ground: visibleGroundItems().map(item => ({ id: item.id, type: item.type, position: item.position })),
       groundMeshes: [...meshes.keys()],
       compost: compost ? {
         position: compost.root.position.toArray().map(value => +value.toFixed(2)),
