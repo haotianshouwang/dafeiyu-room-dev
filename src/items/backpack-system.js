@@ -428,12 +428,16 @@ export function mountBackpackSystem({
       });
   }
 
+  function effectiveItemState() {
+    return migrationGround && migrationOwner ? migrationOwner : state;
+  }
+
   function visibleGroundItems() {
     return migrationGround ?? state.groundItems;
   }
 
   function visibleInventory() {
-    return migrationGround ? (migrationOwner?.inventory ?? state.inventory) : state.inventory;
+    return effectiveItemState().inventory;
   }
 
   function syncServerItems() {
@@ -459,7 +463,11 @@ export function mountBackpackSystem({
     const ownerChanged = owner !== migrationOwner;
     migrationGround = owner && Array.isArray(owner.groundItems) ? owner.groundItems : null;
     migrationOwner = owner ?? null;
-    if (ownerChanged) syncGroundMeshes();
+    if (ownerChanged) {
+      syncGroundMeshes();
+      if (compost) updateCompostVisual(true);
+      if (compostDialog.open) renderCompost();
+    }
     if (importBlocked) {
       const serverIds = new Set(migrationGround.map(item => item.id));
       const incoming = state.groundItems.filter(item => !serverIds.has(item.id)).length;
@@ -529,9 +537,10 @@ export function mountBackpackSystem({
     if (!compostDialog.open) return;
     const root = compostBody.querySelector('.bag-compost');
     if (!root) return;
-    const live = getCompostStatus(state, Date.now());
+    const effective = effectiveItemState();
+    const live = getCompostStatus(effective, Date.now());
     const near = nearCompost();
-    const count = state.inventory.poop ?? 0;
+    const count = effective.inventory.poop ?? 0;
     const badge = root.querySelector('.bag-status .badge');
     const copy = root.querySelector('.compost-copy');
     const bar = root.querySelector('.bag-progress');
@@ -555,15 +564,16 @@ export function mountBackpackSystem({
       hint.classList.toggle('warn', !near);
     }
     if (deposit) deposit.disabled = !near || live.status !== 'empty' || count <= 0;
-    if (collect) collect.disabled = !near || live.status !== 'ready' || (state.inventory.fertilizer ?? 0) >= ITEMS.fertilizer.stackMax;
+    if (collect) collect.disabled = !near || live.status !== 'ready' || (effective.inventory.fertilizer ?? 0) >= ITEMS.fertilizer.stackMax;
   }
 
   function renderCompost() {
     if (!compost) ensureCompost();
     const now = Date.now();
-    const live = getCompostStatus(state, now);
+    const effective = effectiveItemState();
+    const live = getCompostStatus(effective, now);
     const near = nearCompost();
-    const count = state.inventory.poop ?? 0;
+    const count = effective.inventory.poop ?? 0;
     const statusCopy = live.status === 'processing'
       ? `堆肥中 · 还剩 ${formatRemaining(live.remainingMs)}`
       : live.status === 'ready'
@@ -572,7 +582,7 @@ export function mountBackpackSystem({
     const badge = live.status === 'processing' ? '⏳' : live.status === 'ready' ? '🌿' : '🪵';
     const progress = Math.round((live.status === 'ready' ? 1 : live.progress ?? 0) * 100);
     const depositDisabled = !near || live.status !== 'empty' || count <= 0;
-    const collectDisabled = !near || live.status !== 'ready' || (state.inventory.fertilizer ?? 0) >= ITEMS.fertilizer.stackMax;
+    const collectDisabled = !near || live.status !== 'ready' || (effective.inventory.fertilizer ?? 0) >= ITEMS.fertilizer.stackMax;
     compostBody.innerHTML = `
       <div class="bag-compost">
         <div class="bag-status">
@@ -837,7 +847,7 @@ export function mountBackpackSystem({
 
   function updateCompostVisual(force = false) {
     if (!compost) return;
-    const live = getCompostStatus(state, Date.now());
+    const live = getCompostStatus(effectiveItemState(), Date.now());
     const key = live.status === 'processing' ? `processing-${Math.ceil(live.remainingMs / 1000)}` : live.status;
     if (!force && key === lastLabelKey) return;
     lastLabelKey = key;
@@ -858,14 +868,17 @@ export function mountBackpackSystem({
 
   function tick(now) {
     ensureCompost();
-    const wasReady = state.compost.status === 'ready';
-    const result = tickCompost(state, now);
-    if (result.becameReady && !state.compost.notified) {
-      markCompostNotified(state);
-      save();
-      onMessage('堆肥好了，去院子农田边收肥料吧');
-    } else if (wasReady && state.compost.status === 'ready') {
-      // 保持状态；通知只发一次。
+    const effective = effectiveItemState();
+    if (effective === state) {
+      const wasReady = state.compost.status === 'ready';
+      const result = tickCompost(state, now);
+      if (result.becameReady && !state.compost.notified) {
+        markCompostNotified(state);
+        save();
+        onMessage('堆肥好了，去院子农田边收肥料吧');
+      } else if (wasReady && state.compost.status === 'ready') {
+        // 保持状态；通知只发一次。
+      }
     }
     if (now - lastCompostTick > 500) {
       lastCompostTick = now;
@@ -1024,8 +1037,8 @@ export function mountBackpackSystem({
       groundMeshes: [...meshes.keys()],
       compost: compost ? {
         position: compost.root.position.toArray().map(value => +value.toFixed(2)),
-        status: getCompostStatus(state, Date.now()).status,
-        remainingMs: getCompostStatus(state, Date.now()).remainingMs,
+        status: getCompostStatus(effectiveItemState(), Date.now()).status,
+        remainingMs: getCompostStatus(effectiveItemState(), Date.now()).remainingMs,
       } : null,
       nearCompost: nearCompost(),
       importAttempted, importBlocked,
