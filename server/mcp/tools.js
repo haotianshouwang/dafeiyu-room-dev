@@ -42,6 +42,7 @@ const definitions=[
  ['pet_feed','走到宠物身边并喂食，增加饱食度（一次 MCP 调用内完成接近和喂食）。',{...request,actorId:id.optional(),petId:id,foodId:id.optional()}],
  ['yard_pickup_poop','走到最近的院子便便并捡进背包；也可指定 itemId（一次调用完成接近和拾取）。',{...request,actorId:id.optional(),itemId:id.optional()}],
  ['yard_compost','走到农田边堆肥箱，把便便放进堆肥（一次调用完成接近和放入）。',{...request,actorId:id.optional()}],
+ ['yard_collect','走到堆肥箱，收取已完成的肥料（堆肥完成后才可收；空箱报 COMPOST_EMPTY，处理中报 COMPOST_NOT_READY）。一次调用完成接近和收取。',{...request,actorId:id.optional()}],
  ['build_preview','预览最多20项严格建设操作，签发5分钟方案，不自动应用。',{...request,baseRevision:rev,ops:z.array(buildOperationSchema).min(1).max(20)}],
  ['build_apply','原子提交自己的有效预览方案。',{...request,planId:id}],
  ['build_undo','撤销自己的建设变更；后续依赖会明确报错。',{...request,changeId:id}],
@@ -189,6 +190,10 @@ export function createToolCaller(service,{resolvePrincipal,extensions={},advance
  case 'yard_compost':{
   const id=actorId();const snap0=snap();const point=compostPosition(snap0);await approach(id,'yard',point,{radius:2.5});
   return command('item.compost',{actorId:id});
+ }
+ case 'yard_collect':{
+  const id=actorId();const point=compostPosition(snap());await approach(id,'yard',point,{radius:2.5});
+  return command('item.collect',{actorId:id});
  }
  case 'build_preview':return command('build.preview',{baseRevision:a.baseRevision,ops:a.ops});
  case 'build_apply':return command('build.apply',{planId:a.planId});

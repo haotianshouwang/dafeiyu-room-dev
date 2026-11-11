@@ -159,7 +159,7 @@ export const itemHandlers={
   const point=compostPosition(snapshot);
   if(actor.sceneId!=='yard'||distance(actor,point)>INTERACT_DISTANCE)throw Error('COMPOST_TOO_FAR');
   const result=collectCompost(bucket,now);
-  if(!result.ok)throw Error(result.reason==='inventory-full'?'INVENTORY_FULL':result.reason==='not-ready'?'COMPOST_NOT_READY':'COMPOST_FAILED');
+  if(!result.ok)throw Error(result.reason==='inventory-full'?'INVENTORY_FULL':result.reason==='not-ready'?'COMPOST_NOT_READY':result.reason==='empty'?'COMPOST_EMPTY':'COMPOST_FAILED');
   emit('items.updated',{actorId,kind:'collect'});
   return {ok:true,type:result.type,count:result.count,...summary(bucket,snapshot)};
  },
