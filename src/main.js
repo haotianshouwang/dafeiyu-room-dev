@@ -152,6 +152,18 @@ let whale=original;const blob=new Whale();blob.group.visible=false;scene.add(ori
 });registry.pool.retain(blob.group);original.group.scale.setScalar(1.28);blob.group.scale.setScalar(1.28);
 original.ready?.catch(()=>showMessage('角色模型加载失败，可使用 ?character=whale 查看默认鲸鱼'));
 const fx=new FX(scene),hud=new HUD(),game=new Interactions({scene,camera,iso,whale,fx,props,hud,lights});
+// 入水第一次会切换成程序化鲸鱼并触发 splash：提前编译鲸鱼/水花材质，避免首帧卡顿。
+function warmWhaleVisuals(){
+ try{
+  const wasVisible=blob.group.visible;
+  blob.group.visible=true;
+  fx.splash(new THREE.Vector3(0,0,0));
+  R.renderer.compile(scene,camera);
+  fx.bubblePool.clear();
+  blob.group.visible=wasVisible;
+ }catch{ /* 预热失败不影响游戏 */ }
+}
+warmWhaleVisuals();
 /* 第一视角：纯客户端相机模式，不改服务端 */
 const fp=new FirstPersonCamera({fov:62});
 const tp=new ThirdPersonCamera({fov:55});
