@@ -169,3 +169,20 @@ test('文件世界的位置上报走内存不写命令回执',()=>{
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM command_results').get().count,before);
  }finally{db.close();}
 });
+
+test('宠物拉屎速度可切换并重排下一次时间',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  cmd(service,principal,'pet.bootstrap',{actorId});
+  const petId=cmd(service,principal,'pet.hatchEgg',{actorId,eggId:'starter-baize'}).petId;
+  let result=cmd(service,principal,'pet.setPoopSpeed',{actorId,petId,speed:'slow'});
+  assert.equal(result.speed,'slow');
+  assert.equal(result.intervalMs,8*60*60*1000);
+  assert.equal(result.nextPoopAt-result.intervalMs,service.readSnapshot('default').pets.owners[actorId].instances[petId].lastPoopAt);
+  result=cmd(service,principal,'pet.setPoopSpeed',{actorId,petId,speed:'normal'});
+  assert.equal(result.intervalMs,2*60*60*1000);
+  result=cmd(service,principal,'pet.setPoopSpeed',{actorId,petId,speed:'fast'});
+  assert.equal(result.intervalMs,10*60*1000);
+  assert.throws(()=>cmd(service,principal,'pet.setPoopSpeed',{actorId,petId,speed:'broken'}),/INVALID_COMMAND|INVALID_POOP_SPEED/);
+ }finally{db.close();}
+});

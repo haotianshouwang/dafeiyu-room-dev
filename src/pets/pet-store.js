@@ -69,6 +69,7 @@ export function normalizePetState(raw, now = Date.now()) {
       evolved: Boolean(pet.evolved),
       readyToEvolve: Boolean(pet.readyToEvolve) || (bond >= PET_BOND_MAX && !pet.evolved),
       mode: PET_MODES.includes(pet.mode) ? pet.mode : null,
+      poopSpeed: ['slow','normal','fast'].includes(pet.poopSpeed) ? pet.poopSpeed : 'fast',
       battle: Boolean(pet.battle),
       homeSceneId: typeof pet.homeSceneId === 'string' && pet.homeSceneId ? pet.homeSceneId : 'yard',
       homePosition: Array.isArray(pet.homePosition) && pet.homePosition.length === 3 && pet.homePosition.every(Number.isFinite)
@@ -149,6 +150,7 @@ export function serverPetsToLocal(owner) {
       exp: pet.exp,
       bond: pet.bond,
       satiety: Number.isFinite(pet.satiety) ? pet.satiety : 80,
+      poopSpeed: ['slow','normal','fast'].includes(pet.poopSpeed) ? pet.poopSpeed : 'fast',
       lastSceneId: pet.lastSceneId ?? null,
       lastPosition: pet.lastPosition ?? null,
       bondWindowStart: pet.bondWindowStart,
