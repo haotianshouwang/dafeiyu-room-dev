@@ -56,6 +56,29 @@ function summary(bucket,snapshot){
  };
 }
 
+function mergeLegacyItems(current,legacy){
+ const merged=structuredClone(current);
+ for(const [id,count] of Object.entries(legacy.inventory??{})){
+  merged.inventory[id]=Math.max(merged.inventory[id]??0,count??0);
+ }
+ // 旧背包槽位只补当前缺失的类型
+ merged.slots=Array.isArray(merged.slots)?merged.slots:Array(12).fill(null);
+ const present=new Set(merged.slots.filter(Boolean));
+ for(const id of (legacy.slots??[]).filter(Boolean)){
+  if(present.has(id)||(merged.inventory[id]??0)<=0)continue;
+  const index=merged.slots.findIndex(value=>!value);
+  if(index<0)break;
+  merged.slots[index]=id;present.add(id);
+ }
+ const known=new Set((merged.groundItems??[]).map(item=>item.id));
+ for(const item of legacy.groundItems??[]){
+  if(known.has(item.id)||merged.groundItems.length>=20)continue;
+  merged.groundItems.push(item);known.add(item.id);
+ }
+ if(merged.compost?.status==='empty'&&legacy.compost?.status!=='empty')merged.compost=structuredClone(legacy.compost);
+ return merged;
+}
+
 export function addPoopGroundItem(snapshot,actorId,sceneId,position,now=Date.now()){
  const bucket=ownerBucket(snapshot,actorId,true);
  const result=addGroundItem(bucket,{type:'poop',sceneId,position,now});
@@ -67,10 +90,13 @@ export const itemHandlers={
   const {actorId,state}=command.payload;
   actorOf(snapshot,actorId);
   const items=ensureItems(snapshot);
-  if(items.owners[actorId])throw Error('ITEMS_ALREADY_INITIALIZED');
-  const normalized=normalizeItemState(state,now);
-  items.owners[actorId]=normalized;
-  return summary(normalized,snapshot);
+  const legacy=normalizeItemState(state,now);
+  let bucket=items.owners[actorId];
+  if(bucket?.legacyImported){return summary(bucket,snapshot);}
+  bucket=bucket?normalizeItemState(mergeLegacyItems(bucket,legacy),now):legacy;
+  bucket.legacyImported=true;
+  items.owners[actorId]=bucket;
+  return summary(bucket,snapshot);
  },
 
  'item.moveSlot':({snapshot,command,principal,now})=>{

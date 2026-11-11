@@ -21,6 +21,7 @@ export function createDefaultItemState() {
     inventory: Object.fromEntries(ITEM_IDS.map(id => [id, 0])),
     slots: Array.from({ length: BAG_SLOT_COUNT }, () => null),
     groundItems: [],
+    legacyImported: false,
     compost: {
       status: 'empty',
       startedAt: null,
@@ -112,6 +113,7 @@ export function normalizeItemState(raw, now = Date.now()) {
       state.groundItems.push(item);
     }
   }
+  state.legacyImported = raw.legacyImported === true;
   const compost = raw.compost && typeof raw.compost === 'object' ? raw.compost : {};
   const startedAt = isFiniteNumber(compost.startedAt) ? compost.startedAt : null;
   const readyAt = isFiniteNumber(compost.readyAt) ? compost.readyAt : null;

@@ -105,11 +105,21 @@ test('背包堆叠满时拾取失败且不删除地面物品',()=>{
  }finally{db.close();}
 });
 
-test('整份物品导入只允许首次使用',()=>{
+test('旧背包只迁移一次，并保留服务端先生成的便便',()=>{
  const {db,service,actorId,principal}=setup();
  try{
-  const state=createDefaultItemState();
-  cmd(service,principal,'item.import',{actorId,state});
-  assert.throws(()=>cmd(service,principal,'item.import',{actorId,state}),/ITEMS_ALREADY_INITIALIZED/);
+  cmd(service,principal,'item.poop',{actorId,sceneId:'yard',position:[5.1,0,1.1]});
+  const legacy=createDefaultItemState();
+  legacy.inventory.fertilizer=6;
+  legacy.legacyImported=false;
+  cmd(service,principal,'item.import',{actorId,state:legacy});
+  const snap=service.readSnapshot('default');
+  const bucket=snap.items.owners[actorId];
+  assert.equal(bucket.inventory.fertilizer,6);
+  assert.equal(bucket.groundItems.length,1);
+  assert.equal(bucket.legacyImported,true);
+  // 再导入一次不会把 6 份肥料翻倍
+  cmd(service,principal,'item.import',{actorId,state:legacy});
+  assert.equal(service.readSnapshot('default').items.owners[actorId].inventory.fertilizer,6);
  }finally{db.close();}
 });

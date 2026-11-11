@@ -152,3 +152,20 @@ test('宠物饱食度、改名和位置同步进入世界快照',()=>{
   assert.deepEqual(pet.lastPosition,[3.2,0,1.4]);
  }finally{db.close();}
 });
+
+test('文件世界的位置上报走内存不写命令回执',()=>{
+ const {db}=setup();
+ try{
+  const service=new WorldService(db,{handlers:createRuntimeHandlers({baizeEnabled:true}),memoryPosition:true});
+  const snap=service.readSnapshot('default'),actorId=snap.actors[0].actorId;
+  const principal={subjectId:'owner',worldIds:['default'],scopes:['world:read','actor:control'],actorIds:[actorId],role:'owner'};
+  cmd(service,principal,'pet.import',{actorId,pets:[{petId:'p1',speciesId:'baize'}]});
+  const before=db.prepare('SELECT COUNT(*) AS count FROM command_results').get().count;
+  cmd(service,principal,'pet.syncPositions',{actorId,positions:[{petId:'p1',sceneId:'yard',position:[1,0,2]}]});
+  const live=service.getSnapshot(principal,'default');
+  assert.deepEqual(live.pets.owners[actorId].instances.p1.lastPosition,[1,0,2]);
+  const raw=JSON.parse(db.prepare('SELECT snapshot FROM worlds LIMIT 1').get().snapshot);
+  assert.equal(raw.pets.owners[actorId].instances.p1.lastPosition,null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM command_results').get().count,before);
+ }finally{db.close();}
+});

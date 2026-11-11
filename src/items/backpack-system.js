@@ -356,6 +356,7 @@ export function mountBackpackSystem({
   let lastCompostTick = 0;
   let itemTime = 0;
   let appliedServerItems = null;
+  let compostPositionKey = '';
   let drag = null;
   let dragGhost = null;
   let suppressClickUntil = 0;
@@ -422,7 +423,7 @@ export function mountBackpackSystem({
     const id = actorId();
     if (!id) return;
     const owner = getSnapshot()?.items?.owners?.[id];
-    if (owner) {
+    if (owner && owner.legacyImported === true) {
       if (owner === appliedServerItems) return;
       appliedServerItems = owner;
       state = normalizeItemState(owner, Date.now());
@@ -434,6 +435,7 @@ export function mountBackpackSystem({
       if (compostDialog.open) renderCompost();
       return;
     }
+    // 服务端可能已经先生成了便便；在迁移完成前不要把本地旧背包写掉。
     importItems();
   }
 
@@ -773,21 +775,30 @@ export function mountBackpackSystem({
   }
 
   function ensureCompost() {
-    if (compost) return;
     const snapshot = getSnapshot();
     if (!snapshot) return;
     const yard = snapshot.scenes?.find(scene => scene.sceneId === YARD_SCENE_ID);
     if (!yard) return;
+    const farm = snapshot.entities?.find(entity => entity.type === 'yardFarm' && entity.sceneId === YARD_SCENE_ID);
+    const positionKey = `${yard.templateId}:${farm?.position?.join(',') ?? 'fallback'}`;
+    if (compost && positionKey === compostPositionKey) return;
     const point = compostPositionForSnapshot(snapshot);
     let template = null;
     try { template = getTemplate(yard.templateId); } catch { template = null; }
     const y = surfaceAt(template, point[0], point[2])?.height ?? point[1] ?? 0;
+    if (compost) {
+      compost.root.position.set(point[0], y, point[2]);
+      compostPositionKey = positionKey;
+      updateCompostVisual(true);
+      return;
+    }
     const built = makeCompostModel();
     built.root.position.set(point[0], y, point[2]);
     built.root.rotation.y = -Math.PI / 2;
     built.root.visible = getSceneId() === YARD_SCENE_ID;
     scene.add(built.root);
     compost = built;
+    compostPositionKey = positionKey;
     updateCompostVisual(true);
   }
 

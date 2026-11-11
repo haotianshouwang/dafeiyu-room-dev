@@ -784,8 +784,10 @@ export function mountPetSystem({
         return Math.hypot(position[0] - previous.position[0], position[2] - previous.position[2]) > 0.08;
       });
       if (changed && actor?.actorId && positions.length) {
-        for (const entry of positions) lastPublishedPositions.set(entry.petId, entry);
-        void dispatchPet('pet.syncPositions', {actorId: actor.actorId, positions}, {refresh: false}).catch(() => {});
+        const payload = positions;
+        void dispatchPet('pet.syncPositions', {actorId: actor.actorId, positions: payload}, {refresh: false})
+          .then(() => { for (const entry of payload) lastPublishedPositions.set(entry.petId, entry); })
+          .catch(() => { lastPositionSync = 0; });
       }
     }
   }
