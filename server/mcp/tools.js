@@ -74,11 +74,14 @@ export function createToolCaller(service,{resolvePrincipal,extensions={},advance
   let current=snap(),actor=current.actors.find(entry=>entry.actorId===targetActorId);
   if(!actor)throw Error('ACTOR_NOT_FOUND');
   if(actor.sceneId!==sceneId){
-   service.execute(p,{worldId,requestId:requestId('teleport'),kind:'actor.teleport',payload:{actorId:targetActorId,sceneId}});
-   await sleep(450);
-   current=snap();actor=current.actors.find(entry=>entry.actorId===targetActorId);
+   // 主人可以直接传送；agent 没有 actor.teleport 权限，交给下面的跨场景 move 寻路。
+   if(p.role==='owner'){
+    service.execute(p,{worldId,requestId:requestId('teleport'),kind:'actor.teleport',payload:{actorId:targetActorId,sceneId}});
+    await sleep(450);
+    current=snap();actor=current.actors.find(entry=>entry.actorId===targetActorId);
+   }
   }
-  if(Math.hypot(actor.position[0]-position[0],actor.position[2]-position[2])<=radius)return {actor,moved:false};
+  if(actor.sceneId===sceneId&&Math.hypot(actor.position[0]-position[0],actor.position[2]-position[2])<=radius)return {actor,moved:false};
   let lease=actor.controller;
   let acquired=false;
   if(!lease){
