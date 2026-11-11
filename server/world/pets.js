@@ -2,6 +2,8 @@ import {PET_BOND_MAX, PET_BOND_HOURLY_CAP} from '../../shared/creatures/stats.js
 import {normalizePetInstance,createPetInstance} from '../../shared/creatures/instance.js';
 import {getSpecies} from '../../shared/creatures/species.js';
 import {EGG_CATALOG_VERSION,initialEggs,upgradeEggs} from '../../shared/creatures/eggs.js';
+import {settlePetPoops} from '../../shared/creatures/poop.js';
+import {addPoopGroundItem} from './items.js';
 import {randomUUID} from 'node:crypto';
 import {normalizeRoster, setFollowPet, setBattlePet} from '../../shared/creatures/roster.js';
 
@@ -131,6 +133,28 @@ export const petHandlers={
   if(!bucket.roster.followPetId)bucket.roster.followPetId=petId;
   emit('pets.hatched',{actorId,eggId,petId,speciesId:egg.speciesId});
   return {petId,eggId,speciesId:egg.speciesId,name:pet.nickname,roster:{...bucket.roster},eggs:structuredClone(eggs)};
+ },
+
+ 'pet.settlePoops':({snapshot,command,principal,now,emit})=>{
+  const {actorId,sceneId}=command.payload;
+  const actor=actorOf(snapshot,actorId);
+  const bucket=bucketOf(snapshot,actorId,false);
+  if(!bucket)return {count:0,items:[]};
+  const pets=Object.values(bucket.instances??{});
+  const plans=settlePetPoops({pets,roster:bucket.roster,actor,sceneId,now});
+  const items=[];
+  if(sceneId==='yard'){
+   for(const {pet,count} of plans){
+    const base=pet.homePosition||pet.lastPosition||actor.position||[0,0,0];
+    for(let index=0;index<count;index++){
+     const point=[base[0]+(Math.random()-0.5)*0.8,base[1]??0,base[2]+(Math.random()-0.5)*0.8];
+     const item=addPoopGroundItem(snapshot,actorId,sceneId,point,now);
+     if(item)items.push(item);
+    }
+   }
+  }
+  if(items.length)emit('items.updated',{actorId,kind:'pet-poop',count:items.length});
+  return {count:items.length,items:items.map(item=>item.id),pets:plans.map(plan=>({petId:plan.pet.petId,count:plan.count}))};
  },
 
  'pet.feed':({snapshot,command,principal,now,emit})=>{

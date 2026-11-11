@@ -76,7 +76,6 @@ export function mountPetSystem({
   onMessage = () => {},
   localSound = null,
   fx = null,
-  onPoop = null,
   getActor = () => null,
   dispatchPet = null,
   isConnected = () => false,
@@ -91,16 +90,14 @@ export function mountPetSystem({
   let ready = false;
   let food = null;
   let pointerDown = null;
-  const poopTimers = new Map();
-  const POOP_TIMER_KEY = 'dafeiyu.poopTimers.v1';
-  const POOP_MIN_MS = 240_000;
-  const POOP_MAX_MS = 480_000;
   let serverReady = false;
   let migrationPending = false;
   let migrationAttempted = false;
   let bootstrapAttempted = false;
   let appliedServerPets = null;
   let lastPositionSync = 0;
+  let lastPoopSettleScene = null;
+  let lastPoopSettleAt = 0;
 
   if (!document.getElementById('pet-system-style')) {
     const style = document.createElement('style');
@@ -496,8 +493,6 @@ export function mountPetSystem({
     return avatar;
   }
 
-  loadPoopTimers();
-
   async function load() {
     const loaded = await Promise.all(PET_MODELS.map(async config => {
       try {
@@ -739,71 +734,15 @@ export function mountPetSystem({
     }
   }
 
-  function loadPoopTimers() {
-    try {
-      const raw = JSON.parse(storage?.getItem(POOP_TIMER_KEY) ?? '{}');
-      for (const [petId, nextAt] of Object.entries(raw)) {
-        if (typeof nextAt === 'number' && nextAt > 1e12) poopTimers.set(petId, nextAt);
-      }
-    } catch { /* 忽略损坏的计时缓存 */ }
-  }
-
-  function savePoopTimers() {
-    try {
-      storage?.setItem(POOP_TIMER_KEY, JSON.stringify(Object.fromEntries(poopTimers)));
-    } catch { /* 忽略写入失败 */ }
-  }
-
-  function randomPoopDelay() {
-    return POOP_MIN_MS + Math.random() * (POOP_MAX_MS - POOP_MIN_MS);
-  }
-
-  function makePoopSpot(avatar, ctx) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 0.4 + Math.random() * 0.35;
-    let x = avatar.root.position.x + Math.cos(angle) * radius;
-    let z = avatar.root.position.z + Math.sin(angle) * radius;
-    let y = avatar.root.position.y;
-    try {
-      const free = nearestFree(ctx.snapshot, HOME_SCENE_ID, [x, y, z]);
-      x = free[0]; z = free[2];
-      if (Number.isFinite(free[1])) y = free[1];
-    } catch { /* 用宠物脚边 */ }
-    y = groundAt(ctx.template, x, z, y);
-    return [x, y, z];
-  }
-
-  function spawnPoopFor(petId, ctx) {
-    if (!onPoop) return false;
-    const avatar = avatars.get(petId);
-    if (!avatar) return false;
-    return Boolean(onPoop(makePoopSpot(avatar, ctx)));
-  }
-
-  // 待命宠物留在院子时，即使玩家在卧室/外面，也继续按院子时间产屎。
-  // 跟随宠物只在玩家本人位于院子时产屎，避免把便便丢到卧室。
-  function poopContext(pet, ctx) {
-    if (ctx.sceneId === HOME_SCENE_ID) return ctx;
-    if (pet.mode !== 'standby' || (pet.homeSceneId ?? HOME_SCENE_ID) !== HOME_SCENE_ID) return null;
-    const yard = ctx.snapshot?.scenes?.find(entry => entry.sceneId === HOME_SCENE_ID);
-    if (!yard) return null;
-    let template = null;
-    try { template = getTemplate(yard.templateId); } catch { return null; }
-    return {...ctx, sceneId: HOME_SCENE_ID, template};
-  }
-
-  function updatePoop(pet, avatar, ctx) {
-    if (!onPoop || avatar.eating > 0) return;
-    const target = poopContext(pet, ctx);
-    if (!target) return;
-    // 用 wall clock 而不是 dt：切到后台/离开院子期间，回来也能按真实时间结算。
+  function requestPoopSettlement(sceneId, force = false) {
+    if (!state.pets.length || !serverReady || !dispatchPet || !isConnected()) return;
+    const actor = getActor?.();
+    if (!actor?.actorId) return;
     const now = Date.now();
-    let nextAt = poopTimers.get(pet.id);
-    if (nextAt === undefined) { poopTimers.set(pet.id, now + randomPoopDelay()); savePoopTimers(); return; }
-    if (now < nextAt) return;
-    poopTimers.set(pet.id, now + randomPoopDelay());
-    savePoopTimers();
-    spawnPoopFor(pet.id, target);
+    if (!force && sceneId === lastPoopSettleScene && now - lastPoopSettleAt < 20_000) return;
+    lastPoopSettleScene = sceneId;
+    lastPoopSettleAt = now;
+    void dispatchPet('pet.settlePoops', {actorId: actor.actorId, sceneId}).catch(() => {});
   }
 
   function update(dt, snapshot, visual, playerPosition) {
@@ -818,8 +757,9 @@ export function mountPetSystem({
     for (const pet of state.pets) {
       let avatar = avatars.get(pet.id);
       if (!avatar) avatar = createAvatar(pet);
-      if (avatar) { updateAvatar(pet, avatar, dt, ctx); updatePoop(pet, avatar, ctx); }
+      if (avatar) updateAvatar(pet, avatar, dt, ctx);
     }
+    requestPoopSettlement(sceneId, sceneId !== lastPoopSettleScene);
     if (food && performance.now() - food.createdAt > 15000) {
       onMessage('宠物没来得及吃，食物先收起来了');
       removeFood();
@@ -985,19 +925,8 @@ export function mountPetSystem({
       };
     }),
     placeFood,
-    _forcePoop: (petId) => {
-      const snapshot = getSnapshot();
-      if (!snapshot) return false;
-      const sceneId = getSceneId();
-      const player = getPlayer();
-      const sceneEntry = snapshot.scenes?.find(entry => entry.sceneId === sceneId);
-      let template = null;
-      try { template = sceneEntry ? getTemplate(sceneEntry.templateId) : null; } catch { template = null; }
-      const ctx = { sceneId, snapshot, player: player.position, heading: player.heading ?? 0, template };
-      const pet = petId ? getPet(state, petId) : state.pets[0];
-      if (!pet) return false;
-      return spawnPoopFor(pet.id, ctx);
-    },
+    _settlePoops: () => { requestPoopSettlement(getSceneId(), true); return true; },
+    _forcePoop: () => { requestPoopSettlement(getSceneId(), true); return true; },
     _state: () => state,
   };
 }

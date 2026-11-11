@@ -58,6 +58,12 @@ function summary(bucket,snapshot){
  };
 }
 
+export function addPoopGroundItem(snapshot,actorId,sceneId,position,now=Date.now()){
+ const bucket=ownerBucket(snapshot,actorId,true);
+ const result=addGroundItem(bucket,{type:'poop',sceneId,position,now});
+ return result.ok?result.item:null;
+}
+
 export const itemHandlers={
  'item.sync':({snapshot,command,principal,now})=>{
   const {actorId,state}=command.payload;

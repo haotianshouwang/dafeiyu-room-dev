@@ -140,7 +140,12 @@ export function createToolCaller(service,{resolvePrincipal,extensions={},advance
  case 'action_get':return {worldId,...action()};
  case 'action_cancel':{const act=action(),actor=snap().actors.find(a=>a.actorId===act.actorId),l=actor.controller||act;return command('action.cancel',{actorId:actor.actorId,actionId:act.actionId,leaseId:l.leaseId,leaseVersion:l.leaseVersion});}
  case 'pet_list':{
-  const world=projectSnapshot(snap(),p);const id=actorId();const owner=world.pets?.owners?.[id];
+  const id=actorId();
+  try{
+   const actor=snap().actors.find(entry=>entry.actorId===id);
+   if(actor)service.execute(p,{worldId,requestId:randomUUID(),kind:'pet.settlePoops',payload:{actorId:id,sceneId:actor.sceneId}});
+  }catch{/* 读取仍应继续 */}
+  const world=projectSnapshot(snap(),p);const owner=world.pets?.owners?.[id];
   const items=owner?world.items?.owners?.[id]:null;
   return {worldId,actorId:id,
    pets:owner?Object.values(owner.instances).map(petView):[],
@@ -165,7 +170,12 @@ export function createToolCaller(service,{resolvePrincipal,extensions={},advance
   return command('pet.feed',{actorId:id,petId:a.petId,...a.foodId?{foodId:a.foodId}:{}});
  }
  case 'yard_pickup_poop':{
-  const id=actorId();const world=projectSnapshot(snap(),p);const items=world.items?.owners?.[id];
+  const id=actorId();
+  try{
+   const actor=snap().actors.find(entry=>entry.actorId===id);
+   if(actor)service.execute(p,{worldId,requestId:randomUUID(),kind:'pet.settlePoops',payload:{actorId:id,sceneId:actor.sceneId}});
+  }catch{/* 没到期就继续 */}
+  const world=projectSnapshot(snap(),p);const items=world.items?.owners?.[id];
   const ground=(items?.groundItems??[]).filter(item=>item.type==='poop');
   const targetItem=a.itemId?ground.find(item=>item.id===a.itemId):ground.sort((left,right)=>{
    const actor=snap().actors.find(entry=>entry.actorId===id);return Math.hypot(left.position[0]-actor.position[0],left.position[2]-actor.position[2])-Math.hypot(right.position[0]-actor.position[0],right.position[2]-actor.position[2]);

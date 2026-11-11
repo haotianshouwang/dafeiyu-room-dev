@@ -69,3 +69,22 @@ test('授权角色可以看到自己 actor 的物品投影',()=>{
   assert.ok(projectSnapshot(service.readSnapshot('default'),agent).items.owners[actorId]);
  }finally{db.close();}
 });
+
+test('服务端按宠物所在场景结算便便并写入地面',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  cmd(service,principal,'pet.import',{actorId,pets:[{petId:'p1',speciesId:'baize'}],followPetId:'p1'});
+  service.transactRuntime('default',({snapshot})=>{const actor=snapshot.actors.find(a=>a.actorId===actorId);actor.sceneId='yard';actor.position=[5,0,1];});
+  let result=cmd(service,principal,'pet.settlePoops',{actorId,sceneId:'yard'});
+  assert.equal(result.count,0);
+  const pet=service.readSnapshot('default').pets.owners[actorId].instances.p1;
+  assert.equal(pet.poopSceneId,'yard');
+  assert.ok(pet.nextPoopAt>pet.lastPoopAt);
+  // 把下一次到期时间调到过去，再次结算
+  service.transactRuntime('default',({snapshot})=>{const p=snapshot.pets.owners[actorId].instances.p1;p.nextPoopAt=Date.now()-1;});
+  result=cmd(service,principal,'pet.settlePoops',{actorId,sceneId:'yard'});
+  assert.ok(result.count>=1);
+  const ground=service.readSnapshot('default').items.owners[actorId].groundItems;
+  assert.ok(ground.some(item=>item.type==='poop'&&item.sceneId==='yard'));
+ }finally{db.close();}
+});

@@ -406,7 +406,6 @@ const petSystem=mountPetSystem({
  isBattle:()=>Boolean(baizeBattle?.active),
  onMessage:showMessage,
  localSound,fx,
- onPoop:position=>backpack?.spawnPoop(position),
  getActor:()=>actor,
  dispatchPet:(kind,payload,options)=>client.dispatch({kind,payload},options),
  isConnected:()=>client.connectionStatus==='connected',

@@ -79,7 +79,7 @@ http://127.0.0.1:5200/mcp
 | 走到最近的便便并捡起 | `yard_pickup_poop {"requestId":"r5"}`，也可带 `itemId` |
 | 走到堆肥箱并放入便便 | `yard_compost {"requestId":"r6"}` |
 
-位置来自客户端最近一次同步（约 1 秒级）；宠物走动时位置会更新。便便/背包/堆肥状态存放在世界快照，客户端本地 profile 只是缓存。
+位置来自客户端最近一次同步（约 1 秒级）；宠物走动时位置会更新。便便计时、离线补偿和地面便便由服务端宠物领域结算，客户端只触发当前场景结算并显示；`pet_list` 读取前也会结算角色当前场景。背包/堆肥状态存放在世界快照，客户端本地 profile 只是缓存。
 
 
 可选资源 URI：`world://current/rules`、`world://current/map`、`world://current/catalog`、`world://current/activity`。宿主没有资源读取入口时，使用上表普通工具即可。地图是结构化信息，不是摄像头画面；当前 MCP 没有提供截图工具。

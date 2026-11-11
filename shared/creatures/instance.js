@@ -42,6 +42,9 @@ export function createPetInstance({
    ?homePosition.slice(0,3).map(value=>Math.round(value*1000)/1000):null,
   lastSceneId:null,
   lastPosition:null,
+  poopSceneId:null,
+  lastPoopAt:null,
+  nextPoopAt:null,
   bondWindowStart:Number.isFinite(bondWindowStart)?bondWindowStart:(Number.isFinite(now)?now:Date.now()),
   bondWindowPoints:Math.max(0,int(bondWindowPoints,0)),
   createdAt:Number.isFinite(now)?now:Date.now(),
@@ -64,6 +67,9 @@ export function normalizePetInstance(raw,ownerId){
  });
  if(Array.isArray(raw.lastPosition)&&raw.lastPosition.length===3&&raw.lastPosition.every(Number.isFinite))pet.lastPosition=raw.lastPosition.slice(0,3);
  if(typeof raw.lastSceneId==='string'&&raw.lastSceneId)pet.lastSceneId=raw.lastSceneId;
+ if(typeof raw.poopSceneId==='string'||raw.poopSceneId===null)pet.poopSceneId=raw.poopSceneId;
+ if(Number.isFinite(raw.lastPoopAt))pet.lastPoopAt=raw.lastPoopAt;
+ if(Number.isFinite(raw.nextPoopAt))pet.nextPoopAt=raw.nextPoopAt;
  return pet;
 }
 
