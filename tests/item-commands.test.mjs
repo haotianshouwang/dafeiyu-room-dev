@@ -8,6 +8,7 @@ import {createRuntimeHandlers} from '../server/world/runtime.js';
 import {defaultManifest} from '../shared/world/default-manifest.js';
 import {projectSnapshot} from '../server/mcp/resources.js';
 import {createDefaultItemState} from '../shared/items/item-store.js';
+import {ITEMS} from '../shared/world/items.js';
 
 const setup=()=>{
  const db=new DatabaseSync(':memory:');
@@ -25,7 +26,7 @@ test('服务端物品同步、便便拾取和投影',()=>{
  const {db,service,actorId,principal}=setup();
  try{
   const empty=createDefaultItemState();
-  const synced=cmd(service,principal,'item.sync',{actorId,state:empty});
+  const synced=cmd(service,principal,'item.import',{actorId,state:empty});
   assert.equal(synced.total,0);
   cmd(service,principal,'item.poop',{actorId,sceneId:'yard',position:[5.2,0,1.2]});
   const snap=service.readSnapshot('default');
@@ -47,7 +48,7 @@ test('服务端堆肥要求靠近并推进状态',()=>{
  try{
   const state=createDefaultItemState();
   state.inventory.poop=2;
-  cmd(service,principal,'item.sync',{actorId,state});
+  cmd(service,principal,'item.import',{actorId,state});
   const snap=service.readSnapshot('default');
   const compost=projectSnapshot(snap,principal).items.compostPosition;
   // 靠近堆肥箱
@@ -86,5 +87,29 @@ test('服务端按宠物所在场景结算便便并写入地面',()=>{
   assert.ok(result.count>=1);
   const ground=service.readSnapshot('default').items.owners[actorId].groundItems;
   assert.ok(ground.some(item=>item.type==='poop'&&item.sceneId==='yard'));
+ }finally{db.close();}
+});
+
+test('背包堆叠满时拾取失败且不删除地面物品',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  const state=createDefaultItemState();
+  state.inventory.poop=ITEMS.poop.stackMax;
+  cmd(service,principal,'item.import',{actorId,state});
+  cmd(service,principal,'item.poop',{actorId,sceneId:'yard',position:[5.1,0,1.1]});
+  const ground=service.readSnapshot('default').items.owners[actorId].groundItems;
+  assert.equal(ground.length,1);
+  assert.throws(()=>cmd(service,principal,'item.pickup',{actorId,itemId:ground[0].id}),/INVENTORY_FULL/);
+  assert.equal(service.readSnapshot('default').items.owners[actorId].groundItems.length,1);
+  assert.equal(service.readSnapshot('default').items.owners[actorId].inventory.poop,ITEMS.poop.stackMax);
+ }finally{db.close();}
+});
+
+test('整份物品导入只允许首次使用',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  const state=createDefaultItemState();
+  cmd(service,principal,'item.import',{actorId,state});
+  assert.throws(()=>cmd(service,principal,'item.import',{actorId,state}),/ITEMS_ALREADY_INITIALIZED/);
  }finally{db.close();}
 });

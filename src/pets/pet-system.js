@@ -15,6 +15,8 @@ import {getSpecies} from '../../shared/creatures/species.js';
 import {PET_SKILLS} from '../../shared/creatures/skills.js';
 
 const HOME_SCENE_ID = 'yard';
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+
 // 待命宠物待在院子花园里的固定位置（院子出生点在 [1,0,1] 附近）
 const HOME_SPOTS = [[3.2, 0, -1.2], [-1.4, 0, -2.0], [1.0, 0, 3.4]];
 const LANES = [{ back: 1.05, side: -0.6 }, { back: 1.35, side: 0.6 }, { back: 1.75, side: 0 }];
@@ -96,6 +98,7 @@ export function mountPetSystem({
   let bootstrapAttempted = false;
   let appliedServerPets = null;
   let lastPositionSync = 0;
+  const lastPublishedPositions = new Map();
   let lastPoopSettleScene = null;
   let lastPoopSettleAt = 0;
 
@@ -764,7 +767,7 @@ export function mountPetSystem({
       onMessage('宠物没来得及吃，食物先收起来了');
       removeFood();
     }
-    if (serverReady && dispatchPet && isConnected() && performance.now() - lastPositionSync > 1200) {
+    if (serverReady && dispatchPet && isConnected() && performance.now() - lastPositionSync > 1500) {
       lastPositionSync = performance.now();
       const actor = getActor?.();
       const positions = state.pets
@@ -774,7 +777,14 @@ export function mountPetSystem({
           return {petId: pet.id, sceneId, position: avatar.root.position.toArray()};
         })
         .filter(Boolean);
-      if (actor?.actorId && positions.length) {
+      // 静止的宠物不上报：避免同一坐标反复写世界快照和命令回执。
+      const changed = positions.some(({petId, sceneId: petScene, position}) => {
+        const previous = lastPublishedPositions.get(petId);
+        if (!previous || previous.sceneId !== petScene) return true;
+        return Math.hypot(position[0] - previous.position[0], position[2] - previous.position[2]) > 0.08;
+      });
+      if (changed && actor?.actorId && positions.length) {
+        for (const entry of positions) lastPublishedPositions.set(entry.petId, entry);
         void dispatchPet('pet.syncPositions', {actorId: actor.actorId, positions}, {refresh: false}).catch(() => {});
       }
     }
@@ -792,7 +802,7 @@ export function mountPetSystem({
         const bound = candidate.bond;
         const evolvedText = candidate.evolved ? '已进化' : candidate.readyToEvolve ? '可进化' : '';
         return `<article class="pet-card${candidate.id === pet?.id ? ' selected' : ''}" data-pet-id="${candidate.id}">
-          <header><b>${candidate.name}</b><em>${evolvedText}</em></header>
+          <header><b>${escapeHtml(candidate.name)}</b><em>${evolvedText}</em></header>
           <div class="pet-bond">
             <div class="pet-bond-top"><span>羁绊</span><span>${bound}/${PET_BOND_MAX} · 本小时 +${candidate.bondWindowPoints}/${PET_BOND_HOURLY_CAP}</span></div>
             <i><em style="width:${Math.round((bound / PET_BOND_MAX) * 100)}%"></em></i>

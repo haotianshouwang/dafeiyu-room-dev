@@ -2,19 +2,17 @@ import * as THREE from 'three';
 import { surfaceAt } from '../../shared/world/coastal.js';
 import { getTemplate } from '../../shared/world/templates.js';
 import { nearestFree } from '../../shared/world/navigation.js';
+import { compostPositionForSnapshot } from '../../shared/world/compost.js';
 import { ITEMS, ITEM_IDS, getItemDef } from '../../shared/world/items.js';
 import {
-  loadItemState, saveItemState, inventoryTotal, addItem, removeItem,
-  addGroundItem, removeGroundItem, getGroundItem,
-  tickCompost, getCompostStatus, startCompost, collectCompost, markCompostNotified,
-  COMPOST_DURATION_MS, BAG_SLOT_COUNT, moveItemSlot, ensureSlots, normalizeItemState,
+  loadItemState, saveItemState, inventoryTotal, getGroundItem,
+  tickCompost, getCompostStatus, markCompostNotified,
+  COMPOST_DURATION_MS, BAG_SLOT_COUNT, ensureSlots, normalizeItemState,
 } from '../../shared/items/item-store.js';
 
 const YARD_SCENE_ID = 'yard';
 const INTERACT_DISTANCE = 4.5;
 const DROP_FORWARD = 1.1;
-const COMPOST_FALLBACK = [-3.1, 0, -15.9];
-const COMPOST_OFFSET_X = 3.0;
 
 const STYLE = `
 #bag-entry{position:fixed;right:max(24px,env(safe-area-inset-right));bottom:max(24px,env(safe-area-inset-bottom));z-index:36;box-shadow:0 6px 18px #3b2a1c24}
@@ -358,7 +356,6 @@ export function mountBackpackSystem({
   let lastCompostTick = 0;
   let itemTime = 0;
   let appliedServerItems = null;
-  let lastServerSyncAttempt = 0;
   let drag = null;
   let dragGhost = null;
   let suppressClickUntil = 0;
@@ -411,10 +408,14 @@ export function mountBackpackSystem({
     return getActor?.()?.actorId ?? getSnapshot()?.actors?.[0]?.actorId ?? null;
   }
 
-  function pushItems() {
+  let importAttempted = false;
+
+  function importItems() {
     const id = actorId();
-    if (!dispatchItems || !isConnected() || !id) return;
-    void dispatchItems('item.sync', {actorId: id, state}, {refresh: false}).catch(() => {});
+    if (!dispatchItems || !isConnected() || !id || importAttempted) return;
+    importAttempted = true;
+    void dispatchItems('item.import', {actorId: id, state}, {refresh: true})
+      .catch(() => { importAttempted = false; });
   }
 
   function syncServerItems() {
@@ -428,14 +429,12 @@ export function mountBackpackSystem({
       saveItemState(storage, state);
       syncGroundMeshes();
       updateBadge();
+      if (compost) updateCompostVisual(true);
       if (dialog.open) render();
       if (compostDialog.open) renderCompost();
       return;
     }
-    if (dispatchItems && isConnected() && Date.now() - lastServerSyncAttempt > 2000) {
-      lastServerSyncAttempt = Date.now();
-      pushItems();
-    }
+    importItems();
   }
 
   function save() {
@@ -639,33 +638,30 @@ export function mountBackpackSystem({
   function spawnPoop(position, { sceneId = YARD_SCENE_ID, silent = false } = {}) {
     const point = Array.isArray(position) ? position : [position?.x, position?.y, position?.z];
     if (!point.every(Number.isFinite)) return false;
-    const result = addGroundItem(state, { type: 'poop', sceneId, position: point, now: Date.now() });
-    if (!result.ok) {
-      if (!silent && result.reason === 'ground-full') onMessage('院子里便便太多了，先捡一些再让宠物继续吧');
-      return false;
-    }
-    createGroundMesh(result.item);
-    save();
-    pushItems();
-    if (dialog.open) render();
+    const id = actorId();
+    if (!dispatchItems || !isConnected() || !id) return false;
+    void dispatchItems('item.poop', {actorId: id, sceneId, position: point}).catch(error => {
+      if (!silent) onMessage(error.message === 'GROUND_FULL' ? '院子里便便太多了，先捡一些' : '便便生成失败');
+    });
     return true;
   }
 
-  function pickupItem(id) {
+  async function pickupItem(id) {
     const item = getGroundItem(state, id);
     if (!item) return;
     const def = getItemDef(item.type);
     if (!def) return;
     if ((state.inventory[item.type] ?? 0) >= def.stackMax) { onMessage(`背包里的${def.name}已经满了`); return; }
-    addItem(state, item.type, 1);
-    removeGroundItem(state, id);
-    removeGroundMesh(id);
-    save();
-    pushItems();
-    if (dialog.open) render();
-    localSound?.playAction?.('ui-confirm');
-    if (fx) fx.burst(new THREE.Vector3().fromArray(item.position).add(new THREE.Vector3(0, 0.3, 0)), 5);
-    onMessage(`捏着鼻子捡起${def.name} ×1`);
+    const owner = actorId();
+    if (!dispatchItems || !isConnected() || !owner) { onMessage('连接世界后才能捡东西'); return; }
+    try {
+      await dispatchItems('item.pickup', {actorId: owner, itemId: id});
+      localSound?.playAction?.('ui-confirm');
+      if (fx) fx.burst(new THREE.Vector3().fromArray(item.position).add(new THREE.Vector3(0, 0.3, 0)), 5);
+      onMessage(`捏着鼻子捡起${def.name} ×1`);
+    } catch (error) {
+      onMessage(error.message === 'INVENTORY_FULL' ? `背包里的${def.name}已经满了` : '捡不起来，靠近一点再试');
+    }
   }
 
   function groundPointFromClient(clientX, clientY) {
@@ -696,27 +692,25 @@ export function mountBackpackSystem({
     return [x, y, z];
   }
 
-  function dropItemToGround(id, clientX, clientY) {
+  async function dropItemToGround(id, clientX, clientY) {
     const def = ITEMS[id];
     if (!def) return false;
     if (!def.placeable) { onMessage(`${def.name}不能丢到地上`); return false; }
     if ((state.inventory[id] ?? 0) <= 0) { onMessage(`背包里没有${def.name}了`); return false; }
     if (getSceneId() !== YARD_SCENE_ID) { onMessage('回到院子才能把东西丢到地上'); return false; }
+    const owner = actorId();
+    if (!dispatchItems || !isConnected() || !owner) { onMessage('连接世界后才能丢东西'); return false; }
     const position = groundPointFromClient(clientX, clientY) ?? groundSpot();
-    const removed = removeItem(state, id, 1);
-    const result = addGroundItem(state, { type: id, sceneId: YARD_SCENE_ID, position, now: Date.now() });
-    if (!result.ok) {
-      if (removed) addItem(state, id, removed);
-      onMessage(result.reason === 'ground-full' ? '地上东西太多了，先捡一些吧' : '这里放不下，换个地方试试');
+    try {
+      await dispatchItems('item.drop', {actorId: owner, type: id, sceneId: YARD_SCENE_ID, position});
+      close();
+      localSound?.playAction?.('ui-confirm');
+      onMessage(`${def.name}丢在院子里了`);
+      return true;
+    } catch (error) {
+      onMessage(error.message === 'GROUND_FULL' ? '地上东西太多了，先捡一些吧' : '这里放不下，换个地方试试');
       return false;
     }
-    createGroundMesh(result.item);
-    save();
-    pushItems();
-    close();
-    localSound?.playAction?.('ui-confirm');
-    onMessage(`${def.name}丢在院子里了`);
-    return true;
   }
 
   function itemGhost(def) {
@@ -739,37 +733,43 @@ export function mountBackpackSystem({
     return slot && dialog.contains(slot) ? slot : null;
   }
 
-  function depositCompost() {
+  async function depositCompost() {
     if (!nearCompost()) { onMessage('走到院子农田边的堆肥箱旁再操作'); return; }
-    const result = startCompost(state, Date.now());
-    if (!result.ok) {
-      if (result.reason === 'no-poop') onMessage('背包里还没有便便');
-      else if (result.reason === 'busy') onMessage('堆肥箱还在工作，等它完成再放');
-      return;
+    const owner = actorId();
+    if (!dispatchItems || !isConnected() || !owner) { onMessage('连接世界后才能堆肥'); return; }
+    try {
+      await dispatchItems('item.compost', {actorId: owner});
+      localSound?.playAction?.('ui-confirm');
+      onMessage('便便放进堆肥箱了，等一会儿就能收肥料');
+    } catch (error) {
+      const code = error.message;
+      onMessage(code === 'NO_POOP' ? '背包里还没有便便' : code === 'COMPOST_BUSY' ? '堆肥箱还在工作，等它完成再放' : '靠近农田边的堆肥箱再试');
     }
-    save();
-    pushItems();
-    renderCompost();
-    updateCompostVisual(true);
-    localSound?.playAction?.('ui-confirm');
-    onMessage('便便放进堆肥箱了，等一会儿就能收肥料');
   }
 
-  function collectFertilizer() {
+  async function collectFertilizer() {
     if (!nearCompost()) { onMessage('走到院子农田边的堆肥箱旁再操作'); return; }
-    const result = collectCompost(state, Date.now());
-    if (!result.ok) {
-      if (result.reason === 'inventory-full') onMessage('背包里的肥料已经满了');
-      else if (result.reason === 'not-ready') onMessage('肥料还没好，再等一会儿');
-      return;
+    const owner = actorId();
+    if (!dispatchItems || !isConnected() || !owner) { onMessage('连接世界后才能收肥料'); return; }
+    try {
+      const result = await dispatchItems('item.collect', {actorId: owner});
+      localSound?.playAction?.('ui-confirm');
+      if (fx && compost) fx.burst(compost.root.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 8);
+      onMessage(`收成了 ${result?.count ?? 1} 份肥料`);
+    } catch (error) {
+      const code = error.message;
+      onMessage(code === 'INVENTORY_FULL' ? '背包里的肥料已经满了' : code === 'COMPOST_NOT_READY' ? '肥料还没好，再等一会儿' : '靠近农田边的堆肥箱再试');
     }
-    save();
-    pushItems();
-    renderCompost();
-    updateCompostVisual(true);
-    localSound?.playAction?.('ui-confirm');
-    if (fx && compost) fx.burst(compost.root.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 8);
-    onMessage(`收成了 ${result.count} 份肥料`);
+  }
+
+  async function moveSlot(from, to) {
+    const owner = actorId();
+    if (!dispatchItems || !isConnected() || !owner) return;
+    try {
+      await dispatchItems('item.moveSlot', {actorId: owner, from, to});
+      selectedEmpty = false;
+      selectedItemId = state.slots?.[to] ?? selectedItemId;
+    } catch { /* 保持原样 */ }
   }
 
   function ensureCompost() {
@@ -778,14 +778,7 @@ export function mountBackpackSystem({
     if (!snapshot) return;
     const yard = snapshot.scenes?.find(scene => scene.sceneId === YARD_SCENE_ID);
     if (!yard) return;
-    const farm = yard.entities?.find(entity => entity.type === 'yardFarm');
-    let point = farm?.position
-      ? [farm.position[0] + COMPOST_OFFSET_X, farm.position[1] ?? 0, farm.position[2]]
-      : [...COMPOST_FALLBACK];
-    try {
-      const free = nearestFree(snapshot, YARD_SCENE_ID, point);
-      if (Math.hypot(free[0] - point[0], free[2] - point[2]) <= 2.2) point = free;
-    } catch { /* 使用农田旁的默认点 */ }
+    const point = compostPositionForSnapshot(snapshot);
     let template = null;
     try { template = getTemplate(yard.templateId); } catch { template = null; }
     const y = surfaceAt(template, point[0], point[2])?.height ?? point[1] ?? 0;
@@ -922,13 +915,7 @@ export function mountBackpackSystem({
     const target = slotAtPoint(event.clientX, event.clientY);
     if (target) {
       const to = Number(target.dataset.slotIndex);
-      if (moveItemSlot(state, current.from, to)) {
-        selectedEmpty = false;
-        selectedItemId = current.id;
-        save();
-        pushItems();
-        render();
-      }
+      void moveSlot(current.from, to);
       return;
     }
     const rect = dialog.getBoundingClientRect();
