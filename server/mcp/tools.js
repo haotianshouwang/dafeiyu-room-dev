@@ -71,7 +71,6 @@ export function createToolCaller(service,{resolvePrincipal,extensions={},advance
   return snap().actions?.[actionId]??null;
  }
  async function approach(targetActorId,sceneId,position,{radius=2.4}={}){
-  if(p.role!=='owner')throw Error('UNAUTHORIZED');
   let current=snap(),actor=current.actors.find(entry=>entry.actorId===targetActorId);
   if(!actor)throw Error('ACTOR_NOT_FOUND');
   if(actor.sceneId!==sceneId){
