@@ -7,7 +7,7 @@ import { ITEMS, ITEM_IDS, getItemDef } from '../../shared/world/items.js';
 import {
   loadItemState, saveItemState, inventoryTotal, getGroundItem,
   tickCompost, getCompostStatus, markCompostNotified,
-  COMPOST_DURATION_MS, BAG_SLOT_COUNT, ensureSlots, normalizeItemState,
+  COMPOST_DURATION_MS, BAG_SLOT_COUNT, GROUND_ITEM_CAP, ensureSlots, normalizeItemState,
 } from '../../shared/items/item-store.js';
 
 const YARD_SCENE_ID = 'yard';
@@ -410,13 +410,20 @@ export function mountBackpackSystem({
   }
 
   let importAttempted = false;
+  let importBlocked = false;
 
   function importItems() {
     const id = actorId();
     if (!dispatchItems || !isConnected() || !id || importAttempted) return;
     importAttempted = true;
     void dispatchItems('item.import', {actorId: id, state}, {refresh: true})
-      .catch(() => { importAttempted = false; });
+      .catch(error => {
+        importAttempted = false;
+        if (error.message === 'LEGACY_GROUND_FULL') {
+          importBlocked = true;
+          onMessage('地面物品满了，先捡走几件再迁移旧背包');
+        }
+      });
   }
 
   function syncServerItems() {
@@ -436,6 +443,11 @@ export function mountBackpackSystem({
       return;
     }
     // 服务端可能已经先生成了便便；在迁移完成前不要把本地旧背包写掉。
+    if (importBlocked) {
+      if ((owner?.groundItems?.length ?? GROUND_ITEM_CAP) >= GROUND_ITEM_CAP) return;
+      importBlocked = false;
+      importAttempted = false;
+    }
     importItems();
   }
 
@@ -780,7 +792,7 @@ export function mountBackpackSystem({
     const yard = snapshot.scenes?.find(scene => scene.sceneId === YARD_SCENE_ID);
     if (!yard) return;
     const farm = snapshot.entities?.find(entity => entity.type === 'yardFarm' && entity.sceneId === YARD_SCENE_ID);
-    const positionKey = `${yard.templateId}:${farm?.position?.join(',') ?? 'fallback'}`;
+    const positionKey = `${yard.templateId}:${snapshot.layoutRevision ?? snapshot.topologyRevision ?? 0}:${farm?.position?.join(',') ?? 'fallback'}`;
     if (compost && positionKey === compostPositionKey) return;
     const point = compostPositionForSnapshot(snapshot);
     let template = null;
@@ -995,6 +1007,7 @@ export function mountBackpackSystem({
         remainingMs: getCompostStatus(state, Date.now()).remainingMs,
       } : null,
       nearCompost: nearCompost(),
+      importAttempted, importBlocked,
     }),
     _state: () => state,
     _spawnPoop: position => spawnPoop(position),

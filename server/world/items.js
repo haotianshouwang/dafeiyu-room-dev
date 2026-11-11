@@ -71,10 +71,9 @@ function mergeLegacyItems(current,legacy){
   merged.slots[index]=id;present.add(id);
  }
  const known=new Set((merged.groundItems??[]).map(item=>item.id));
- for(const item of legacy.groundItems??[]){
-  if(known.has(item.id)||merged.groundItems.length>=20)continue;
-  merged.groundItems.push(item);known.add(item.id);
- }
+ const incoming=(legacy.groundItems??[]).filter(item=>!known.has(item.id));
+ if((merged.groundItems?.length??0)+incoming.length>20)throw Error('LEGACY_GROUND_FULL');
+ for(const item of incoming){merged.groundItems.push(item);known.add(item.id);}
  if(merged.compost?.status==='empty'&&legacy.compost?.status!=='empty')merged.compost=structuredClone(legacy.compost);
  return merged;
 }

@@ -123,3 +123,19 @@ test('旧背包只迁移一次，并保留服务端先生成的便便',()=>{
   assert.equal(service.readSnapshot('default').items.owners[actorId].inventory.fertilizer,6);
  }finally{db.close();}
 });
+
+test('地面已满时旧背包迁移明确失败且不标记完成',()=>{
+ const {db,service,actorId,principal}=setup();
+ try{
+  for(let i=0;i<20;i++)cmd(service,principal,'item.poop',{actorId,sceneId:'yard',position:[5+i*0.02,0,1+i*0.02]});
+  const before=service.readSnapshot('default').items.owners[actorId];
+  assert.equal(before.groundItems.length,20);
+  assert.equal(before.legacyImported,false);
+  const legacy=createDefaultItemState();
+  legacy.groundItems=[{id:'legacy-poop',type:'poop',sceneId:'yard',position:[5,0,1],createdAt:1}];
+  assert.throws(()=>cmd(service,principal,'item.import',{actorId,state:legacy}),/LEGACY_GROUND_FULL/);
+  const after=service.readSnapshot('default').items.owners[actorId];
+  assert.equal(after.groundItems.length,20);
+  assert.equal(after.legacyImported,false);
+ }finally{db.close();}
+});
