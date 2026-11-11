@@ -845,7 +845,7 @@ export function mountPetSystem({
           <div class="pet-speed" role="group" aria-label="拉屎速度">
             <span>拉屎速度</span>
             <div class="pet-speed-options">
-              ${Object.values(PET_POOP_SPEEDS).map(option => `<button type="button" data-poop-speed="${option.id}" class="${(candidate.poopSpeed ?? 'fast') === option.id ? 'active' : ''}" aria-pressed="${(candidate.poopSpeed ?? 'fast') === option.id}">${option.label}<small>${option.duration}</small></button>`).join('')}
+              ${Object.values(PET_POOP_SPEEDS).map(option => `<button type="button" data-poop-speed="${option.id}" class="${(candidate.poopSpeed ?? 'normal') === option.id ? 'active' : ''}" aria-pressed="${(candidate.poopSpeed ?? 'normal') === option.id}">${option.label}<small>${option.duration}</small></button>`).join('')}
             </div>
           </div>
           <div class="pet-actions">

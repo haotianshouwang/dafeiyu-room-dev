@@ -11,7 +11,7 @@ test('拉屎速度映射为快10分钟、中2小时、慢8小时',()=>{
  assert.equal(PET_POOP_SPEEDS.fast.intervalMs,10*60*1000);
  assert.equal(PET_POOP_SPEEDS.normal.intervalMs,2*60*60*1000);
  assert.equal(PET_POOP_SPEEDS.slow.intervalMs,8*60*60*1000);
- assert.equal(petPoopSpeed({}), 'fast');
+ assert.equal(petPoopSpeed({}), 'normal');
  assert.equal(petPoopInterval({poopSpeed:'normal'}),2*60*60*1000);
  assert.equal(petPoopInterval({poopSpeed:'slow'}),8*60*60*1000);
 });

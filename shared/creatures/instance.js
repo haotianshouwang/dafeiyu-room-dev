@@ -43,7 +43,7 @@ export function createPetInstance({
   lastSceneId:null,
   lastPosition:null,
   poopSceneId:null,
-  poopSpeed:'fast',
+  poopSpeed:'normal',
   lastPoopAt:null,
   nextPoopAt:null,
   bondWindowStart:Number.isFinite(bondWindowStart)?bondWindowStart:(Number.isFinite(now)?now:Date.now()),

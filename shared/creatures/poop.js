@@ -5,7 +5,7 @@ export const PET_POOP_SPEEDS = Object.freeze({
  normal: Object.freeze({id: 'normal', label: '中', duration: '2小时', intervalMs: 2 * 60 * 60 * 1000}),
  fast: Object.freeze({id: 'fast', label: '快', duration: '10分钟', intervalMs: 10 * 60 * 1000}),
 });
-export const PET_POOP_DEFAULT_SPEED = 'fast';
+export const PET_POOP_DEFAULT_SPEED = 'normal';
 export const PET_POOP_OFFLINE_CAP = 2;
 
 export function petPoopSpeed(pet) {
