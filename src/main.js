@@ -44,6 +44,7 @@ import {mountFoodPicker} from "./ui/food-picker.js";
 import {mountSpellBar} from "./ui/spell-bar.js";
 const agentConnect=new AgentConnect();
 let desktopSuspended=Boolean(window.dafeiyuDesktop?.onRenderSuspended);
+let islandSuspended=false;
 const renderActivity=createRenderActivity(!desktopSuspended&&!document.hidden);
 const toolbar=document.getElementById('actions');
 const settings=mountSettings({
@@ -152,6 +153,7 @@ let whale=original;const blob=new Whale();blob.group.visible=false;scene.add(ori
 });registry.pool.retain(blob.group);original.group.scale.setScalar(1.28);blob.group.scale.setScalar(1.28);
 original.ready?.catch(()=>showMessage('角色模型加载失败，可使用 ?character=whale 查看默认鲸鱼'));
 const fx=new FX(scene),hud=new HUD(),game=new Interactions({scene,camera,iso,whale,fx,props,hud,lights});
+game.onWalkPortal=target=>{const sceneId=target==='room'?'bedroom':target;if(!sceneId||sceneId===actor?.sceneId)return;void teleportToScene(sceneId);};
 // 入水第一次会切换成程序化鲸鱼并触发 splash：提前编译鲸鱼/水花材质，避免首帧卡顿。
 function warmWhaleVisuals(){
  try{
@@ -603,6 +605,53 @@ scenePicker.addEventListener('keydown',event=>{
  const open=event.target.closest('.forest-teleport[open]');
  if(event.key==='Escape'&&open){open.open=false;open.querySelector('summary').focus();}
 });
+function openTidewaterIsland(){
+ if(document.getElementById('tidewater-island'))return;
+ keys.clear();
+ try{player?.stop?.();}catch{}
+ const overlay=document.createElement('div');
+ overlay.id='tidewater-island';
+ overlay.style.cssText='position:fixed;inset:0;z-index:2000;background:#04121c;display:flex';
+ const frame=document.createElement('iframe');
+ frame.title='潮汐海岛';
+ frame.allow='fullscreen; autoplay; gamepad';
+ frame.src=new URL('tidewater/index.html?sceneOnly&thirdPerson&scale=0.8',document.baseURI).href;
+ frame.style.cssText='border:0;width:100%;height:100%;display:block;background:#04121c';
+ overlay.append(frame);
+ const bar=document.createElement('div');
+ bar.style.cssText='position:absolute;right:18px;top:16px;display:flex;gap:8px;align-items:center;z-index:2';
+ const hint=document.createElement('span');
+ hint.textContent='WASD 行走 · 鼠标观察 · 滚轮缩放 · V 切换第一/第三人称 · 点击画面捕获鼠标';
+ hint.style.cssText='font:12px system-ui;color:#fff;background:#0009;padding:6px 10px;border-radius:8px';
+ const close=document.createElement('button');
+ close.type='button';close.textContent='返回小世界';
+ close.style.cssText='font:600 13px system-ui;color:#07302c;background:#7ee0d0;border:0;border-radius:999px;padding:8px 14px;cursor:pointer;box-shadow:0 4px 18px #0005';
+ let islandClosed=false;
+ const closeIsland=()=>{
+  if(islandClosed)return;
+  islandClosed=true;
+  overlay.remove();
+  islandSuspended=false;
+  updateRenderVisibility();
+  document.removeEventListener('keydown',onKey,true);
+  try{frame.contentWindow?.removeEventListener('keydown',onKey,true);}catch{}
+  window.focus();
+ };
+ close.onclick=closeIsland;
+ const onKey=event=>{if(event.key==='Escape'){event.preventDefault();closeIsland();}};
+ document.addEventListener('keydown',onKey,true);
+ frame.addEventListener('load',()=>{
+  try{
+   frame.focus();
+   frame.contentWindow?.addEventListener('keydown',onKey,true);
+  }catch{}
+ });
+ bar.append(hint,close);overlay.append(bar);
+ document.body.append(overlay);
+ islandSuspended=true;
+ updateRenderVisibility();
+}
+
 function refreshScenePicker(){
  const choices=[...registry.scenes].filter(([,cfg])=>cfg.data.status==='active');
  if(!choices.some(([,cfg])=>cfg.data.templateId==='forest_v1'))choices.push([null,{data:{templateId:'forest_v1'},label:'森林'}]);
@@ -636,6 +685,12 @@ function refreshScenePicker(){
   button.onclick=()=>{keys.clear();void teleportToScene(id);};
   scenePicker.append(button);
  }
+ const island=document.createElement('button');
+ island.type='button';
+ sceneEntry(island,'潮汐海岛',false);
+ island.title='进入 Tidewater 海岛场景（独立场景）';
+ island.onclick=openTidewaterIsland;
+ scenePicker.append(island);
 }
 
 const editable=target=>target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName);
@@ -1063,7 +1118,7 @@ renderActivity.subscribe(active=>{
  }
 });
 renderActivity.loop(frame);
-const updateRenderVisibility=()=>renderActivity.setActive(!desktopSuspended&&!document.hidden);
+const updateRenderVisibility=()=>renderActivity.setActive(!desktopSuspended&&!islandSuspended&&!document.hidden);
 window.dafeiyuDesktop?.onRenderSuspended?.(suspended=>{
  desktopSuspended=suspended;
  updateRenderVisibility();

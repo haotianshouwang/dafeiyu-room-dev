@@ -5,6 +5,14 @@ const audioManifest=JSON.parse(fs.readFileSync(new URL('../resources/audio/manif
 const polyforkManifest=JSON.parse(fs.readFileSync(new URL('../resources/polyfork/manifest.json',import.meta.url),'utf8'));
 const polyforkFiles=new Set(['manifest.json','LICENSE.md','CREDITS.md',
  ...polyforkManifest.assets.flatMap(asset=>[asset.file,asset.thumbnail])].map(file=>'resources/polyfork/'+file));
+const tidewaterRoot='public/tidewater';
+const tidewaterManifestPath=tidewaterRoot+'/manifest.json';
+if(!fs.existsSync(tidewaterManifestPath))throw Error('Missing Tidewater manifest: '+tidewaterManifestPath);
+const tidewaterManifest=JSON.parse(fs.readFileSync(tidewaterManifestPath,'utf8'));
+if(tidewaterManifest.format!==1||!Array.isArray(tidewaterManifest.files))throw Error('Invalid Tidewater manifest');
+const tidewaterFiles=new Map(tidewaterManifest.files.map(entry=>[entry.path,entry]));
+if(tidewaterFiles.size!==tidewaterManifest.files.length)throw Error('Duplicate Tidewater manifest path');
+const tidewaterRelative=file=>file.replace(/^public\/tidewater\/|^dist\/tidewater\//,'');
 const approved=new Map([...manifest.files,...audioManifest.files.map(f=>({...f,runtime:true}))].map(f=>[f.path,f]));
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -20,6 +28,10 @@ export function blockedPublicFile(file){
  if(approved.has(p))return false;
  if(p.startsWith('resources/polyfork/'))return !polyforkFiles.has(p);
  if(p==='.npmrc')return true;
+ if(p.startsWith('public/tidewater/')||p.startsWith('dist/tidewater/')){
+  const rel=tidewaterRelative(p);
+  return rel!=='manifest.json'&&!tidewaterFiles.has(rel);
+ }
  if(p.startsWith('01_无尾人物/'))return true;
  if(p.startsWith('desktop/'))return !desktopSources.has(p);
  if(p.startsWith('resources/character/')&&p!=='resources/character/manifest.json')return true;
@@ -50,7 +62,23 @@ export function checkPublic(){
  for(const file of [...approved.keys(),...polyforkFiles,...desktopSources,'docs/DESKTOP.md','docs/THREEJS-SKILLS.md','docs/MCP-ADVANCED-ACTIONS.md','public/licenses/elemental-sandbox.txt','public/licenses/webgl-noise.txt']){
   if(!candidates.has(file)||!fs.statSync(file,{throwIfNoEntry:false})?.isFile()||fs.lstatSync(file).isSymbolicLink())throw Error('Missing public file: '+file);
  }
+ for(const [rel,entry] of tidewaterFiles){
+  for(const root of ['public/tidewater/','dist/tidewater/']){
+   const full=root+rel;
+   if(!fs.existsSync(full))throw Error('Missing Tidewater manifest file: '+full);
+   if(createHash('sha256').update(fs.readFileSync(full)).digest('hex')!==entry.sha256)throw Error('Tidewater hash mismatch: '+full);
+  }
+ }
+ for(const root of ['public/tidewater','dist/tidewater']){
+  for(const file of walk(root)){
+   const rel=path.relative(root,file).replaceAll('\\','/');
+   if(root==='public/tidewater'&&rel==='.DS_Store')continue;
+   if(rel!=='manifest.json'&&!tidewaterFiles.has(rel))throw Error('Unlisted Tidewater file: '+file);
+  }
+ }
  for(const file of walk('dist')){
+  if(path.basename(file)==='.DS_Store')throw Error('Finder metadata in build: '+file);
+  if(file.startsWith('dist/tidewater/'))continue; // validated against the Tidewater manifest above
   // Vite's generated assets directory is expected; inspect its contents, not the directory name.
   const relative=file.replace(/^dist\//,'');
   const entry=approved.get(relative);

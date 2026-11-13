@@ -98,3 +98,12 @@ downloads/
 *.pem
 *.p12
 *.pfx
+
+# Curated Tidewater scene bundle: every file is enumerated and hashed by
+# public/tidewater/manifest.json; check:public rejects anything not listed.
+!/public/tidewater/
+!/public/tidewater/**
+public/tidewater/.DS_Store
+
+# Public Tidewater source/licence note (linked from README)
+!docs/TIDEWATER.md

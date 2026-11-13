@@ -86,6 +86,14 @@ npm run desktop:dev
 | X / G | 坐下 / 随机跳舞 |
 | 1–8 | 探索时选中魔法，瞄准后左键施放 |
 
+### 探索潮汐海岛
+
+从场景选择器打开「潮汐海岛」，可以沿沙滩走到木码头，也可以按 V 切换第一、第三人称。海岛使用 WebGPU。[原项目与素材许可](docs/TIDEWATER.md)
+
+| 码头入口 | 海岸步道 |
+| --- | --- |
+| ![大肥鱼走向潮汐海岛的码头](docs/screenshots/tidewater-pier.jpg) | ![大肥鱼沿沙滩看向木栈桥和海浪](docs/screenshots/tidewater-sea.jpg) |
+
 ### 游戏截图
 
 | 客厅 | 院子 |
