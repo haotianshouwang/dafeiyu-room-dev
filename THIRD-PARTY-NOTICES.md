@@ -47,6 +47,10 @@ THE SOFTWARE.
 
 `public/tidewater/models/whale-skeleton/east_whale.glb` 来自 [Petalwake](https://github.com/jjcm/petalwake)（commit `25443ce`），Petalwake 以 MIT License 发布；该模型由 Petalwake 作者使用 Meshy/fal 生成。海岛资源清单和哈希见 [Tidewater manifest](public/tidewater/manifest.json)，来源说明见 [海岛说明](docs/TIDEWATER.md)；许可副本随包放在 [LICENSE-Petalwake.txt](public/tidewater/models/whale-skeleton/LICENSE-Petalwake.txt)。
 
+### Petalwake 飞行王国 · MIT
+
+`public/petalwake/` 来自 [Petalwake](https://github.com/jjcm/petalwake)（commit `25443ce`），代码以 MIT License 发布；原版模型/材质由作者使用 Meshy / fal 生成，商用前需按相应账号与模型条款确认。大肥鱼版使用大肥鱼的 Dafeiyu（Hyper3D Rodin）骑手，该模型不属于 Petalwake MIT 范围。清单和来源见 [飞行王国说明](docs/PETALWAKE.md)。
+
 ## 仅在开发/构建/测试阶段使用（不进入成品）
 
 | 组件 | 版本 | 许可证 | 用途 |
@@ -70,7 +74,7 @@ THE SOFTWARE.
 
 项目自身源码及作者有权授权的 `resources/character/` 资源、项目截图采用根目录 LICENSE 中的 MIT 许可，允许使用、修改、分发及商用，须保留版权和许可文本。第三方依赖保留原许可。
 
-公开运行模型 `Dafeiyu.glb` 包含付费 Meshy 服务生成内容，由破晓手记制作、修复和编辑。授权以项目作者实际拥有的权利为范围。资源清单及 SHA-256 见 `resources/character/manifest.json`。
+公开运行模型 `Dafeiyu.glb` 由破晓手记制作、修复和编辑，生成来源为 Hyper3D Rodin（Deemos）。Rodin 服务条款对输出内容的使用不设额外限制，但同时明确不保证输出内容的可版权性或第三方权利；使用者需自行确认输入参考素材的权利，并保留生成记录。资源清单及 SHA-256 见 `resources/character/manifest.json`。
 
 公开运行模型 `baize.glb` 来自项目作者提供的白泽模型包，原文件名为 `base_basic_shaded.glb`。伙伴白泽和野生白泽共用此文件。
 

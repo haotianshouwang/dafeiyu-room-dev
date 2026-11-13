@@ -96,6 +96,10 @@ npm run desktop:dev
 | --- | --- |
 | ![大肥鱼走向潮汐海岛的码头](docs/screenshots/tidewater-pier.jpg) | ![大肥鱼沿沙滩看向木栈桥和海浪](docs/screenshots/tidewater-sea.jpg) |
 
+### 探索飞行王国
+
+从场景选择器点「飞行王国」，骑扫把飞过 Petalwake 的海岛和城镇。默认使用大肥鱼 Dafeiyu 骑手，进入后点「起飞」起飞。[原项目与素材许可](docs/PETALWAKE.md)
+
 ### 游戏截图
 
 | 客厅 | 院子 |

@@ -107,3 +107,10 @@ public/tidewater/.DS_Store
 
 # Public Tidewater source/licence note (linked from README)
 !docs/TIDEWATER.md
+
+# Curated Petalwake flight bundle: every file is enumerated and hashed by
+# public/petalwake/manifest.json; check:public rejects anything not listed.
+!/public/petalwake/
+!/public/petalwake/**
+public/petalwake/.DS_Store
+!docs/PETALWAKE.md

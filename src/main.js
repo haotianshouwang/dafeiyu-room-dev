@@ -605,31 +605,31 @@ scenePicker.addEventListener('keydown',event=>{
  const open=event.target.closest('.forest-teleport[open]');
  if(event.key==='Escape'&&open){open.open=false;open.querySelector('summary').focus();}
 });
-function openTidewaterIsland(){
- if(document.getElementById('tidewater-island'))return;
+function openEmbeddedScene({id,title,src,hintText}){
+ if(document.getElementById(id))return;
  keys.clear();
  try{player?.stop?.();}catch{}
  const overlay=document.createElement('div');
- overlay.id='tidewater-island';
+ overlay.id=id;
  overlay.style.cssText='position:fixed;inset:0;z-index:2000;background:#04121c;display:flex';
  const frame=document.createElement('iframe');
- frame.title='潮汐海岛';
- frame.allow='fullscreen; autoplay; gamepad';
- frame.src=new URL('tidewater/index.html?sceneOnly&thirdPerson&scale=0.8',document.baseURI).href;
+ frame.title=title;
+ frame.allow='fullscreen; autoplay; gamepad; pointer-lock';
+ frame.src=new URL(src,document.baseURI).href;
  frame.style.cssText='border:0;width:100%;height:100%;display:block;background:#04121c';
  overlay.append(frame);
  const bar=document.createElement('div');
- bar.style.cssText='position:absolute;right:18px;top:16px;display:flex;gap:8px;align-items:center;z-index:2';
+ bar.style.cssText='position:absolute;right:18px;top:16px;display:flex;gap:8px;align-items:center;z-index:2147483647';
  const hint=document.createElement('span');
- hint.textContent='WASD 行走 · 鼠标观察 · 滚轮缩放 · V 切换第一/第三人称 · 点击画面捕获鼠标';
+ hint.textContent=hintText;
  hint.style.cssText='font:12px system-ui;color:#fff;background:#0009;padding:6px 10px;border-radius:8px';
  const close=document.createElement('button');
  close.type='button';close.textContent='返回小世界';
  close.style.cssText='font:600 13px system-ui;color:#07302c;background:#7ee0d0;border:0;border-radius:999px;padding:8px 14px;cursor:pointer;box-shadow:0 4px 18px #0005';
- let islandClosed=false;
- const closeIsland=()=>{
-  if(islandClosed)return;
-  islandClosed=true;
+ let sceneClosed=false;
+ const closeScene=()=>{
+  if(sceneClosed)return;
+  sceneClosed=true;
   overlay.remove();
   islandSuspended=false;
   updateRenderVisibility();
@@ -637,8 +637,9 @@ function openTidewaterIsland(){
   try{frame.contentWindow?.removeEventListener('keydown',onKey,true);}catch{}
   window.focus();
  };
- close.onclick=closeIsland;
- const onKey=event=>{if(event.key==='Escape'){event.preventDefault();closeIsland();}};
+ close.onclick=closeScene;
+ close.addEventListener('pointerdown',event=>{event.preventDefault();closeScene();},{capture:true});
+ const onKey=event=>{if(event.key==='Escape'){event.preventDefault();closeScene();}};
  document.addEventListener('keydown',onKey,true);
  frame.addEventListener('load',()=>{
   try{
@@ -650,6 +651,24 @@ function openTidewaterIsland(){
  document.body.append(overlay);
  islandSuspended=true;
  updateRenderVisibility();
+}
+
+function openTidewaterIsland(){
+ openEmbeddedScene({
+  id:'tidewater-island',
+  title:'潮汐海岛',
+  src:'tidewater/index.html?sceneOnly&thirdPerson&scale=0.8',
+  hintText:'WASD 行走 · 鼠标观察 · 滚轮缩放 · V 切换第一/第三人称 · 点击画面捕获鼠标',
+ });
+}
+
+function openFlightKingdom(){
+ openEmbeddedScene({
+  id:'petalwake-kingdom',
+  title:'飞行王国',
+  src:'petalwake/index.html',
+  hintText:'W/S 俯冲/爬升 · A/D 转向 · Shift 乘风 · 鼠标操控 · C 切换镜头 · 点击画面锁定鼠标',
+ });
 }
 
 function refreshScenePicker(){
@@ -691,6 +710,12 @@ function refreshScenePicker(){
  island.title='进入 Tidewater 海岛场景（独立场景）';
  island.onclick=openTidewaterIsland;
  scenePicker.append(island);
+ const flight=document.createElement('button');
+ flight.type='button';
+ sceneEntry(flight,'飞行王国',false);
+ flight.title='传送到飞行王国，骑扫把飞行';
+ flight.onclick=openFlightKingdom;
+ scenePicker.append(flight);
 }
 
 const editable=target=>target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName);
