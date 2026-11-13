@@ -4,9 +4,11 @@
 
 **作者 / 抖音：破晓手记**
 
-| 房间 | 技能 | 便利店 |
-| --- | --- | --- |
-| ![大肥鱼的卧室](docs/screenshots/room.webp) | ![大肥鱼在院子里施放冰晶王冠](docs/screenshots/cover.webp) | ![街角便利店](docs/screenshots/store.webp) |
+![大肥鱼的卧室](docs/screenshots/room.webp)
+
+![大肥鱼在潮汐海岛的沙滩上望向木码头](docs/screenshots/tidewater-sea.jpg)
+
+![大肥鱼在院子里施放冰晶王冠](docs/screenshots/cover.webp)
 
 ## 开始游戏
 
