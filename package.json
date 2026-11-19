@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "vite build --mode public",
+    "build:community": "vite build --mode community",
     "preview": "vite preview --host 127.0.0.1",
     "check:public": "node scripts/check-public.mjs",
     "test:editor": "node tests/room-editor.test.mjs",

@@ -14,6 +14,7 @@ import {deriveStats} from '../../shared/creatures/stats.js';
 import {getSpecies} from '../../shared/creatures/species.js';
 import {PET_SKILLS} from '../../shared/creatures/skills.js';
 import {PET_POOP_SPEEDS} from '../../shared/creatures/poop.js';
+import {companionStorage,companionErrorText} from '../core/companion-storage.js';
 
 const HOME_SCENE_ID = 'yard';
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -88,9 +89,13 @@ export function mountPetSystem({
   getActor = () => null,
   dispatchPet = null,
   isConnected = () => false,
+  getContextKey = () => getSnapshot()?._contextKey||getSnapshot()?.worldId||'',
+  getStorageScope = getContextKey,
+  allowLegacyMigration = () => false,
 } = {}) {
-  const storage = (() => { try { return globalThis.localStorage; } catch { return null; } })();
-  let state = loadPetState(storage);
+  const disk = (() => { try { return globalThis.localStorage; } catch { return null; } })();
+  let storage = companionStorage(disk,'pending');
+  let state = loadPetState(null),contextKey=null;
   const avatars = new Map();
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
@@ -170,7 +175,7 @@ export function mountPetSystem({
     if (changedPet?.homePosition) changedPet.pet.homePosition = changedPet.homePosition;
   }
 
-  function reconcileServerPets(next) {
+  function reconcileServerPets(next, persist = true) {
     const known = new Set(next.pets.map(pet => pet.id));
     state.pets = next.pets;
     state.selectedPetId = next.selectedPetId;
@@ -182,21 +187,35 @@ export function mountPetSystem({
     for (const [id, avatar] of [...avatars]) {
       if (known.has(id)) continue;
       scene.remove(avatar.root);
-      avatar.root.traverse(node => {
-        if (!node.isMesh) return;
-        node.geometry?.dispose?.();
-        if (Array.isArray(node.material)) node.material.forEach(material => material.dispose?.());
-        else node.material?.dispose?.();
-      });
+      avatar.model.mixer?.stopAllAction();
+      // The loaded asset owns shared geometry and original materials.
+      if(avatar.tinted)avatar.root.traverse(node=>{if(node.isMesh)for(const material of [].concat(node.material))material?.dispose?.();});
       avatars.delete(id);
     }
-    savePetState(storage, state);
+    if(persist)savePetState(storage, state);
     updateEntryCount();
     if (dialog.open) render();
   }
 
+  function resetContext(){
+    const next=getContextKey();if(next===contextKey)return;
+    contextKey=next;
+    storage=companionStorage(disk,getStorageScope(),{allowLegacy:allowLegacyMigration()});
+    const saved=loadPetState(storage);
+    reconcileServerPets({pets:[],selectedPetId:null},false);
+    state=saved;
+    serverReady=false;migrationPending=false;migrationAttempted=false;bootstrapAttempted=false;
+    appliedServerPets=null;lastPositionSync=0;lastPoopSettleScene=null;lastPoopSettleAt=0;lastPublishedPositions.clear();
+    removeFood();if(dialog.open)dialog.close();updateEntryCount();
+  }
+
   function syncServerPets(snapshot) {
     if (!dispatchPet) return;
+    resetContext();
+    if(!isConnected())return;
+    const requestContext=contextKey;
+    const completed=()=>{if(getContextKey()===requestContext)migrationPending=false;};
+    const failed=error=>{if(getContextKey()!==requestContext)return;migrationPending=false;const message=companionErrorText(error);if(message)onMessage(message);};
     const actorId = currentActorId();
     if (!actorId) return;
     const owner = snapshot?.pets?.owners?.[actorId];
@@ -216,8 +235,7 @@ export function mountPetSystem({
         migrationPending = true;
         bootstrapAttempted = true;
         void dispatchPet('pet.bootstrap', { actorId })
-          .then(() => { migrationPending = false; })
-          .catch(error => { migrationPending = false; onMessage(`宠物宝箱初始化失败：${error.message}`); });
+          .then(completed).catch(failed);
       }
       return;
     }
@@ -228,16 +246,11 @@ export function mountPetSystem({
     if (!payload.pets.length) {
       // 新玩家：建立空名册和两只初始蛋，不自动发宠物。
       void dispatchPet('pet.bootstrap', { actorId })
-        .then(() => { migrationPending = false; })
-        .catch(error => { migrationPending = false; onMessage(`宠物宝箱初始化失败：${error.message}`); });
+        .then(completed).catch(failed);
       return;
     }
     void dispatchPet('pet.import', { actorId, ...payload })
-      .then(() => { migrationPending = false; })
-      .catch(error => {
-        migrationPending = false;
-        onMessage(`宠物数据迁移失败：${error.message}`);
-      });
+      .then(completed).catch(failed);
   }
 
   async function petCommand(kind, payload) {
@@ -247,10 +260,12 @@ export function mountPetSystem({
     }
     const actorId = currentActorId();
     if (!actorId) return null;
+    const requestContext=getContextKey();
     try {
-      return await dispatchPet(kind, { actorId, ...payload });
+      const result=await dispatchPet(kind, { actorId, ...payload });
+      return getContextKey()===requestContext?result:null;
     } catch (error) {
-      onMessage(`宠物操作失败：${error.message}`);
+      if(getContextKey()===requestContext){const message=companionErrorText(error);if(message)onMessage(message);}
       return null;
     }
   }
@@ -780,8 +795,11 @@ export function mountPetSystem({
   }
 
   function update(dt, snapshot, visual, playerPosition) {
-    if (!ready || !snapshot) return;
+    resetContext();
+    if (!snapshot) return;
     syncServerPets(snapshot);
+    if(!ready)return;
+    if(dispatchPet&&(!serverReady||!isConnected()))return;
     const sceneId = getSceneId();
     const player = getPlayer();
     const sceneEntry = snapshot.scenes?.find(entry => entry.sceneId === sceneId);
@@ -816,9 +834,10 @@ export function mountPetSystem({
       });
       if (changed && actor?.actorId && positions.length) {
         const payload = positions;
+        const requestContext=getContextKey();
         void dispatchPet('pet.syncPositions', {actorId: actor.actorId, positions: payload}, {refresh: false})
-          .then(() => { for (const entry of payload) lastPublishedPositions.set(entry.petId, entry); })
-          .catch(() => { lastPositionSync = 0; });
+          .then(() => { if(getContextKey()===requestContext)for (const entry of payload) lastPublishedPositions.set(entry.petId, entry); })
+          .catch(() => { if(getContextKey()===requestContext)lastPositionSync = 0; });
       }
     }
   }

@@ -8,7 +8,7 @@ import { UI_SOUND } from '../core/sound-dictionary.js';
 
 const WORLD_CAST_MAX_AGE_MS = 1250;
 
-export function mountSpellBar({ canvas, scene, getContext, startCast, playSound }) {
+export function mountSpellBar({ canvas, scene, getContext, startCast, playSound, onCast = () => {} }) {
   const bar = document.getElementById('spell-bar');
   const slots = bar.querySelector('.spell-slots');
   const hint = bar.querySelector('.spell-hint');
@@ -144,6 +144,7 @@ export function mountSpellBar({ canvas, scene, getContext, startCast, playSound 
       const current = getContext();
       if (!current?.ready || current.actor.sceneId !== context.actor.sceneId) return;
       releaseCast(index, target.start, target.end, current.training, hand);
+      onCast({ slot: index + 1, start: target.start.toArray(), end: target.end.toArray() });
       expires[index] = performance.now() + SPELLS[index].cooldown * 1000;
     });
     if (!started) return;
@@ -161,6 +162,13 @@ export function mountSpellBar({ canvas, scene, getContext, startCast, playSound 
   window.addEventListener('blur', () => { consumedPointer = null; setSelected(-1); });
 
   return {
+    activeEffectCount() { return effects.length; },
+    playRemoteCast({ slot, start, end }) {
+      if (!Number.isInteger(slot) || slot < 1 || slot > SPELLS.length ||
+        ![start, end].every(value => Array.isArray(value) && value.length === 3 && value.every(Number.isFinite))) return false;
+      releaseCast(slot - 1, new THREE.Vector3(...start), new THREE.Vector3(...end), null, null);
+      return true;
+    },
     update(dt, now, worldCast, getHand) {
       const context = getContext();
       if (context?.actor.sceneId !== sceneId) {

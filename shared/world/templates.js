@@ -30,14 +30,27 @@ templates.forest_v1={...template('forest_v1','outdoor',FOREST_BOUNDS),
  portalSlots:[forestGate(FOREST_RETURN_SLOT,'west',FOREST_BOUNDS.x0,0,1)],
 };
 templates.street_corner_v1.staticColliders=[...STREET_HOME.colliders,...STORE_STREET_COLLIDERS];templates.street_corner_v1.legacyDoorNormal=STREET_HOME.inwardNormal;
+templates.street_corner_v1.socialArea='public';
 for(const slot of templates.street_corner_v1.portalSlots){
  if(slot.slotId==='north')Object.assign(slot,{position:[5.2,0,-6.5],landing:[5.2,0,-5.55],width:1.4,trigger:rect(4.5,5.9,-6.5,-5.1),clearance:rect(4.5,5.9,-6.5,-5.2)});
  if(slot.slotId==='east'){const edge=STORE_STREET_BOUNDS.x1;Object.assign(slot,{position:[edge,0,3],landing:[edge-.95,0,3],width:1.4,trigger:rect(edge-1.4,edge,2.3,3.7),clearance:rect(edge-1.3,edge,2.45,3.7)});}
 }
 templates.street_corner_v1.spawn=[0,0,2.4];templates.street_corner_v1.spawnClearance=rect(-.5,.5,1.9,2.9);
 templates.coastal_town_v1=template('coastal_town_v1','outdoor',square(12));
+templates.coastal_town_v1.socialArea='public';
 Object.assign(templates.coastal_town_v1,{spawn:[-10,2,-2],spawnClearance:rect(-10.5,-9.5,-2.5,-1.5),regions:COASTAL_ZONES,landmarks:COASTAL_LANDMARKS});
 templates.coastal_town_v1.portalSlots=[{slotId:'west',side:'west',position:[-12,2,-2],inwardNormal:[1,0,0],width:3,landing:[-10,2,-2],trigger:rect(-12,-10,-3.5,-.5),clearance:rect(-12,-9,-3.5,-.5)}];
+templates.public_lobby_v1=template('public_lobby_v1','outdoor',rect(-28,28,-22,22));
+Object.assign(templates.public_lobby_v1,{
+ spawn:[0,0,14],spawnClearance:rect(-1.4,1.4,12.6,15.4),maxEntities:0,readOnly:true,socialArea:'public',viewZoom:.5,
+ staticColliders:[rect(-3.5,3.5,-3.5,3.5),rect(-24,-16,-18,-12),rect(14,22,10,17),rect(-20,-16,8,18),rect(16,20,8,18)],
+ portalSlots:[
+  {slotId:'north',side:'north',position:[0,0,-22],inwardNormal:[0,0,1],width:2.8,landing:[0,0,-20.5],trigger:rect(-1.4,1.4,-22,-20.6),clearance:rect(-1.8,1.8,-22,-19.7)},
+  {slotId:'south',side:'south',position:[0,0,22],inwardNormal:[0,0,-1],width:2.8,landing:[0,0,20.5],trigger:rect(-1.4,1.4,20.6,22),clearance:rect(-1.8,1.8,19.7,22)},
+  {slotId:'east',side:'east',position:[28,0,0],inwardNormal:[-1,0,0],width:2.8,landing:[26.5,0,0],trigger:rect(26.6,28,-1.4,1.4),clearance:rect(25.7,28,-1.8,1.8)},
+  {slotId:'west',side:'west',position:[-28,0,0],inwardNormal:[1,0,0],width:2.8,landing:[-26.5,0,0],trigger:rect(-28,-26.6,-1.4,1.4),clearance:rect(-28,-25.7,-1.8,1.8)}
+ ]
+});
 export const TEMPLATE_IDS=Object.keys(templates);
 export function getTemplate(id){if(!Object.hasOwn(templates,id))throw new RangeError(`Unknown template: ${id}`);return structuredClone(templates[id]);}
 export function listTemplates(){return TEMPLATE_IDS.map(getTemplate);}

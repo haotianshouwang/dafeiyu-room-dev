@@ -1,5 +1,24 @@
 {
+  "hashPolicy": {
+    "algorithm": "sha256",
+    "textEncoding": "utf-8",
+    "textLineEndings": "lf",
+    "textBom": "strip-leading-utf8-bom",
+    "textTrailingNewline": "preserve"
+  },
   "files": [
+    {
+      "path": "resources/character/models/Dafeiyu-web-v1.glb",
+      "sha256": "e5cc7e37c69ab7398129a1c9ad82c556b9b3d5a94d91bda04f2d0fdcc6cdefd4",
+      "bytes": 7332864,
+      "runtime": true
+    },
+    {
+      "path": "resources/character/models/Dafeiyu-web-v1.glb.gz",
+      "sha256": "a6aeb8f92f8dc6122ca1b19add1b411abfc318caeed3ad3080ba077bdaddb38c",
+      "bytes": 3713918,
+      "runtime": true
+    },
     {
       "path": "resources/character/models/Dafeiyu.glb",
       "sha256": "76b5a0ca81f803748e8f5420f7cc99a13bc93eea32883e6362ffcabfdf34ff33",

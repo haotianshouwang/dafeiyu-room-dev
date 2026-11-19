@@ -1,8 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {AudioPlayback} from '../server/audio/playback.js';
-import {AudioPlayer} from '../src/core/audio-playback.js';
+import {AudioPlayer,mountAudioPlayer} from '../src/core/audio-playback.js';
 const input={requestId:'a',mimeType:'audio/wav',audioBase64:Buffer.from('RIFF0000WAVEdata').toString('base64')};
+test('community sound controls unlock, mute and dispose bundled audio without a local audio API',()=>{
+ const previous=globalThis.window,events=new Map(),enabled=[];let resumes=0,disposed=0;
+ globalThis.window={addEventListener:(name,fn)=>events.set(name,fn),removeEventListener:(name,fn)=>{if(events.get(name)===fn)events.delete(name);}};
+ try{
+  const button={disabled:true},sound={setEnabled:value=>enabled.push(value),resume:()=>resumes++,dispose:()=>disposed++};
+  assert.equal(mountAudioPlayer(null,sound,button),null);assert.equal(button.disabled,false);assert.equal(button.textContent,'静音');
+  events.get('pointerdown')();assert.equal(resumes,1);button.onclick();events.get('keydown')();assert.equal(resumes,1);assert.equal(button.textContent,'开启声音');
+  button.onclick();assert.deepEqual(enabled,[true,false,true]);events.get('pagehide')();assert.equal(disposed,1);assert.equal(events.has('pointerdown'),false);assert.equal(events.has('keydown'),false);
+ }finally{if(previous===undefined)delete globalThis.window;else globalThis.window=previous;}
+});
 function fixture(){let now=100;const grant={grantId:'g',subjectId:'s',role:'agent',worldIds:['default'],scopes:['world:read','audio:play'],actorIds:[],expiresAt:999999};const audio=new AudioPlayback({store:{get:()=>grant}},{clock:()=>now});return {audio,grant,advance:n=>now+=n};}
 test('grant scope, header validation, dedupe and actual acknowledgements',()=>{const {audio,grant}=fixture();assert.throws(()=>audio.play({...grant,scopes:['world:read']},'default',input));audio.poll('tab',true);assert.throws(()=>audio.play(grant,'default',{...input,audioBase64:'YWJjZA=='}),/FORMAT/);const i=audio.play(grant,'default',input);assert.equal(i.status,'queued');assert.equal(audio.play(grant,'default',input).playbackId,i.playbackId);assert.throws(()=>audio.play(grant,'default',{...input,audioBase64:Buffer.from('RIFFxxxxWAVEdata').toString('base64')}),/CONFLICT/);assert.equal(audio.poll('other',true).leader,false);assert.throws(()=>audio.ack('other',i.playbackId,'started'));assert.equal(audio.ack('tab',i.playbackId,'started').status,'started');assert.equal(audio.ack('tab',i.playbackId,'finished').status,'finished');assert.equal(audio.items.get(i.playbackId).bytes,undefined);assert.equal(audio.ack('tab',i.playbackId,'started').status,'finished');});
 test('mute, revoke, offline and expiry remove bytes without resurrection',()=>{for(const kind of ['muted','revoked','client_offline','expired']){const {audio,grant,advance}=fixture();audio.poll('t',true);const i=audio.play(grant,'default',input);if(kind==='muted')audio.poll('t',false);if(kind==='revoked')grant.revoked=true;if(kind==='client_offline')advance(6000);if(kind==='expired'){advance(91000);audio.leader.at=91100;}audio.sweep();assert.equal(audio.items.get(i.playbackId).status,kind);assert.equal(audio.items.get(i.playbackId).bytes,undefined);if(kind==='client_offline')assert.throws(()=>audio.ack('t',i.playbackId,'started'));else assert.equal(audio.ack('t',i.playbackId,'started').status,kind);}});

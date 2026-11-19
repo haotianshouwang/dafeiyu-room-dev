@@ -11,7 +11,7 @@ import {ActionDispatcher} from '../src/core/action-dispatcher.js';
 const source=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
 const handler=source.slice(source.indexOf('function directions('),source.indexOf('function renderActor('));
 async function harness(snapshot,position,az,keys){
- const sent=[];const context={travelAction:null,whale:{},settings:{isOpen:false},foodPicker:{isOpen:false},fpActive:false,fp:{yaw:0},renderPosition:new THREE.Vector3(),sprintHeld:false,sprintToggle:false,thirdActive:false,crawling:false,diveRequested:undefined,wantSlide:false,slideUntil:0,slideDirX:0,slideDirZ:0,original:{startSlideClip(){}},teleportPending:false,actor:{sceneId:'a',position},iso:{az,drag:0},keys:new Set(keys),agentConnect:{},editor:null,lastInputAt:0,lastPortalAt:0,portalPending:false,client:{snapshot,connectionStatus:'connected'},goal:new THREE.Vector3(),portalEnds,portalInwardNormal,reachesKeyboardPortal,YARD_FOREST_SLOT,walkable,segmentWalkable,stopMovement(){},dispatcher:new ActionDispatcher(async(kind,target)=>sent.push({kind,target}))};
+ const sent=[];const context={worldMap:null,travelAction:null,whale:{},settings:{isOpen:false},foodPicker:{isOpen:false},fpActive:false,fp:{yaw:0},renderPosition:new THREE.Vector3(),sprintHeld:false,sprintToggle:false,thirdActive:false,crawling:false,diveRequested:undefined,wantSlide:false,slideUntil:0,slideDirX:0,slideDirZ:0,original:{startSlideClip(){}},teleportPending:false,actor:{sceneId:'a',position},iso:{az,drag:0},keys:new Set(keys),agentConnect:{},editor:null,lastInputAt:0,lastPortalAt:0,portalPending:false,client:{snapshot,connectionStatus:'connected'},goal:new THREE.Vector3(),portalEnds,portalInwardNormal,reachesKeyboardPortal,YARD_FOREST_SLOT,walkable,segmentWalkable,stopMovement(){},dispatcher:new ActionDispatcher(async(kind,target)=>sent.push({kind,target}))};
  context.player={active:false,begin(a){this.active=true;this.state={...a,position:[...a.position]};},step(s,d,dt){this.state=advancePlayer(s,this.state,d,dt*1000);},sample(){return this.state;},flush:async()=>{},stop(){this.held=false;this.stopped=true;},release(){this.active=false;}};
  context.action=(...args)=>context.dispatcher.submit(...args);
  vm.createContext(context);vm.runInContext(handler,context);context.updateKeyboard(.016,3000);await context.dispatcher.running;
@@ -76,8 +76,11 @@ test('scene arrival clears held keys but retains portal protection until the mov
  handlers[0]({...snapshot,actors:[{...snapshot.actors[0],actionId:null}]});assert.equal(context.portalPending,false);
 });
 test('OS key repeat cannot re-arm movement after a scene transition clears held keys',()=>{
- let keydown;const context={teleportPending:false,editor:null,window:{addEventListener:(_name,fn)=>keydown=fn},agentConnect:{},editable:()=>false,keys:new Set()};vm.createContext(context);
+ let keydown;const context={worldMap:null,realtime:null,teleportPending:false,editor:null,window:{addEventListener:(_name,fn)=>keydown=fn},agentConnect:{},editable:()=>false,keys:new Set()};vm.createContext(context);
  vm.runInContext(source.slice(source.indexOf("window.addEventListener('keydown'"),source.indexOf("window.addEventListener('keyup'")),context);
  keydown({code:'KeyW',repeat:true,preventDefault(){}});assert.equal(context.keys.size,0);
+ context.worldMap={isOpen:()=>true};
+ keydown({code:'KeyW',repeat:false,preventDefault(){}});assert.equal(context.keys.size,0);
+ context.worldMap=null;
  keydown({code:'KeyW',repeat:false,preventDefault(){}});assert.equal(context.keys.has('KeyW'),true);
 });

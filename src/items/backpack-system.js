@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {companionStorage,companionErrorText} from '../core/companion-storage.js';
 import { surfaceAt } from '../../shared/world/coastal.js';
 import { getTemplate } from '../../shared/world/templates.js';
 import { nearestFree } from '../../shared/world/navigation.js';
@@ -334,12 +335,22 @@ export function mountBackpackSystem({
   getActor = () => null,
   dispatchItems = null,
   isConnected = () => false,
+  getContextKey = () => getSnapshot()?._contextKey||getSnapshot()?.worldId||'',
+  getStorageScope = getContextKey,
+  allowLegacyMigration = () => false,
   onMessage = () => {},
   localSound = null,
   fx = null,
 } = {}) {
-  const storage = (() => { try { return globalThis.localStorage; } catch { return null; } })();
-  let state = loadItemState(storage, Date.now());
+  const disk = (() => { try { return globalThis.localStorage; } catch { return null; } })();
+  let storage=companionStorage(disk,'pending'),contextKey=null;
+  let state = loadItemState(null, Date.now());
+  const sendItems=dispatchItems;
+  if(sendItems)dispatchItems=async(...args)=>{
+    const context=getContextKey();
+    try{const result=await sendItems(...args);if(context!==getContextKey())throw Error('WORLD_CONTEXT_CHANGED');return result;}
+    catch(error){if(context!==getContextKey())throw Error('WORLD_CONTEXT_CHANGED');throw error;}
+  };
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const groundLayer = new THREE.Group();
@@ -415,17 +426,30 @@ export function mountBackpackSystem({
   let importAttempted = false;
   let importBlocked = false;
 
+  function resetContext(){
+    const next=getContextKey();if(next===contextKey)return;
+    contextKey=next;
+    storage=companionStorage(disk,getStorageScope(),{allowLegacy:allowLegacyMigration()});
+    state=loadItemState(storage,Date.now());
+    importAttempted=false;importBlocked=false;appliedServerItems=null;migrationGround=null;migrationOwner=null;
+    for(const id of [...meshes.keys()])removeGroundMesh(id);
+    compostPositionKey='';lastLabelKey='';lastCompostTick=0;selectedItemId='poop';selectedEmpty=false;
+    drag=null;dragGhost?.remove();dragGhost=null;document.body.classList.remove('bag-dragging');
+    close();closeCompost();updateBadge();
+  }
+
   function importItems() {
     const id = actorId();
     if (!dispatchItems || !isConnected() || !id || importAttempted) return;
     importAttempted = true;
+    const requestContext=getContextKey();
     void dispatchItems('item.import', {actorId: id, state}, {refresh: true})
       .catch(error => {
-        importAttempted = false;
+        if(requestContext!==getContextKey()||error.message==='WORLD_CONTEXT_CHANGED')return;
         if (error.message === 'LEGACY_GROUND_FULL') {
           importBlocked = true;
           onMessage('地面物品满了，先捡走几件再迁移旧背包');
-        }
+        }else{const message=companionErrorText(error);if(message)onMessage(message);}
       });
   }
 
@@ -442,6 +466,7 @@ export function mountBackpackSystem({
   }
 
   function syncServerItems() {
+    if(!isConnected())return;
     const id = actorId();
     if (!id) return;
     const owner = getSnapshot()?.items?.owners?.[id];
@@ -470,9 +495,9 @@ export function mountBackpackSystem({
       if (compostDialog.open) renderCompost();
     }
     if (importBlocked) {
-      const serverIds = new Set(migrationGround.map(item => item.id));
+      const serverIds = new Set((migrationGround||[]).map(item => item.id));
       const incoming = state.groundItems.filter(item => !serverIds.has(item.id)).length;
-      if (migrationGround.length + incoming > GROUND_ITEM_CAP) return;
+      if ((migrationGround?.length||0) + incoming > GROUND_ITEM_CAP) return;
       importBlocked = false;
       importAttempted = false;
     }
@@ -689,6 +714,7 @@ export function mountBackpackSystem({
     const id = actorId();
     if (!dispatchItems || !isConnected() || !id) return false;
     void dispatchItems('item.poop', {actorId: id, sceneId, position: point}).catch(error => {
+      if(error.message==='WORLD_CONTEXT_CHANGED')return;
       if (!silent) onMessage(error.message === 'GROUND_FULL' ? '院子里便便太多了，先捡一些' : '便便生成失败');
     });
     return true;
@@ -708,6 +734,7 @@ export function mountBackpackSystem({
       if (fx) fx.burst(new THREE.Vector3().fromArray(item.position).add(new THREE.Vector3(0, 0.3, 0)), 5);
       onMessage(`捏着鼻子捡起${def.name} ×1`);
     } catch (error) {
+      if(error.message==='WORLD_CONTEXT_CHANGED')return;
       onMessage(error.message === 'INVENTORY_FULL' ? `背包里的${def.name}已经满了` : '捡不起来，靠近一点再试');
     }
   }
@@ -775,6 +802,7 @@ export function mountBackpackSystem({
       onMessage(`${def.name}丢在院子里了`);
       return true;
     } catch (error) {
+      if(error.message==='WORLD_CONTEXT_CHANGED')return;
       onMessage(error.message === 'GROUND_FULL' ? '地上东西太多了，先捡一些吧' : '这里放不下，换个地方试试');
       return false;
     }
@@ -809,6 +837,7 @@ export function mountBackpackSystem({
       localSound?.playAction?.('ui-confirm');
       onMessage('便便放进堆肥箱了，等一会儿就能收肥料');
     } catch (error) {
+      if(error.message==='WORLD_CONTEXT_CHANGED')return;
       const code = error.message;
       onMessage(code === 'NO_POOP' ? '背包里还没有便便' : code === 'COMPOST_BUSY' ? '堆肥箱还在工作，等它完成再放' : '靠近农田边的堆肥箱再试');
     }
@@ -824,6 +853,7 @@ export function mountBackpackSystem({
       if (fx && compost) fx.burst(compost.root.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 8);
       onMessage(`收成了 ${result?.count ?? 1} 份肥料`);
     } catch (error) {
+      if(error.message==='WORLD_CONTEXT_CHANGED')return;
       const code = error.message;
       onMessage(code === 'INVENTORY_FULL' ? '背包里的肥料已经满了' : code === 'COMPOST_NOT_READY' ? '肥料还没好，再等一会儿' : '靠近农田边的堆肥箱再试');
     }
@@ -1047,6 +1077,7 @@ export function mountBackpackSystem({
 
   return {
     update(dt) {
+      resetContext();
       const yard = getSceneId() === YARD_SCENE_ID;
       groundLayer.visible = yard;
       if (compost) compost.root.visible = yard;

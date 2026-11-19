@@ -69,7 +69,7 @@ const STYLE = `
   #action-panel{font-size:12px}
 }`;
 
-export function mountActionPanel({ clips = [], onPlay, onStop, container } = {}) {
+export function mountActionPanel({ clips = [], onPlay, onStop, container, defaultCollapsed = false } = {}) {
   if (typeof document === 'undefined' || !clips.length) return null;
   if (!document.getElementById('action-panel-style')) {
     const style = document.createElement('style');
@@ -87,8 +87,8 @@ export function mountActionPanel({ clips = [], onPlay, onStop, container } = {})
   const body = document.createElement('div');
   body.id = 'action-panel-body';
 
-  let collapsed = false;
-  try { collapsed = localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { /* ignore */ }
+  let collapsed = defaultCollapsed;
+  try { const saved=localStorage.getItem(COLLAPSE_KEY);if(saved!==null)collapsed=saved==='1'; } catch { /* ignore */ }
   root.classList.toggle('collapsed', collapsed);
   head.setAttribute('aria-expanded', String(!collapsed));
   head.addEventListener('click', () => {

@@ -60,6 +60,14 @@ export class RoomEditor {
     this.onChange?.();
     window.addEventListener('online',()=>Object.values(this.contexts).forEach(ctx=>ctx.sync.flush()));
   }
+  resetWorldContext() {
+    clearInterval(this.lockTimer);this.lockTimer=null;
+    for(const ctx of Object.values(this.contexts)){ctx.sync?.dispose?.();ctx.sync=null;ctx.history=[];}
+    this.active=false;this.selected=null;this.outline.visible=false;this.history=[];this.sync=null;
+    this.panel.hidden=true;this.stateBar.hidden=true;this.toggle.setAttribute('aria-pressed','false');
+    this.contexts=this.registry.contexts;this.context=null;
+    this.onToggle?.(false);
+  }
   updateWorldContexts() {
     {
       const all=listCatalog();
@@ -68,7 +76,7 @@ export class RoomEditor {
       const localCapped=Object.keys(FURNITURE).filter(t=>t.startsWith('pf-')).slice(0,60);
       FURNITURE_CATEGORIES['全部']=builtin.concat(localCapped);
     }
-    for(const ctx of Object.values(this.contexts))if(!ctx.sync){ctx.defaults=ctx.group.children.filter(o=>o.userData.furnitureType).map(o=>({entityId:o.userData.entityId,type:o.userData.furnitureType,position:o.position.toArray(),rotation:o.rotation.y,scale:o.scale.toArray()}));ctx.history=[];ctx.loading=false;ctx.sync=new WorldLayoutSync({client:this.worldClient,registry:this.registry,sceneId:ctx.sceneId,preserveDraftOnError:true,notify:message=>{ctx.message=message;if(this.context===ctx){this.syncMessage=message;this.refreshState();}},onRollback:()=>this.select(null),onIdentities:ids=>{for(const object of ctx.group.children){const id=ids[object.userData.draftId];if(id)object.userData.entityId=id;}}});try{if(localStorage.getItem(ctx.sync.key)||localStorage.getItem(ctx.sceneId==='bedroom'?STORAGE:`dafeiyu-${ctx.sceneId}-layout-v1`))ctx.message='发现本机旧布局/草稿 · 仅备份，未覆盖世界';}catch{}}
+    for(const ctx of Object.values(this.contexts))if(!ctx.sync){ctx.storageKey=null;ctx.defaults=ctx.group.children.filter(o=>o.userData.furnitureType).map(o=>({entityId:o.userData.entityId,type:o.userData.furnitureType,position:o.position.toArray(),rotation:o.rotation.y,scale:o.scale.toArray()}));ctx.history=[];ctx.loading=false;ctx.sync=new WorldLayoutSync({client:this.worldClient,registry:this.registry,sceneId:ctx.sceneId,preserveDraftOnError:true,notify:message=>{ctx.message=message;if(this.context===ctx){this.syncMessage=message;this.refreshState();}},onRollback:()=>this.select(null),onIdentities:ids=>{for(const object of ctx.group.children){const id=ids[object.userData.draftId];if(id)object.userData.entityId=id;}}});ctx.storageKey=ctx.sync.key;try{if(localStorage.getItem(ctx.sync.key)||localStorage.getItem(ctx.sceneId==='bedroom'?STORAGE:`dafeiyu-${ctx.sceneId}-layout-v1`))ctx.message='发现本机旧布局/草稿 · 仅备份，未覆盖世界';}catch{}}
     if(this.context)this.setContext(this.context.sceneId);
   }
   setContext(key) {
@@ -115,7 +123,7 @@ export class RoomEditor {
   save() {
     this.onChange?.();
     this.sync?.enqueue(this.snapshot());
-    try { localStorage.setItem(this.context?.storageKey || STORAGE,JSON.stringify(this.snapshot())); this.status.textContent=this.worldClient?'编辑草稿已备份 · 正在提交世界校验':'布局已保存在本机 · 拖动移动，滚轮旋转家具 · 右键打开菜单'; }
+    try { if(!this.worldClient)localStorage.setItem(this.context?.storageKey || STORAGE,JSON.stringify(this.snapshot())); this.status.textContent=this.worldClient?'编辑草稿已备份 · 正在提交世界校验':'布局已保存在本机 · 拖动移动，滚轮旋转家具 · 右键打开菜单'; }
     catch { this.status.textContent='浏览器无法保存，请导出布局备份。'; }
   }
   buildUI() {
@@ -126,7 +134,7 @@ export class RoomEditor {
       .room-edit-state{position:fixed;left:50%;bottom:94px;transform:translateX(-50%);z-index:38;width:max-content;max-width:90vw;box-sizing:border-box;padding:10px 16px;border-radius:14px;background:#faf1e5f2;color:#51454a;box-shadow:0 6px 24px #0004;font:13px system-ui;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
       .room-edit-state button{cursor:pointer;border:1px solid #bfae9d;border-radius:9px;padding:7px 10px;background:#fff9ee;color:#51454a}.room-edit-state small{display:block;margin-top:4px}
       .room-edit-toggle{position:fixed;right:calc(max(24px,env(safe-area-inset-right)) + 54px);top:max(24px,env(safe-area-inset-top));z-index:35}
-      #actions .room-edit-toggle{position:static}
+      #actions .room-edit-toggle,.harbor-dock .room-edit-toggle{position:static;right:auto;top:auto}
       .room-edit-panel{position:fixed;top:78px;left:50%;transform:translateX(-50%);width:min(820px,94vw);z-index:36;background:#faf1e5f5;color:#453b40;border:1px solid #fff9;border-radius:20px;padding:14px;box-shadow:0 12px 40px #0004;font:14px system-ui}
       @media (max-width:520px){.room-edit-panel{top:max(114px,calc(env(safe-area-inset-top) + 96px))}}
       .room-edit-state[hidden],.room-edit-panel[hidden],.room-edit-menu[hidden]{display:none}
@@ -283,6 +291,7 @@ export class RoomEditor {
     return new Promise(resolve=>{const finish=value=>{dialog.close();dialog.remove();resolve(value);};input.oninput=()=>{confirm.disabled=input.value.trim()!=='恢复默认';};confirm.onclick=()=>{if(input.value.trim()==='恢复默认')finish(true);};cancel.onclick=()=>finish(false);dialog.addEventListener('cancel',event=>{event.preventDefault();finish(false);});dialog.showModal();cancel.focus();});
   }
   async setActive(value) {
+    if(value&&(this.worldClient?.readOnly||this.registry?.scenes.get(this.context?.sceneId)?.template.readOnly))return;
     if(this.worldClient&&!value){this.finishDrag();this.save();await this.sync.flush();if(this.sync.pending){if(!this.sync.error)this.syncMessage='正在保存，请稍候再完成布置';this.refreshState();return;}}
     if(this.worldClient){try{await this.worldClient.dispatch({kind:'build.editLock',payload:{sceneId:this.context.sceneId,locked:value}});if(value){await this.worldClient.dispatch({kind:'control.takeover',payload:{actorId:this.worldClient.snapshot.actors[0].actorId}});this.lockTimer=setInterval(()=>this.worldClient.dispatch({kind:'build.editLock',payload:{sceneId:this.context.sceneId,locked:true}}).catch(()=>this.setActive(false)),30000);}else{clearInterval(this.lockTimer);await this.sync.flush();}}catch(error){this.status.textContent=`无法切换编辑：${error.message}`;return;}}
     this.active=value;this.panelCollapsed=false;this.menu.hidden=true;

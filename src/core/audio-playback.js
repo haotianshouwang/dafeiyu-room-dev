@@ -8,13 +8,14 @@ export class AudioPlayer {
  dispose(){clearInterval(this.timer);this.cancel();}
 }
 export function mountAudioPlayer(client,localSound,button){
- const player=new AudioPlayer({api:(...args)=>client.api(...args)});
- const setEnabled=enabled=>{button.textContent=enabled?'静音':'开启声音';localSound?.setEnabled(enabled);void player.setEnabled(enabled);};
+ const player=client?new AudioPlayer({api:(...args)=>client.api(...args)}):null;
+ let enabled=false;
+ const setEnabled=value=>{enabled=value;button.textContent=enabled?'静音':'开启声音';localSound?.setEnabled(enabled);void player?.setEnabled(enabled);};
  button.disabled=false;
- button.onclick=()=>setEnabled(!player.enabled);
+ button.onclick=()=>setEnabled(!enabled);
  // Retry blocked autoplay in a user gesture, without overriding a manual mute.
- const resume=()=>{if(player.enabled)localSound?.resume();};
+ const resume=()=>{if(enabled)localSound?.resume();};
  window.addEventListener('pointerdown',resume);window.addEventListener('keydown',resume);
- setEnabled(true);player.start();
- window.addEventListener('pagehide',()=>{window.removeEventListener('pointerdown',resume);window.removeEventListener('keydown',resume);player.dispose();localSound?.dispose();},{once:true});return player;
+ setEnabled(true);player?.start();
+ window.addEventListener('pagehide',()=>{window.removeEventListener('pointerdown',resume);window.removeEventListener('keydown',resume);player?.dispose();localSound?.dispose();},{once:true});return player;
 }

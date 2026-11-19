@@ -29,6 +29,7 @@ let serverIssuer = '';
 let settings = {};
 let settingsFile = '';
 let closing = false;
+const communityApiOrigin = process.env.DAFEIYU_COMMUNITY_API_ORIGIN || 'https://dsh.xn--n6qv0quslfsn.top';
 
 // DAFEIYU_EMBEDDED=1 用于在未打包时验证内嵌服务（构建产物 + 现有数据目录）
 const isPackaged = app.isPackaged || process.env.DAFEIYU_EMBEDDED === '1';
@@ -141,6 +142,7 @@ async function startServer() {
   const instance = await buildServer({
     serveStatic: true,
     worldMode: true,
+    communityApiOrigin,
     databasePath: paths.databasePath,
     localAssetDir: paths.localAssetDir,
     logger: false,

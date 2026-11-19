@@ -36,6 +36,8 @@ const desktopSources=new Set([
 export function blockedPublicFile(file){
  const p=file.replaceAll('\\','/');
  if(approved.has(p))return false;
+ // This checked-in template contains only blank credentials and localhost URLs.
+ if(p==='.env.example')return false;
  if(p.startsWith('resources/polyfork/'))return !polyforkFiles.has(p);
  if(p==='.npmrc')return true;
  if(p.startsWith('public/tidewater/')||p.startsWith('dist/tidewater/')){
@@ -86,7 +88,7 @@ function assertBundleTree(root){
 export function checkPublic(){
  for(const entry of audioManifest.files){if(!/^resources\/audio\/(?:[a-z0-9-]+\.mp3|action-[a-z0-9-]+\.wav)$/.test(entry.path)||createHash('sha256').update(fs.readFileSync(entry.path)).digest('hex')!==entry.sha256)throw Error('Invalid approved audio: '+entry.path);}
  for(const entry of manifest.files){
-  if(!/^resources\/character\/models\/[^/]+\.glb$/.test(entry.path)||/(before-author|secrets?|tokens?|credentials?)/i.test(entry.path))throw Error('Invalid approved resource: '+entry.path);
+  if(!/^resources\/character\/models\/[^/]+\.glb(?:\.gz)?$/.test(entry.path)||/(before-author|secrets?|tokens?|credentials?)/i.test(entry.path))throw Error('Invalid approved resource: '+entry.path);
   if(createHash('sha256').update(fs.readFileSync(entry.path)).digest('hex')!==entry.sha256)throw Error('Resource digest mismatch: '+entry.path);
  }
  for(const entry of polyforkManifest.assets){
@@ -127,13 +129,18 @@ export function checkPublic(){
    if(rel!=='manifest.json'&&!petalwakeFiles.has(rel))throw Error('Unlisted Petalwake file: '+file);
   }
  }
- for(const file of walk('dist')){
+  for(const sourcePath of walk('dist')){
+   const file=sourcePath.replaceAll('\\','/');
   if(path.basename(file)==='.DS_Store')throw Error('Finder metadata in build: '+file);
   if(file.startsWith('dist/tidewater/')||file.startsWith('dist/petalwake/'))continue; // validated against the bundle manifests above
   // Vite's generated assets directory is expected; inspect its contents, not the directory name.
   const relative=file.replace(/^dist\//,'');
   const entry=approved.get(relative);
-  if(polyforkFiles.has(relative))throw Error('Server-only asset copied into web build: '+file);
+  if(polyforkFiles.has(relative)){
+   const source=path.join('resources/polyfork',relative.slice('resources/polyfork/'.length));
+   if(createHash('sha256').update(fs.readFileSync(file)).digest('hex')!==createHash('sha256').update(fs.readFileSync(source)).digest('hex'))throw Error('Unexpected public polyfork resource: '+file);
+   continue;
+  }
   if(entry){if(!entry.runtime||createHash('sha256').update(fs.readFileSync(file)).digest('hex')!==entry.sha256)throw Error('Unexpected build resource: '+file);continue;}
   if(blockedPublicFile(file.replace(/^dist\/assets\//,'dist/'))||file.includes('/characters/'))throw Error('Private build asset: '+file);
   if(/\.(json)$/.test(file)&&/\"type\"\s*:\s*\"town-/.test(fs.readFileSync(file,'utf8')))throw Error('Local layout in build: '+file);

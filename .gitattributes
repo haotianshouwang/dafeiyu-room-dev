@@ -1,0 +1,3 @@
+# Vendored bundle manifests hash exact file bytes; preserve their LF endings.
+public/tidewater/** text=auto eol=lf
+public/petalwake/** text=auto eol=lf

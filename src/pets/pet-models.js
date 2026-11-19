@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import baizeConfig from './definitions/baize.json';
 import fishBowlConfig from './definitions/fish-bowl.json';
+import {petAssetUrl} from './pet-asset-url.js';
 
 // 每个宠物模型一个配置文件：动作槽 + 模型地址/缩放 + 默认模式。
 export const PET_MODELS = [baizeConfig, fishBowlConfig];
@@ -25,12 +26,13 @@ function inPlaceClip(clip, hips) {
 
 /** 载入模型（可附带只提供动画的 GLB，例如把 base.glb 的动作合到 PBR 模型上）。 */
 export async function loadPetModelAsset(config) {
-  if (assetCache.has(config.modelId)) return assetCache.get(config.modelId);
+  const url=petAssetUrl(config.url),cacheKey=config.modelId+':'+url;
+  if (assetCache.has(cacheKey)) return assetCache.get(cacheKey);
   const promise = (async () => {
     const loader = new GLTFLoader();
-    const primary = await loader.loadAsync(config.url);
+    const primary = await loader.loadAsync(url);
     const extras = config.animationUrls?.length
-      ? await Promise.all(config.animationUrls.map(url => loader.loadAsync(url).catch(() => null)))
+      ? await Promise.all(config.animationUrls.map(url => loader.loadAsync(petAssetUrl(url)).catch(() => null)))
       : [];
     const clips = new Map();
     for (const clip of [...primary.animations, ...extras.flatMap(gltf => gltf?.animations ?? [])]) {
@@ -38,13 +40,13 @@ export async function loadPetModelAsset(config) {
     }
     return { scene: primary.scene, animations: [...clips.values()] };
   })();
-  assetCache.set(config.modelId, promise);
+  assetCache.set(cacheKey, promise);
   try {
     const asset = await promise;
-    assetCache.set(config.modelId, asset);
+    assetCache.set(cacheKey, asset);
     return asset;
   } catch (error) {
-    assetCache.delete(config.modelId);
+    assetCache.delete(cacheKey);
     throw error;
   }
 }

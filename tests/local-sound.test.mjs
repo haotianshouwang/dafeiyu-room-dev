@@ -1,4 +1,22 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {LocalSound} from '../src/core/local-sound.js';
+test('all bundled audio follows the game entry base path in community and local builds',()=>{
+ class Audio{constructor(url){this.url=url;this.paused=true;}play(){this.paused=false;return Promise.resolve();}pause(){this.paused=true;}}
+ for(const baseURI of ['https://example.test/game/','http://127.0.0.1:5200/?character=whale']){
+  const sound=new LocalSound({AudioClass:Audio,baseURI});
+  sound.setEnabled(true);sound.setMusic('city');sound.play('feed');sound.playMealReaction('rice');sound.playAction('kick');
+  const prefix=new URL('resources/audio/',baseURI).href;
+  for(const audio of [sound.music,sound.voice,...sound.actionAudio.values(),...sound.voiceAudio.values()])assert.ok(audio.url.startsWith(prefix),audio.url);
+  assert.ok(sound.actionAudio.size>20,'checks the preloaded effects as well as the active sounds');
+  assert.equal(sound.actionClip('kick-whoosh').paused,false);
+  sound.dispose();assert.equal(sound.music.paused,true);
+ }
+});
+test('deferred startup leaves bulk audio until the character is ready',()=>{
+ class Audio{constructor(url){this.url=url;this.paused=true;}play(){this.paused=false;return Promise.resolve();}pause(){this.paused=true;}}
+ const sound=new LocalSound({AudioClass:Audio,deferPreload:true});sound.setEnabled(true);
+ assert.equal(sound.actionAudio.size,0);assert.equal(sound.voiceAudio.size,0);
+ sound.preload();assert.ok(sound.actionAudio.size>20);assert.ok(sound.voiceAudio.size>=4);sound.dispose();
+});
 test('sound requires opt-in, music loops, action speech replaces previous and mute stops both',()=>{class Audio{constructor(url){this.url=url;}play(){this.played=true;return Promise.resolve();}pause(){this.paused=true;}}const s=new LocalSound({AudioClass:Audio});s.play('eat');assert.equal(s.voice,undefined);s.setEnabled(true);assert.equal(s.music.loop,true);assert.equal(s.music.played,true);s.play('eat');assert.match(s.voice.url,/feed.mp3$/);const old=s.voice;s.play('sleep');assert.equal(old.paused,true);assert.match(s.voice.url,/sleep.mp3$/);s.setEnabled(false);assert.equal(s.music.paused,true);assert.equal(s.voice.paused,true);});
 
 test('pool speech is reserved for actual transformation, not swim or slide commands',()=>{class Audio{constructor(url){this.url=url;}play(){return Promise.resolve();}pause(){}}const s=new LocalSound({AudioClass:Audio});s.setEnabled(true);s.play('slide');s.play('swim');assert.equal(s.voice,undefined);s.play('pool');assert.match(s.voice.url,/pool.mp3$/);});

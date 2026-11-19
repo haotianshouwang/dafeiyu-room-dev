@@ -9,7 +9,7 @@ const isSocketFailure=error=>['SOCKET_CLOSED','SOCKET_TIMEOUT'].includes(error.m
 export class WorldClient {
   constructor({request=globalThis.fetch?.bind(globalThis),csrfToken='',pollMs=200,prepareSnapshot=async()=>{},transport=TRANSPORT_AUTO,socketUrl=null}={}) {
     Object.assign(this,{request,csrfToken,pollMs,prepareSnapshot,transport,socketUrl});
-    this.readVersion=0;this.appliedVersion=0;this.cursor=0;
+    this.contextVersion=0;this.readOnly=false;this.readVersion=0;this.appliedVersion=0;this.cursor=0;
     this.listeners=new Set();this.snapshotListeners=new Set();this.statusListeners=new Set();
     this.disposed=false;
     this.socket=null;this.socketReady=false;this.socketPending=new Map();this.socketRetry=0;this.socketTimer=null;this.httpFallback=false;
@@ -23,10 +23,11 @@ export class WorldClient {
   onEvent(fn){this.listeners.add(fn);return()=>this.listeners.delete(fn);}
   onSnapshot(fn){this.snapshotListeners.add(fn);return()=>this.snapshotListeners.delete(fn);}
   onStatus(fn){this.statusListeners.add(fn);return()=>this.statusListeners.delete(fn);}
+  get contextKey(){return JSON.stringify(['local',this.worldId,this.contextVersion]);}
   status(value){if(this.connectionStatus===value)return;this.connectionStatus=value;for(const fn of this.statusListeners)fn(value);}
   async api(path,body,{timeoutMs=5000}={}){const response=await this.request(path,{credentials:'same-origin',...(body?{method:'POST',headers:{'content-type':'application/json','x-csrf-token':this.csrfToken},body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(timeoutMs)});const result=await response.json();if(!response.ok){const error=Object.assign(new Error(result.error?.message||result.message||result.error||`HTTP ${response.status}`),{status:response.status,details:result.error?.details||result.details});throw error;}return result;}
-  async refresh(){const version=++this.readVersion;const snapshot=await this.api(`/api/world/${encodeURIComponent(this.worldId)}/snapshot`);await this.prepareSnapshot(snapshot);if(this.disposed||version<this.appliedVersion)return this.snapshot;this.appliedVersion=version;this.snapshot=snapshot;for(const fn of this.snapshotListeners)fn(snapshot);return snapshot;}
-  async refreshState(){const version=++this.readVersion;const state=await this.api(`/api/world/${encodeURIComponent(this.worldId)}/state`);if(this.disposed||version<this.appliedVersion)return this.snapshot;if(state.layoutRevision!==this.snapshot.layoutRevision||state.topologyRevision!==this.snapshot.topologyRevision)return this.refresh();this.appliedVersion=version;this.snapshot={...this.snapshot,actors:state.actors,actions:state.actions};for(const fn of this.snapshotListeners)fn(this.snapshot);return this.snapshot;}
+  async refresh(){const context=this.contextKey,version=++this.readVersion;const snapshot=await this.api(`/api/world/${encodeURIComponent(this.worldId)}/snapshot`);await this.prepareSnapshot(snapshot);if(this.disposed||context!==this.contextKey||version<this.appliedVersion)return this.snapshot;snapshot._contextKey=this.contextKey;this.appliedVersion=version;this.snapshot=snapshot;for(const fn of this.snapshotListeners)fn(snapshot);return snapshot;}
+  async refreshState(){const context=this.contextKey,version=++this.readVersion;const state=await this.api(`/api/world/${encodeURIComponent(this.worldId)}/state`);if(this.disposed||context!==this.contextKey||version<this.appliedVersion)return this.snapshot;if(state.layoutRevision!==this.snapshot.layoutRevision||state.topologyRevision!==this.snapshot.topologyRevision)return this.refresh();this.appliedVersion=version;this.snapshot={...this.snapshot,actors:state.actors,actions:state.actions};for(const fn of this.snapshotListeners)fn(this.snapshot);return this.snapshot;}
   async connect(worldId){
     this.worldId=worldId;this.disposed=false;
     globalThis.addEventListener?.('online',this.onOnline);
@@ -39,6 +40,14 @@ export class WorldClient {
     if(this.socketSupported())this.scheduleReconnect();
     return this.snapshot;
   }
+  async switchWorld(worldId){
+    this.contextVersion++;this.appliedVersion=++this.readVersion;
+    this.rejectPending(Error('WORLD_CONTEXT_CHANGED'));this.syncing=null;
+    clearTimeout(this.timer);clearTimeout(this.socketTimer);this.timer=null;this.socketTimer=null;
+    const previousSocket=this.socket;this.socket=null;this.socketReady=false;try{previousSocket?.close();}catch{}
+    this.httpFallback=false;this.socketRetry=0;this.cursor=0;this.snapshot=null;this.readOnly=false;this.worldId=worldId;this.disposed=false;
+    return this.connect(worldId);
+  }
   /** 首连直接从最新游标开始，不重放历史事件（快照已经包含完整状态） */
   async skipHistory(){try{const page=await this.api(`/api/world/${encodeURIComponent(this.worldId)}/events?after=latest&limit=1`);this.cursor=Math.max(this.cursor,page.nextCursor||0);}catch{}return this.cursor;}
   async sync(){
@@ -46,33 +55,36 @@ export class WorldClient {
     if(this.syncing)return this.syncing;
     clearTimeout(this.timer);
     this.timer=null;
+    const context=this.contextKey;
     this.syncing=(async()=>{
       try{
         if(!this.snapshot){
           await this.refresh();
+          if(this.disposed||context!==this.contextKey)return;
           if(Number.isSafeInteger(this.snapshot?.cursor))this.cursor=Math.max(this.cursor,this.snapshot.cursor);
         }
         let page;
         do{
           page=await this.api(`/api/world/${encodeURIComponent(this.worldId)}/events?after=${this.cursor}&limit=100`);
-          if(this.disposed||this.socketReady)return;
+          if(this.disposed||context!==this.contextKey||this.socketReady)return;
           if(page.resetRequired||page.cursorExpired){this.cursor=page.nextCursor||0;await this.refresh();break;}
           for(const event of page.events||[]){
             if(event.cursor<=this.cursor)continue;
             if(event.cursor>this.cursor+1)await this.refresh();
-            if(this.disposed||this.socketReady)return;
+            if(this.disposed||context!==this.contextKey||this.socketReady)return;
             this.cursor=event.cursor;
             for(const fn of this.listeners)fn(event);
           }
           this.cursor=Math.max(this.cursor,page.nextCursor||0);
-        }while(page.hasMore&&!this.disposed);
-        if(this.disposed||this.socketReady)return;
+        }while(page.hasMore&&!this.disposed&&context===this.contextKey);
+        if(this.disposed||context!==this.contextKey||this.socketReady)return;
         await this.refreshState();
-        if(!this.disposed)this.status('connected');
+        if(!this.disposed&&context===this.contextKey)this.status('connected');
       }catch(error){
-        if(!this.disposed&&!this.socketReady)this.status(error.status===401?'unauthorized':'offline');
+        if(!this.disposed&&context===this.contextKey&&!this.socketReady)this.status(error.status===401?'unauthorized':'offline');
         throw error;
       }finally{
+        if(context!==this.contextKey)return;
         this.syncing=null;
         if(this.pollMs&&!this.disposed&&!this.socketReady){
           this.timer=setTimeout(()=>this.sync().catch(()=>{}),this.connectionStatus==='connected'?this.pollMs:1500);
@@ -83,12 +95,16 @@ export class WorldClient {
   }
   async dispatch(command,{refresh=true}={}){
     if(!this.worldId)throw Error('WORLD_NOT_CONNECTED');
+    if(this.readOnly&&command.kind.startsWith('build.'))throw Error('VISITOR_READ_ONLY');
+    if(command.worldId&&command.worldId!==this.worldId)throw Error('WORLD_ID_MISMATCH');
+    const context=this.contextKey,check=()=>{if(context!==this.contextKey)throw Error('WORLD_CONTEXT_CHANGED');};
     const complete={...command,worldId:this.worldId,requestId:command.requestId||crypto.randomUUID()};
     if(this.socketReady){
       const ws=this.socket;
       let ack;
       try{ack=await this.socketCall({type:'dispatch',command:complete});}
       catch(error){if(!isSocketFailure(error))throw error;this.onSocketClosed(ws);}
+      check();
       if(ack){
         if(!ack.ok){const error=Object.assign(new Error(ack.error?.message||'COMMAND_FAILED'),{status:ack.error?.code,details:ack.error?.details});throw error;}
         // 驱动方自己的位移通过 ack 回来，不必等广播
@@ -102,13 +118,16 @@ export class WorldClient {
             try{await this.refresh();}catch(failure){this.onRequestFailure(failure);throw failure;}
           }
         }
+        check();
         return ack.result;
       }
       // 通道断在半路：回落 HTTP；requestId 相同，服务端幂等
     }
-    try{
+    check();try{
       const result=await this.api(`/api/world/${encodeURIComponent(this.worldId)}/commands`,complete);
+      check();
       if(refresh)await this.refresh();
+      check();
       return result;
     }catch(error){this.onRequestFailure(error);throw error;}
   }
@@ -185,10 +204,11 @@ export class WorldClient {
   }
   async adoptSnapshot(snapshot,cursor,ws){
     if(!snapshot)return;
-    const version=++this.readVersion;
+    const context=this.contextKey,version=++this.readVersion;
     await this.prepareSnapshot(snapshot);
-    if(this.disposed||(ws&&this.socket!==ws)||version<this.appliedVersion)return;
+    if(this.disposed||context!==this.contextKey||(ws&&this.socket!==ws)||version<this.appliedVersion)return;
     this.appliedVersion=version;
+    snapshot._contextKey=this.contextKey;
     this.snapshot=snapshot;
     if(Number.isSafeInteger(cursor))this.cursor=Math.max(this.cursor,cursor);
     else if(Number.isSafeInteger(snapshot.cursor))this.cursor=Math.max(this.cursor,snapshot.cursor);

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import characterConfig from 'virtual:character-config';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import characterConfig from './character-config.js';
+import { loadCharacterInstance } from './model-assets.js';
 import { damp, clamp } from '../core/anim.js';
 import { resolveCircle } from '../world/nav.js';
 import { ActionSequence, FLYING_KICK, KickSequence } from './kick-sequence.js';
@@ -43,7 +43,7 @@ function stripRootMotion(clip) {
 export class WhaleMaid {
   constructor({
     modelFile = 'Dafeiyu.glb',
-    loadModel = () => characterConfig.modelBase ? new GLTFLoader().loadAsync(characterConfig.modelBase + encodeURIComponent(modelFile)) : Promise.reject(new Error('Character model unavailable')),
+    loadModel = () => characterConfig.modelBase ? loadCharacterInstance(modelFile) : Promise.reject(new Error('Character model unavailable')),
     clipMap = null,
     boneAliases = null,
     modelScale = 1.12,
@@ -79,6 +79,7 @@ export class WhaleMaid {
     this.state = 'idle'; this.stateTime = 0; this.heading = Math.PI / 4;
     this.speed = 0; this.speedMax = .75; this.bounds = null; this.onEffect = null;
     this.actions = {}; this.currentClip = null; this.group.position.copy(this.pos);
+    this.animationRevision = 0;
     this.previewAction = null; this.previewLoop = false; this.previewEnd = null;
     this.kicks = new KickSequence((name, timing) => this.#playPreview(name, { ...timing, loop: false, restart: true, interruptWalking: true }));
     this.punches = new ActionSequence((name, timing) => this.#playPreview(name, { ...timing, loop: false, restart: true, interruptWalking: true }), BOXING_STEPS);
@@ -301,6 +302,7 @@ export class WhaleMaid {
     if (previous && previous !== next) next.crossFadeFrom(previous, fade, false);
     this.activeAction = next;
     this.currentClip = name;
+    this.animationRevision++;
     // 记录淡出中的旧动作，淡出结束后强制 stop，避免多条动画同时跑（bones 互相干扰）
     this.retiring = previous && previous !== next ? { action: previous, until: this.now() + fade * 1000 + 120 } : null;
     return true;
@@ -765,6 +767,19 @@ export class WhaleMaid {
     const restart = this.activeAction === action && action.loop !== THREE.LoopRepeat;
     if (!restart && name === this.currentClip && this.activeAction === action) return;
     this.transitionTo(name, { loop: true, restart });
+  }
+
+  getNetworkAnimation() {
+    const action = this.previewAction || this.activeAction;
+    if (!action) return null;
+    return {
+      clip: action.getClip().name,
+      time: action.time,
+      speed: action.getEffectiveTimeScale() || 1,
+      loop: action.loop === THREE.LoopRepeat,
+      paused: action.paused,
+      revision: this.animationRevision,
+    };
   }
   swimTo(p, { fast = false } = {}) {
     this.target.set(p.x, this.groundY, p.z);

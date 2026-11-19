@@ -27,6 +27,9 @@ import {createSkyDome,FOREST_SUNNY_SKY,setSkyMood} from "./core/fp-sky.js";
 import {contactShadowTexture,tex} from "./core/textures.js";
 import {mountViewToggle} from "./ui/view-toggle.js";
 import {mountActionPanel} from "./ui/action-panel.js";
+import {mountWorldMap} from "./ui/world-map.js";
+import {mountHarborPreview} from "./ui/harbor-preview.js";
+import {createSceneMapRenderer} from "./ui/scene-map-renderer.js";
 import {buildRoom} from "./world/room.js";
 import {buildProps,createFurniture} from "./world/props.js";
 import {buildYard} from "./world/yard.js";
@@ -37,6 +40,22 @@ import {presentActor} from "./core/actor-presentation.js";
 import {PlayerController} from "./core/player-controller.js";
 import {ActorTimeline} from "./core/actor-timeline.js";
 import {WorldClient} from "./core/world-client.js";
+import {LocalAccountWorlds} from "./community/local-account-worlds.js";
+import {BrowserWorldClient,createStarterSnapshot} from "./community/browser-world-client.js";
+import {CommunityRealtimeClient} from "./community/realtime-client.js";
+import {CommunityPresenceLayer} from "./community/presence-layer.js";
+import {ensureCommunityLogin} from "./community/auth-gate.js";
+import {CommunityApiClient} from "./community/api-client.js";
+import {resolveCommunityApiBase} from "./community/server-config.js";
+import {resolveGameRuntime} from "./community/runtime-policy.js";
+import {playSession,readOnlinePreference,onlinePreferenceKey as accountOnlinePreferenceKey} from "./community/play-session.js";
+import {CloudSyncManager} from "./community/sync.js";
+import {installStructuredAutoSync} from "./community/auto-sync.js";
+import {cloudLayoutFromStructuredObjects} from "./community/structured-sync.js";
+import {mergePrivateLayoutWithPublic,privateCloudSnapshot} from "./community/private-layout.js";
+import {applyCloudLayout,decodeCloudLayout,encodeCloudLayout} from "../shared/world/cloud-layout.js";
+import {PUBLIC_LOBBY_SCENE_ID} from "../shared/world/public-lobby.js";
+import {CommunityPanel} from "./ui/community-panel.js";
 import {ownerSession} from "./ui/owner-session.js";
 import {AgentConnect} from "./ui/agent-connect.js";
 import {mountSettings} from "./ui/settings.js";
@@ -115,7 +134,9 @@ const registry=new SceneRegistry({scene,createFurniture,lazy:true,legacy:{
  living:()=>{const c=buildLiving();return {root:c.group,furniture:c.group,view:c.view,update:c.update};},
  yard:()=>{yard=buildYard();return {root:yard.group,furniture:yard.group,view:yard.view,update:yard.update,refreshLandscape:yard.refreshLandscape};}
 }});
-const requested=new URLSearchParams(location.search).get('character');
+// Character overrides are a developer tool. Old test links must use the same
+// land character as other players; swimming is selected by the world state.
+const requested=new URLSearchParams(location.search).get('debugCharacter');
 const mode=requested==='whale'||!characterConfig.modelBase?'whale':characterConfig.defaultCharacter;
 const DAFEIYU_PRESET={
   modelFile:'Dafeiyu.glb',
@@ -135,7 +156,7 @@ let whale=original;const blob=new Whale();blob.group.visible=false;scene.add(ori
  registry.pool.retain(original.group);
  if(original.eyeHeight)fp.eyeHeight=original.eyeHeight;
  const clips=original.listClips?.()||[];
- if(clips.length)actionPanel=mountActionPanel({clips,container:leftRail,onPlay:async(name)=>{
+ if(clips.length)actionPanel=mountActionPanel({clips,container:leftRail,defaultCollapsed:true,onPlay:async(name)=>{
   if(whale!==original){showMessage('变回人形才能做这个动作');return false;}
   if(original.externalMotion?.jumping||crawling||performance.now()<slideUntil)return false;
   if(original.state==='sit'){
@@ -151,7 +172,7 @@ let whale=original;const blob=new Whale();blob.group.visible=false;scene.add(ori
   return started;
  },onStop:()=>{travelAction=null;original.stopPreview();}});
 });registry.pool.retain(blob.group);original.group.scale.setScalar(1.28);blob.group.scale.setScalar(1.28);
-original.ready?.catch(()=>showMessage('角色模型加载失败，可使用 ?character=whale 查看默认鲸鱼'));
+original.ready?.catch(()=>showMessage('角色模型加载失败，可使用 ?debugCharacter=whale 查看默认鲸鱼'));
 const fx=new FX(scene),hud=new HUD(),game=new Interactions({scene,camera,iso,whale,fx,props,hud,lights});
 game.onWalkPortal=target=>{const sceneId=target==='room'?'bedroom':target;if(!sceneId||sceneId===actor?.sceneId)return;void teleportToScene(sceneId);};
 // 入水第一次会切换成程序化鲸鱼并触发 splash：提前编译鲸鱼/水花材质，避免首帧卡顿。
@@ -182,9 +203,9 @@ function skyMoodFor(cfg){
  if(kind==='outdoor')return {top:'#9dbbd8',horizon:'#e8d4c0',bottom:'#cdb59e'};
  return {top:'#6f6a9e',horizon:'#d9a08f',bottom:'#c98f7c'};
 }
-let fpActive=false,thirdActive=false,currentPose='idle',actionPanel=null;
-const viewToggle=mountViewToggle({canvas:R.renderer.domElement,onToggle:cycleView,onExit:exitView,isActive:()=>fpActive,isBlocked:()=>Boolean(editor?.active||editor?.resetPending||game.editing||settings.isOpen||agentConnect.panel||!worldReady)});
-const localSound=new LocalSound();game.onVoice=kind=>localSound.play(kind);
+let fpActive=false,thirdActive=false,currentPose='idle',actionPanel=null,worldMap=null,harborUI=null;
+const viewToggle=mountViewToggle({canvas:R.renderer.domElement,onToggle:cycleView,onExit:exitView,isActive:()=>fpActive,isBlocked:()=>Boolean(worldMap?.isOpen()||editor?.active||editor?.resetPending||game.editing||settings.isOpen||agentConnect.panel||!worldReady)});
+const localSound=new LocalSound({deferPreload:true});game.onVoice=kind=>localSound.play(kind);
 const confirmClick=()=>localSound.playAction(UI_SOUND.confirm);
 game.onClickSound=confirmClick;
 document.addEventListener('click',event=>{
@@ -196,8 +217,109 @@ document.addEventListener('click',event=>{
  }else if(target.matches?.('dialog.settings-dialog, .agent-connect-backdrop'))confirmClick();
 },true);
 original.onActionSound=cue=>localSound.playAction(cue);
-const transportMode=new URLSearchParams(location.search).get('transport')||'auto';
-const client=new WorldClient({pollMs:100,prepareSnapshot:prepareLocalSnapshot,transport:transportMode}),actorTimeline=new ActorTimeline();let editor=null,activeScene=null,actor=null,lease=null,takeover=null,lastInputAt=0,lastPortalAt=0,portalPending=false;
+const query=new URLSearchParams(location.search),gameRuntime=resolveGameRuntime({pathname:location.pathname,search:location.search}),communityWorld=gameRuntime.communityWorld;
+document.body.classList.add('harbor-ui');
+const localWorldSelectionKey='dafeiyu-local-current-world-v1';
+const selectedLocalWorld=()=>{try{return globalThis.localStorage?.getItem(localWorldSelectionKey)||'default';}catch{return 'default';}};
+const storedOnlineEnabled=()=>readOnlinePreference(globalThis.localStorage,communityApi.baseUrl||location.origin,communityUser?.id);
+const transportMode=query.get('transport')||'auto';
+const client=communityWorld?new BrowserWorldClient({subjectId:'browser-pending',serverId:location.origin}):new WorldClient({pollMs:100,prepareSnapshot:prepareLocalSnapshot,transport:transportMode}),actorTimeline=new ActorTimeline();let editor=null,activeScene=null,actor=null,lease=null,takeover=null,lastInputAt=0,lastPortalAt=0,portalPending=false,realtime=null,presenceLayer=null,communityUser=null,onlineEnabled=false,activeVisit=null;const nearbyMessages=[];
+const dispatchWorldCommand=client.dispatch.bind(client);
+client.dispatch=(command,options)=>{
+ if(command.kind==='actor.input'?command.payload?.frames?.some(frame=>frame.dtMs>0):['actor.teleport','action.submit','action.cancel','control.takeover'].includes(command.kind))realtime?.markActivity();
+ return dispatchWorldCommand(command,options);
+};
+let accountChanging=false,accountTransitionVersion=0,accountTransition=Promise.resolve();
+const communityApiBase=resolveCommunityApiBase({explicitBase:query.get('community_api'),runtimeBase:globalThis.__DAFEIYU_COMMUNITY_API_BASE__});
+const communityApi=new CommunityApiClient({baseUrl:communityApiBase,onSessionExpired:()=>{
+ void handleCommunityAuth(false).catch(error=>showMessage(error.message));
+}});
+const localPackage=communityWorld?{
+ canImportLegacy:false,
+ async export({worldId='default',worldName}={}){localPackage.assertWritable();return encodeCloudLayout(privateCloudSnapshot(client.snapshot),{worldName:worldName||client.snapshot.worldName||worldId});},
+ async applyLayout({layout,worldId,expectedLayout}){
+  localPackage.assertWritable();
+  if(client.snapshot.layoutRevision!==expectedLayout.layout_revision||client.snapshot.topologyRevision!==expectedLayout.topology_revision)throw Error('同步期间本机布局已变化，修改已保留，请重试');
+  const current=client.snapshot;
+  const merged=mergePrivateLayoutWithPublic(layout,current);
+  if(JSON.stringify([current.scenes,current.entities,current.portals])===JSON.stringify([merged.scenes,merged.entities,merged.portals]))return;
+  const next=applyCloudLayout(current,merged,{worldId});
+  next.layoutRevision=current.layoutRevision+1;next.topologyRevision=current.topologyRevision+1;
+  next.actors=next.actors.map(actor=>({...actor,controller:current.actors.find(item=>item.actorId===actor.actorId)?.controller??null}));
+  client.replaceSnapshot(next,{worldId});
+ },
+ async inspect(bytes){if(bytes[0]===80&&bytes[1]===75)return {format:'dfworld'};const layout=decodeCloudLayout(bytes);return {format:layout.format,version:layout.format_version,worldId:layout.world.source_world_id,entities:layout.entities.length,scenes:layout.scenes.length};},
+ async import({bytes,targetWorldId}={}){localPackage.assertWritable();const layout=decodeCloudLayout(bytes);const worldId=targetWorldId||layout.world.source_world_id||'default';const next=applyCloudLayout(client.snapshot,layout,{worldId});client.replaceSnapshot(next,{worldId});return {worldId,revision:next.layoutRevision??0,scenes:next.scenes.length,entities:next.entities.length};}
+}:{
+ canImportLegacy:true,
+ async applyLayout({layout,worldId,expectedLayout}){
+  const contextKey=localPackage.contextKey;localPackage.assertWritable();const session=await ownerSession.read();
+  if(localPackage.contextKey!==contextKey)throw Error('WORLD_CONTEXT_CHANGED');
+  const merged=mergePrivateLayoutWithPublic(layout,client.snapshot);
+  const response=await fetch(`/api/world/${encodeURIComponent(worldId)}/layout/sync`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-csrf-token':session.csrfToken},body:JSON.stringify({layout:merged,expected_layout_revision:expectedLayout.layout_revision,expected_topology_revision:expectedLayout.topology_revision})});
+  const data=await response.json();if(!response.ok){const code=typeof data.error==='object'?data.error?.code:data.error;const details=data.error?.details??data.details;throw Object.assign(Error(layoutErrorText(code||'CLOUD_LAYOUT_FAILED',details)),{code,details});}if(localPackage.contextKey!==contextKey)throw Error('WORLD_CONTEXT_CHANGED');await client.refresh();return data;
+ },
+ async export({worldId='default',worldName}={}){localPackage.assertWritable();const encoded=encodeCloudLayout(privateCloudSnapshot(client.snapshot),{worldName:worldName||client.snapshot.worldName||worldId});return encoded;},
+ async import({bytes,targetWorldId,freshPlayer=false,visitor=false}={}){
+  const contextKey=localPackage.contextKey,identityVersion=communityApi.identityVersion;
+  if(visitor&&accountChanging)throw Error('WORLD_CONTEXT_CHANGED');
+  if(!visitor&&!freshPlayer)localPackage.assertWritable();
+  const check=()=>{if(contextKey!==localPackage.contextKey||identityVersion!==communityApi.identityVersion)throw Error('WORLD_CONTEXT_CHANGED');};
+  const session=await ownerSession.read();check();
+  const worldId=targetWorldId||`local-cloud-${Date.now()}`,legacy=bytes[0]===80&&bytes[1]===75;
+  const url=`/api/world/${encodeURIComponent(client.worldId||'default')}/${legacy?'package':'layout'}/import?target_world_id=${encodeURIComponent(worldId)}${freshPlayer?'&fresh_player=1':''}`;
+  let payload=bytes;
+  if(!legacy){const remote=decodeCloudLayout(bytes);payload=new TextEncoder().encode(JSON.stringify(mergePrivateLayoutWithPublic(remote,client.snapshot)));}
+  const response=await fetch(url,{method:'POST',credentials:'same-origin',headers:{'content-type':legacy?'application/x-dfworld':'application/json','x-csrf-token':session.csrfToken},body:payload});
+  let data;try{data=await response.json();}catch{data=null;}
+  if(!response.ok)throw Error(data?.error||`本地布局导入失败：${response.status}`);check();
+  const accountVersion=accountTransitionVersion;await client.switchWorld(worldId);
+  if(identityVersion!==communityApi.identityVersion||accountVersion!==accountTransitionVersion||client.worldId!==worldId)throw Error('WORLD_CONTEXT_CHANGED');
+  try{accountWorlds.remember(worldId);}catch{}return data;
+ }
+};
+Object.defineProperty(localPackage,'contextKey',{get:()=>JSON.stringify([client.contextKey,accountTransitionVersion])});
+localPackage.assertWritable=()=>{if(accountChanging)throw Error('正在切换社区账号，请稍后再同步');if(activeVisit||client.readOnly)throw Error('访问好友私宅时不能同步自己的云存档，请先返回自己的世界');};
+const accountWorlds=new LocalAccountWorlds({client,createWorld:worldId=>localPackage.import({bytes:encodeCloudLayout(privateCloudSnapshot(createStarterSnapshot())).bytes,targetWorldId:worldId,freshPlayer:true})});
+function handleCommunityAuth(authenticated,user){
+ const targetUser=authenticated?user:null;
+ if(!accountChanging&&communityUser?.id===targetUser?.id&&!activeVisit)return Promise.resolve();
+ const transitionVersion=++accountTransitionVersion,identityVersion=communityApi.identityVersion;
+ accountChanging=true;worldMap?.close();disconnectOnline();communityUser=null;cloudSync.lastStructuredOptions=null;
+ editor?.resetWorldContext();if(editor?.toggle)editor.toggle.disabled=true;
+ const isCurrent=()=>transitionVersion===accountTransitionVersion&&identityVersion===communityApi.identityVersion;
+ const run=async()=>{
+  try{
+   if(!isCurrent())return;
+   if(activeVisit)await leaveInvitedRoom();
+   if(!isCurrent())return;
+   if(!communityWorld)client.readOnly=false;
+   if(!communityWorld&&client.worldId)await accountWorlds.setAccount(targetUser?.id??null,communityApi.baseUrl||location.origin);
+   if(!isCurrent())return;
+   if(communityWorld){
+    client.setSubjectId(targetUser?.id||'browser-pending');
+    if(!targetUser){location.assign('/');return;}
+   }
+   communityUser=targetUser;communityPanel.setUser(targetUser);
+   onlineEnabled=storedOnlineEnabled();communityPanel.setOnline(onlineEnabled);syncOnlineRoom();worldMap?.refresh();
+   if(!communityWorld)showMessage(targetUser?(onlineEnabled?'账号已登录 · 联机已开启':'账号已登录 · 单人游玩，云存档可用'):'已退出账号 · 游客仍可游玩公共区域，联机与云功能已关闭');
+  }finally{
+   if(transitionVersion===accountTransitionVersion){
+    accountChanging=false;
+    if(editor){editor.updateWorldContexts();editor.setContext(activeScene);editor.toggle.disabled=Boolean(client.readOnly||registry.scenes.get(activeScene)?.template.readOnly);}
+   }
+  }
+ };
+ const next=accountTransition.then(run);accountTransition=next.catch(()=>{});return next;
+}
+const cloudSync=new CloudSyncManager({api:communityApi,localPackage,onState:(state,details)=>{window.__communitySyncState=state;if(state==='ERROR'&&details.error)showMessage(`云同步失败：${details.error.message}`);},onProgress:progress=>{window.__communitySyncProgress=progress;}});
+const communityPanel=new CommunityPanel({api:communityApi,sync:cloudSync,localPackage,buttonLabel:communityWorld?'账号':'登录',localWorlds:()=>[{worldId:client.worldId||'default',worldName:communityWorld?'社区浏览器世界':'当前本地世界'}],getOnlineState:()=>onlineEnabled,onOnlineChange:setOnlineEnabled,onJoinRoom:joinInvitedRoom,onLeaveRoom:leaveInvitedRoom,onInviteFriend:inviteFriendHome,onNearbySend:content=>Boolean(realtime?.sendNearby(content)),onAuthChange:handleCommunityAuth});
+communityApi.onIdentityChanged=user=>{void handleCommunityAuth(true,user).catch(error=>showMessage(error.message));};
+const refreshAccountIdentity=()=>{if(communityUser&&!communityApi.authenticationPending)void communityApi.me().catch(()=>{});};
+setInterval(refreshAccountIdentity,15000);
+window.addEventListener('focus',refreshAccountIdentity);
+installStructuredAutoSync({client,sync:cloudSync,api:communityApi});
+if(communityWorld){agentConnect.dispose();const agentSettings=document.getElementById('settings-connect');if(agentSettings)agentSettings.hidden=true;document.title='大肥鱼的房间 · 社区网页版';}
 const keys=new Set(),goal=new THREE.Vector3(),renderPosition=new THREE.Vector3();
 let sprintHeld=false,sprintToggle=false,crawling=false,shiftHintAt=0,frameErrorAt=0,fpLockTimer=0,worldReady=false;
 let diveRequested,swimDepth=0;
@@ -234,6 +356,11 @@ function updateControlStatus(now=performance.now()){
  const inputLease=player.lease?.leaseId===controller?.leaseId?player.lease:null;
  const expiresAt=Math.max(controller?.expiresAt??0,inputLease?.expiresAt??0);
  const remaining=Math.ceil((expiresAt-Date.now())/1000);
+ if(communityWorld){
+  const message=remaining>0?'你正在控制角色 · WASD 继续移动':'浏览器世界已就绪 · WASD 接管移动';
+  if(status.textContent!==message){status.dataset.control=remaining>0?'owner':'available';status.textContent=message;}
+  return;
+ }
  let kind='available',message='控制权空闲，智能体可接管';
  if(remaining>0){
   if(controller.subjectId==='local-owner'){
@@ -338,20 +465,184 @@ function clampThirdCameraToRoom(){
  const y=Math.max(c.y,0.45);
  if(Math.abs(x-c.x)>1e-4||Math.abs(z-c.z)>1e-4||Math.abs(y-c.y)>1e-4){c.set(x,y,z);tp.camera.lookAt(tp._look);}
 }
-client.onStatus(value=>{if(value==='connected'){statusMessageUntil=0;updateControlStatus();}else{keys.clear();player.release();lease=null;showMessage(value==='unauthorized'?'主人会话已失效，请刷新页面重新连接':'世界离线 · 草稿已保留，正在重连');}});
-function showScene(id){const cfg=registry.scenes.get(id);if(!cfg)return;if(activeScene!==id)original.cancelSpellCast?.();activeScene=id;registry.show(id);refreshScenePicker();const street=cfg.data.templateId==='street_corner_v1';scene.background=street?new THREE.Color(0xc9e5ed):cfg.data.templateId==='forest_v1'?new THREE.Color(FOREST_SUNNY_SKY.horizon):(cfg.data.templateId==='coastal_town_v1'||cfg.template.authorSceneId)?new THREE.Color(0xd8e6dd):null;applySceneLighting(cfg.data.templateId);iso.setProfile(cfg.data.templateId);iso.setView(cfg.view.target,cfg.view.zoom);iso.target.copy(iso.homeTarget);iso.zoom=iso.homeZoom;iso.zoomTarget=iso.homeZoom;iso.drag=iso.dragTarget=0;iso.par.set(0,0);iso.parTarget.set(0,0);game.setScene(cfg);whale.bounds=cfg.bounds;whale.colliders=null;if(fpActive){showEnclosure(cfg,true,linkedPortalSlots(id));setSkyMood(skyDome,skyMoodFor(cfg));fp.yaw=actor?.rotation??fp.yaw;}else if(thirdActive){showEnclosure(cfg,true,linkedPortalSlots(id));setSkyMood(skyDome,skyMoodFor(cfg));tp.yaw=actor?.rotation??tp.yaw;}editor?.setContext(id);const loc=document.getElementById('loc');if(loc)loc.textContent=`${cfg.label}`;lastPortalAt=performance.now();}
+client.onStatus(value=>{if(value==='connected'){statusMessageUntil=0;updateControlStatus();}else{keys.clear();player.release();lease=null;showMessage(communityWorld?'社区浏览器世界暂时离线 · 正在重试':value==='unauthorized'?'主人会话已失效，请刷新页面重新连接':'世界离线 · 草稿已保留，正在重连');}});
+function showScene(id){const cfg=registry.scenes.get(id);if(!cfg)return;if(activeScene!==id)original.cancelSpellCast?.();activeScene=id;registry.show(id);presenceLayer?.setLocalScene(id);worldMap?.refresh();const street=cfg.data.templateId==='street_corner_v1';const lobby=cfg.data.templateId==='public_lobby_v1';if(R.bloom)R.bloom.enabled=!lobby;scene.background=street?new THREE.Color(0xc9e5ed):lobby?new THREE.Color(0xa9d4e2):cfg.data.templateId==='forest_v1'?new THREE.Color(FOREST_SUNNY_SKY.horizon):(cfg.data.templateId==='coastal_town_v1'||cfg.template.authorSceneId)?new THREE.Color(0xd8e6dd):null;applySceneLighting(cfg.data.templateId);if(!forestLighting)for(const [key,light]of Object.entries(lights))light.intensity=lightDefaults[key].intensity*(street?({sun:1.1,hemi:1.5,fill:1.15}[key]??0):lobby?({sun:1.25,hemi:1.7,fill:1.2}[key]??0):1);iso.setProfile(cfg.data.templateId);iso.setView(cfg.view.target,cfg.view.zoom);iso.target.copy(iso.homeTarget);iso.zoom=iso.homeZoom;iso.zoomTarget=iso.homeZoom;iso.drag=iso.dragTarget=0;iso.par.set(0,0);iso.parTarget.set(0,0);game.setScene(cfg);whale.bounds=cfg.bounds;whale.colliders=null;if(fpActive){showEnclosure(cfg,true,linkedPortalSlots(id));setSkyMood(skyDome,skyMoodFor(cfg));fp.yaw=actor?.rotation??fp.yaw;}else if(thirdActive){showEnclosure(cfg,true,linkedPortalSlots(id));setSkyMood(skyDome,skyMoodFor(cfg));tp.yaw=actor?.rotation??tp.yaw;}editor?.setContext(id);if(editor?.toggle)editor.toggle.disabled=Boolean(cfg.template.readOnly||client.readOnly||accountChanging);const loc=document.getElementById('loc');if(loc)loc.textContent=communityWorld?`${cfg.label} · ${cfg.template.socialArea==='public'?'公共联机':'私宅'}`:`${cfg.label}`;lastPortalAt=performance.now();syncOnlineRoom();}
+function layoutErrorText(code,details={}){
+ if(code==='OUT_OF_BOUNDS')return `云端家具 ${details.resourceId||''} ${details.entityId?`(${details.entityId})`:''} 超出场景 ${details.sceneId||''} 边界，位置为 ${Array.isArray(details.position)?details.position.join(', '):'未知'}。${details.suggestion||''}`;
+ if(code==='CLOUD_LAYOUT_RESOURCE_MISSING'){
+  const resources=(details.missing_resource_ids||[]).join('、')||'无';
+  const templates=(details.missing_template_ids||[]).join('、')||'无';
+  return `云端布局缺少本机资源：家具 ${resources}；场景模板 ${templates}。请先导入对应本地素材，或撤销这些对象。`;
+ }
+ if(code==='CLOUD_LAYOUT_REVISION_CONFLICT')return '同步期间本机布局已经变化，请重新读取云端布局。';
+ if(code==='CLOUD_LAYOUT_ACTIVE_SCENE_REQUIRED')return '云端布局没有可用的活动房间。';
+ if(code==='CLOUD_LAYOUT_RUNTIME_BLOCKED')return `房间入口或角色位置被家具堵住${details.actorId?`（角色 ${details.actorId}）`:''}。`;
+ return code||'云端布局读取失败';
+}
+function isPublicSocialScene(sceneId){
+ const template=registry.scenes.get(sceneId)?.template;
+ return template?.socialArea==='public';
+}
+function onlineRoomId(){
+ if(activeVisit)return activeVisit.roomId;
+ if(isPublicSocialScene(activeScene))return activeScene===PUBLIC_LOBBY_SCENE_ID?'community-lobby':`public:${activeScene}`;
+ return communityUser?`private-${communityUser.id}`:null;
+}
+function ensureRealtime(){
+ if(!communityUser)return null;
+ if(presenceLayer?.localUserId!==communityUser.id){
+  presenceLayer?.dispose();
+  presenceLayer=new CommunityPresenceLayer({scene,localUserId:communityUser.id,localCharacter:original});
+  presenceLayer.setLocalScene(activeScene);
+ }
+ if(realtime)return realtime;
+realtime=new CommunityRealtimeClient({baseUrl:communityApi.baseUrl||location.origin,roomId:onlineRoomId()||'community-lobby',onAccountPosition:applyAccountPosition,onPlayers:players=>{presenceLayer?.update(players);communityPanel.handleRealtimePlayers(players);},onMessage:message=>communityPanel.handleRealtimeMessage(message),onNearby:chat=>{communityPanel.pushNearbyMessage(chat);harborUI?.pushChat(chat);},onSpellCast:cast=>{if(cast.sceneId===activeScene)spellBar?.playRemoteCast(cast);},onNotification:message=>communityPanel.handleRealtimeNotification(message),onStatus:(state,details)=>{
+  updateSessionUI();
+  if(state==='online'){
+   const inLobby=onlineRoomId()==='community-lobby';
+   showMessage(inLobby?`公共大厅在线 · ${details.count||1} 人 · 附近聊天可用`:isPublicSocialScene(activeScene)?`公共区域在线 · ${details.count||1} 人`:'私宅联机已隔离 · 仅房主与获邀玩家可见');
+  }else if(state==='offline')showMessage('社区联机暂时离线 · 本地游戏继续运行，正在重试');
+  else if(state==='error'){
+   if(details.code==='ROOM_ACCESS_REVOKED'&&activeVisit)void leaveInvitedRoom().catch(error=>showMessage(error.message));
+   else if(details.code==='SESSION_EXPIRED'&&!communityApi.authenticationPending)void communityApi.me().catch(()=>{});
+   showMessage(`社区联机错误：${details.code||'CONNECTION_FAILED'}`);
+  }
+ }});
+ return realtime;
+}
+async function applyAccountPosition(state){
+ if(!communityUser||!onlineEnabled||activeVisit||accountChanging||!actor)return;
+ if(!client.snapshot.scenes.some(entry=>entry.sceneId===state.scene_id&&entry.status==='active')){
+  showMessage('另一端位于本机尚未同步的场景，请先读取云端布局');
+  return;
+ }
+ const context=client.contextKey,connection=realtime,activity=connection?.controlSequence;
+ keys.clear();player.release();lease=null;takeover=null;travelAction=null;
+ original.stopPreview?.();
+ const data={};
+ for(const key of ['scene_id','position','render_position','rotation','pose','moving','sprint','form'])if(state[key]!==undefined)data[key]=state[key];
+ const result=await client.dispatch({kind:'actor.sync',payload:{actorId:actor.actorId,state:data}},{refresh:communityWorld});
+ if(context!==client.contextKey||connection!==realtime||activity!==connection?.controlSequence)return;
+ if(!communityWorld&&result.actor)client.mergeActor(result.actor);
+}
+function connectOnline(){
+ if(!communityUser||!onlineEnabled)return;
+ const connection=ensureRealtime();
+ const nextRoom=onlineRoomId();
+ if(!connection||!nextRoom)return;
+ connection.setRoom(nextRoom,{grantId:activeVisit?.grant?.grant_id||null});
+ if(!connection.socket)connection.connect();
+ presenceLayer?.setLocalScene(activeScene);
+}
+function disconnectOnline(){
+ realtime?.close();realtime=null;
+ presenceLayer?.dispose();
+ presenceLayer=null;
+}
+function syncOnlineRoom(){
+ updateSessionUI();
+ if(!communityUser||!onlineEnabled){disconnectOnline();return;}
+ connectOnline();
+}
+function updateSessionUI(){
+ const cfg=registry.scenes.get(activeScene),loc=document.getElementById('loc');
+ if(cfg&&loc)loc.textContent=cfg.label+(cfg.template.socialArea==='public'?' · 公共区域':'')+(!onlineEnabled?' · 单人游玩':'');
+ worldMap?.refresh();
+}
+async function setOnlineEnabled(enabled){
+ if(enabled&&!communityUser)throw Error('请先登录账号；游客仍可在公共区域单人游玩');
+ onlineEnabled=Boolean(enabled);
+ try{if(communityUser)globalThis.localStorage?.setItem(accountOnlinePreferenceKey(communityApi.baseUrl||location.origin,communityUser.id),String(onlineEnabled));}catch{}
+ communityPanel?.setOnline(onlineEnabled);
+ if(!onlineEnabled){disconnectOnline();if(activeVisit)await leaveInvitedRoom();}
+ syncOnlineRoom();
+ worldMap?.refresh();
+ showMessage(onlineEnabled?'联机已开启 · 公共区域会显示其他玩家和附近聊天':'联机已关闭 · 仍可游玩、使用好友聊天和云存档');
+ return onlineEnabled;
+}
+async function inviteFriendHome(friend){
+ if(!communityUser)throw Error('请先登录');
+ if(!friend?.user_id)throw Error('好友不存在');
+ const world={worldId:client.worldId||'default',worldName:communityWorld?(client.snapshot.worldName||'我的浏览器私宅'):'我的本地私宅'};
+ const synced=await cloudSync.syncStructured({worldId:world.worldId,worldName:world.worldName});
+ const invitation=(await communityApi.createRoomInvitation({
+  invitee_id:friend.user_id,
+  room_id:`private-${communityUser.id}`,
+  resource_id:synced.saveId,
+  permissions:['read','interact'],
+  expires_at_ms:Date.now()+60*60*1000
+ })).data.invitation;
+ showMessage(`已向 ${friend.display_name||friend.user_id} 发送私宅邀请`);
+ return invitation;
+}
+async function joinInvitedRoom({grant}){
+ const identityVersion=communityApi.identityVersion,contextKey=client.contextKey,accountVersion=accountTransitionVersion;
+ const checkAccount=()=>{if(accountChanging||identityVersion!==communityApi.identityVersion||accountVersion!==accountTransitionVersion)throw Error('账号已改变，请重新打开邀请');};
+ const check=()=>{if(identityVersion!==communityApi.identityVersion||contextKey!==client.contextKey)throw Error('账号或房间已改变，请重新打开邀请');};
+ checkAccount();
+ if(!communityUser||!grant?.room_id||!grant.resource_id)throw Error('房间授权无效');
+ if(!onlineEnabled)throw Error('请先开启联机再访问好友私宅');
+ const shared=(await communityApi.sharedRoomLayout({roomId:grant.room_id,resourceId:grant.resource_id})).data;
+ const objects=Object.fromEntries((shared.layout?.objects||[]).map(object=>[`${object.object_type}:${object.object_id}`,object]));
+ const layout=cloudLayoutFromStructuredObjects(objects,{worldId:`visit-${grant.owner_id}`,worldName:'好友私宅',layoutRevision:shared.layout?.server_cursor||0,topologyRevision:0});
+ let ownerName=grant.owner_id;
+ try{ownerName=(await communityApi.playerSearch({userId:grant.owner_id,limit:1})).data.profiles?.[0]?.display_name||ownerName;}catch{}
+ check();
+ const previous=activeVisit?{worldId:activeVisit.worldId,sceneId:activeVisit.sceneId}:{worldId:client.worldId||selectedLocalWorld(),sceneId:activeScene};
+ let nextSnapshot;
+ if(communityWorld){
+  nextSnapshot=applyCloudLayout(client.snapshot,layout,{worldId:`visit-${grant.owner_id}`});
+  nextSnapshot.actors=nextSnapshot.actors.map(item=>({...item,controller:null,input:null,actionId:null,moving:false}));
+  client.enterVisitorSnapshot(nextSnapshot);
+ }else{
+  const targetWorldId=`guest-home-${String(grant.owner_id).replace(/[^\w.-]/g,'_')}-${Date.now()}`;
+  await localPackage.import({bytes:new TextEncoder().encode(JSON.stringify(layout)),targetWorldId,visitor:true});checkAccount();
+  client.readOnly=true;
+  try{accountWorlds.remember(previous.worldId);}catch{}
+  nextSnapshot=client.snapshot;
+ }
+ activeVisit={...previous,roomId:grant.room_id,resourceId:grant.resource_id,ownerId:grant.owner_id,ownerName,grant};
+ communityPanel.setActiveVisit(activeVisit);
+ const visitActor=nextSnapshot.actors?.[0],visitScene=nextSnapshot.scenes?.[0];
+ try{
+  if(visitActor&&visitScene)await client.dispatch({kind:'actor.teleport',payload:{actorId:visitActor.actorId,sceneId:visitScene.sceneId}});
+  checkAccount();
+ }catch(error){if(identityVersion===communityApi.identityVersion&&activeVisit?.grant===grant)await leaveInvitedRoom();throw error;}
+ showScene(visitActor?.sceneId||activeScene);syncOnlineRoom();
+ showMessage(`正在访问 ${ownerName} 的私宅 · 仅有有效邀请的玩家可以进入`);
+ return activeVisit;
+}
+async function leaveInvitedRoom(){
+ if(!activeVisit)return;
+ const previous=activeVisit;
+ activeVisit=null;if(!communityWorld)client.readOnly=false;
+ if(communityWorld){
+  client.leaveVisitorSnapshot();
+  showScene(client.snapshot.actors?.[0]?.sceneId||previous.sceneId);
+ }else{
+  await client.switchWorld(previous.worldId);
+  try{accountWorlds.remember(previous.worldId);}catch{}
+  showScene(client.snapshot.actors?.[0]?.sceneId||previous.sceneId);
+ }
+ communityPanel.setActiveVisit(null);
+ syncOnlineRoom();
+ showMessage('已离开好友私宅，返回自己的世界');
+}
 let activeMeal;
 client.onEvent(({kind,data})=>{
  if(!activeMeal||data?.actionId!==activeMeal.actionId)return;
  if(kind==='action.completed')localSound.playMealReaction(activeMeal.foodId);
  if(['action.completed','action.cancelled','action.failed'].includes(kind))activeMeal=null;
 });
+let renderedContextKey;
 function applyRenderSnapshot(snapshot){
- registry.applySnapshot(snapshot);refreshScenePicker();
+ const changed=renderedContextKey!==client.contextKey;
+ if(changed){renderedContextKey=client.contextKey;keys.clear();player.release();lease=null;takeover=null;activeMeal=null;travelAction=null;actorTimeline.samples=[];original.stopPreview?.();}
+ registry.applySnapshot(snapshot);if(changed)editor?.resetWorldContext();worldMap?.refresh();
  if(editor){const missing=Object.values(registry.contexts).some(c=>!c.sync);if(missing)editor.updateWorldContexts();}
- if(actor&&activeScene!==actor.sceneId){
+ if(actor&&(changed||activeScene!==actor.sceneId)){
   const destination=registry.scenes.get(actor.sceneId);
-  if(activeScene&&destination&&!teleportPending&&!baizeBattle.active&&!actor.battle){
+  if(!changed&&activeScene&&destination&&!teleportPending&&!baizeBattle.active&&!actor.battle){
    localSound.playAction('scene-transition');
    void teleportEffect.reveal(destination.label);
   }
@@ -383,13 +674,16 @@ client.onSnapshot(snapshot=>{
  if(renderActivity.active||!worldReady)applyRenderSnapshot(snapshot);
  worldReady=true;
 });
-async function control(force=false){if(takeover)return takeover;if(!force&&lease&&lease.expiresAt>Date.now()+5000)return lease;takeover=client.dispatch({kind:force||!lease?'control.takeover':'control.renew',payload:force||!lease?{actorId:actor.actorId}:{actorId:actor.actorId,leaseId:lease.leaseId,leaseVersion:lease.leaseVersion}})
-  .catch(error=>{
-   // 续租时发现租约已失效（过期/被接管）：丢掉旧租约，改用 takeover 重新拿一次
-   if(!force&&/LEASE_(INVALID|BUSY)/.test(String(error?.message||error?.status||''))){lease=null;return client.dispatch({kind:'control.takeover',payload:{actorId:actor.actorId}});}
-   throw error;
-  })
-  .then(result=>{lease=result;if(player?.active)player.lease=result;return result;}).finally(()=>takeover=null);return takeover;}
+async function control(force=false){
+ if(takeover)return takeover;if(!force&&lease&&lease.expiresAt>Date.now()+5000)return lease;
+ const contextKey=client.contextKey,actorId=actor.actorId;
+ const check=()=>{if(contextKey!==client.contextKey)throw Error('WORLD_CONTEXT_CHANGED');};
+ const pending=client.dispatch({kind:force||!lease?'control.takeover':'control.renew',payload:force||!lease?{actorId}:{actorId,leaseId:lease.leaseId,leaseVersion:lease.leaseVersion}})
+  .catch(error=>{check();if(!force&&/LEASE_(INVALID|BUSY)/.test(String(error?.message||error?.status||''))){lease=null;return client.dispatch({kind:'control.takeover',payload:{actorId}});}throw error;})
+  .then(result=>{check();lease=result;if(player?.active)player.lease=result;return result;})
+  .finally(()=>{if(takeover===pending)takeover=null;});
+ takeover=pending;return pending;
+}
 const dispatcher=new ActionDispatcher(async(kind,target,{force=false,foodId}={})=>{if(!actor||client.connectionStatus!=='connected')return;try{const token=await control(force);const current=client.snapshot.actors.find(a=>a.actorId===actor.actorId);if(kind!=='cancel'&&current.actionId&&!(kind==='move'&&client.snapshot.actions[current.actionId]?.kind==='move')){await client.dispatch({kind:'action.submit',payload:{actorId:actor.actorId,leaseId:token.leaseId,leaseVersion:token.leaseVersion,kind:'cancel'}});}return await client.dispatch({kind:'action.submit',payload:{actorId:actor.actorId,leaseId:token.leaseId,leaseVersion:token.leaseVersion,kind,...(target?{target}:{}),...(foodId?{foodId}:{})}});}catch(error){showMessage(`操作未执行：${error.message}`);}});
 game.movingGuard=()=>player.held||Boolean(player.sample()?.moving);
 const baizeEncounter=createBaizeEncounter();
@@ -397,10 +691,26 @@ let encounterPending=false,encounterSceneId;
 const player=new PlayerController({onStep:checkBaizeEncounter,takeControl:()=>control(true),send:payload=>client.dispatch({kind:'actor.input',payload},{refresh:false}),onRelease:last=>{if(last)actorTimeline.handoff(last,performance.now());},onError:error=>{baizeEncounter.clearGrass();keys.clear();showMessage(`移动未同步：${error.message}`);}});
 const baizeFollower=createBaizeFollower(scene);
 let backpack=null;
+const companionContext={
+ getContextKey:()=>JSON.stringify([client.contextKey,accountTransitionVersion]),
+ getStorageScope:()=>JSON.stringify([location.origin,communityWorld?'browser':'local',communityWorld?client.subjectId:communityUser?.id||'guest',client.worldId]),
+ allowLegacyMigration:()=>!communityWorld&&client.worldId==='default'&&!communityUser&&!activeVisit,
+};
+async function dispatchCompanion(kind,payload,options){
+ if(accountChanging)throw Error('WORLD_CONTEXT_CHANGED');
+ if(activeVisit||client.readOnly)throw Error('VISITOR_READ_ONLY');
+ const context=companionContext.getContextKey();
+ try{
+  const result=await client.dispatch({kind,payload},options);
+  if(context!==companionContext.getContextKey())throw Error('WORLD_CONTEXT_CHANGED');
+  return result;
+ }catch(error){if(context!==companionContext.getContextKey())throw Error('WORLD_CONTEXT_CHANGED');throw error;}
+}
 const petSystem=mountPetSystem({
+ ...companionContext,
  scene,canvas,
  getCamera:()=>game.camera,
- getSnapshot:()=>client.snapshot,
+ getSnapshot:()=>activeVisit||accountChanging?null:client.snapshot,
  getSceneId:()=>activeScene,
  getPlayer:()=>({position:renderPosition,heading:actor?.rotation??0}),
  isEditing:()=>Boolean(editor?.active),
@@ -409,19 +719,20 @@ const petSystem=mountPetSystem({
  onMessage:showMessage,
  localSound,fx,
  getActor:()=>actor,
- dispatchPet:(kind,payload,options)=>client.dispatch({kind,payload},options),
- isConnected:()=>client.connectionStatus==='connected',
+ dispatchPet:dispatchCompanion,
+ isConnected:()=>client.connectionStatus==='connected'&&!client.readOnly&&!accountChanging,
 });
 window.__petSystem=petSystem;
 backpack=mountBackpackSystem({
+ ...companionContext,
  scene,canvas,
  getCamera:()=>game.camera,
- getSnapshot:()=>client.snapshot,
+ getSnapshot:()=>activeVisit||accountChanging?null:client.snapshot,
  getSceneId:()=>activeScene,
  getPlayer:()=>({position:renderPosition,heading:actor?.rotation??0}),
  getActor:()=>actor,
- dispatchItems:(kind,payload,options)=>client.dispatch({kind,payload},options),
- isConnected:()=>client.connectionStatus==='connected',
+ dispatchItems:dispatchCompanion,
+ isConnected:()=>client.connectionStatus==='connected'&&!client.readOnly&&!accountChanging,
  isEditing:()=>Boolean(editor?.active),
  isFirstPerson:()=>fpActive,
  isBattle:()=>Boolean(baizeBattle?.active),
@@ -430,14 +741,15 @@ backpack=mountBackpackSystem({
 });
 window.__backpack=backpack;
 const eggChest=mountEggChest({
+ ...companionContext,
  scene,canvas,
  getCamera:()=>game.camera,
- getSnapshot:()=>client.snapshot,
+ getSnapshot:()=>activeVisit||accountChanging?null:client.snapshot,
  getSceneId:()=>activeScene,
  getPlayer:()=>({position:renderPosition,heading:actor?.rotation??0}),
  getActor:()=>actor,
- dispatchPet:(kind,payload,options)=>client.dispatch({kind,payload},options),
- isConnected:()=>client.connectionStatus==='connected',
+ dispatchPet:dispatchCompanion,
+ isConnected:()=>client.connectionStatus==='connected'&&!client.readOnly&&!accountChanging,
  isEditing:()=>Boolean(editor?.active),
  isFirstPerson:()=>fpActive,
  isBattle:()=>Boolean(baizeBattle?.active),
@@ -514,18 +826,20 @@ game.onFeed=()=>foodPicker.open();
 game.getFurniture=()=>registry.scenes.get(activeScene)?.furniture.children||[];
 const teleportEffect=createTeleportEffect();let teleportPending=false;
 async function teleportToScene(id,landmarkId,label){
- if(teleportPending||encounterPending||!actor)return false;
+ if(teleportPending||encounterPending||accountChanging||!actor)return false;
+ const teleportContext=JSON.stringify([client.contextKey,accountTransitionVersion]);
+ const assertContext=()=>{if(teleportContext!==JSON.stringify([client.contextKey,accountTransitionVersion])||accountChanging)throw Error('WORLD_CONTEXT_CHANGED');};
  if(client.connectionStatus!=='connected'){showMessage('世界尚未连接，请稍后传送');return false;}
  if(id===actor.sceneId&&!landmarkId)return true;
  if(dispatcher.busy){showMessage('请等待当前操作完成后传送');return;}
  teleportPending=true;keys.clear();
  try{
   if(editor?.active){await editor.setActive(false);if(editor.active){showMessage('请先保存当前布置再传送');return;}}
-  player.stop();await player.drain();player.release();lease=null;
+  assertContext();player.stop();await player.drain();assertContext();player.release();lease=null;
   localSound.playAction('scene-transition');
-  await teleportEffect.depart(label||registry.scenes.get(id)?.label||id);
+  await teleportEffect.depart(label||registry.scenes.get(id)?.label||id);assertContext();
   await client.dispatch({kind:'actor.teleport',payload:{actorId:actor.actorId,...(id?{sceneId:id}:{templateId:'forest_v1'}),...(landmarkId?{landmarkId}:{})}});
-  actorTimeline.handoff(actor,performance.now());renderPosition.fromArray(actor.position);
+  assertContext();actorTimeline.handoff(actor,performance.now());renderPosition.fromArray(actor.position);
   if(landmarkId){
    baizeEncounter.clearGrass();
    if(!fpActive&&!thirdActive)iso.follow(renderPosition,0,true);
@@ -577,36 +891,9 @@ document.addEventListener('pointerdown',event=>{if(!eventMenu.contains(event.tar
 eventMenu.addEventListener('keydown',event=>{
  if(event.key==='Escape'&&eventMenu.open){eventMenu.open=false;eventMenu.querySelector('summary').focus();}
 });
-const leftRail=document.createElement('div');leftRail.id='left-rail';leftRail.style.cssText='position:fixed;left:24px;top:110px;z-index:30;display:flex;flex-direction:column;gap:10px;max-height:calc(100vh - 312px);overflow:auto;padding-right:4px';document.body.append(leftRail);
-const scenePicker=document.createElement('nav');scenePicker.setAttribute('aria-label','场景传送');scenePicker.style.cssText='display:grid;gap:7px;background:#faf1e5ed;padding:12px;border:1px solid #fff9;border-radius:16px;font:14px system-ui;min-width:110px';leftRail.append(scenePicker);
-let scenePickerKey='';
-function sceneEntry(node,label,current,disabled=false){
- node.textContent=label;
- node.style.cssText=`border:1px solid ${current?'#af8556':'#cbbba8'};background:${current?'#dfc39f':'#fff9ee'};color:#51454a;border-radius:10px;padding:9px 12px;font:inherit;cursor:${disabled?'default':'pointer'}`;
- if(current)node.setAttribute('aria-current','location');
-}
-function positionForestPicker(){
- const open=scenePicker.querySelector('.forest-teleport[open]');
- if(!open)return;
- const anchor=open.querySelector('summary').getBoundingClientRect();
- const rail=leftRail.getBoundingClientRect();
- if(anchor.bottom<=rail.top||anchor.top>=rail.bottom){open.open=false;return;}
- const box=open.querySelector('.forest-destinations');
- box.style.left=`${rail.right+7}px`;
- box.style.top=`${Math.max(8,Math.min(anchor.top,window.innerHeight-box.offsetHeight-8))}px`;
-}
-leftRail.addEventListener('scroll',positionForestPicker);
-window.addEventListener('resize',positionForestPicker);
-document.addEventListener('pointerdown',event=>{
- const open=scenePicker.querySelector('.forest-teleport[open]');
- if(open&&!open.contains(event.target))open.open=false;
-});
-scenePicker.addEventListener('keydown',event=>{
- const open=event.target.closest('.forest-teleport[open]');
- if(event.key==='Escape'&&open){open.open=false;open.querySelector('summary').focus();}
-});
 function openEmbeddedScene({id,title,src,hintText}){
  if(document.getElementById(id))return;
+ stopMovement();stopOrbit();pauseKeyboardWalking();viewToggle.exitLock();worldMap?.close();
  keys.clear();
  try{player?.stop?.();}catch{}
  const overlay=document.createElement('div');
@@ -671,57 +958,27 @@ function openFlightKingdom(){
  });
 }
 
-function refreshScenePicker(){
- const choices=[...registry.scenes].filter(([,cfg])=>cfg.data.status==='active');
- if(!choices.some(([,cfg])=>cfg.data.templateId==='forest_v1'))choices.push([null,{data:{templateId:'forest_v1'},label:'森林'}]);
- const key=JSON.stringify([activeScene,choices.map(([id,cfg])=>[id,cfg.label])]);if(key===scenePickerKey)return;scenePickerKey=key;
- scenePicker.replaceChildren();
- for(const [id,cfg]of choices){
-  const current=id===activeScene;
-  if(cfg.data.templateId==='forest_v1'){
-   const details=document.createElement('details'),summary=document.createElement('summary');
-   details.className='forest-teleport';
-   details.addEventListener('toggle',positionForestPicker);
-   sceneEntry(summary,cfg.label,current);
-   const destinations=document.createElement('div');
-   destinations.className='forest-destinations';
-   destinations.setAttribute('role','group');
-   destinations.setAttribute('aria-label','森林传送点');
-   for(const [landmarkId,label] of [['entrance','入口'],['summit-lake','湖泊']]){
-    const button=document.createElement('button');
-    button.type='button';
-    sceneEntry(button,label,false);
-    button.onclick=()=>{details.open=false;void teleportToScene(id,landmarkId,`${cfg.label} · ${label}`);};
-    destinations.append(button);
-   }
-   details.append(summary,destinations);
-   scenePicker.append(details);
-   continue;
-  }
-  const button=document.createElement('button');
-  button.type='button';button.disabled=current;
-  sceneEntry(button,cfg.label,current,current);
-  button.onclick=()=>{keys.clear();void teleportToScene(id);};
-  scenePicker.append(button);
- }
- const island=document.createElement('button');
- island.type='button';
- sceneEntry(island,'潮汐海岛',false);
- island.title='进入 Tidewater 海岛场景（独立场景）';
- island.onclick=openTidewaterIsland;
- scenePicker.append(island);
- const flight=document.createElement('button');
- flight.type='button';
- sceneEntry(flight,'飞行王国',false);
- flight.title='传送到飞行王国，骑扫把飞行';
- flight.onclick=openFlightKingdom;
- scenePicker.append(flight);
-}
+const leftRail=document.createElement('div');leftRail.id='left-rail';document.body.append(leftRail);
+function mapScene(id,cfg){return {id,label:cfg.label,templateId:cfg.data.templateId,status:cfg.data.status,socialArea:cfg.template.socialArea,kind:cfg.template.kind,bounds:cfg.bounds,template:cfg.template};}
+const sceneMap=createSceneMapRenderer({renderer:R.renderer,registry,getSnapshot:()=>client.snapshot});
+worldMap=mountWorldMap({embeddedScenes:[{label:'潮汐海岛',onOpen:openTidewaterIsland},{label:'飞行王国',onOpen:openFlightKingdom}],sceneMap,getState:()=>({
+ contextKey:JSON.stringify([client.contextKey,accountTransitionVersion]),
+ layoutRevision:client.snapshot?.layoutRevision,topologyRevision:client.snapshot?.topologyRevision,
+ portals:client.snapshot?.portals||[],
+ scene:registry.scenes.has(activeScene)?mapScene(activeScene,registry.scenes.get(activeScene)):null,
+ scenes:[...registry.scenes].map(([id,cfg])=>mapScene(id,cfg)),
+ entities:client.snapshot?.entities||[],actor:actor?{...actor,position:renderPosition.toArray(),rotation:whale.heading??actor.rotation}:null,
+ session:playSession({communityWorld,userId:communityUser?.id,onlineEnabled,realtimeStatus:realtime?.status}),
+ ready:worldReady,connected:client.connectionStatus==='connected',visiting:Boolean(activeVisit),busy:teleportPending||portalPending||quickEventPending||encounterPending||baizeBattle.active||accountChanging||settings.isOpen||foodPicker.isOpen||Boolean(agentConnect.panel),
+ }),onOpen:()=>{
+ stopMovement();stopOrbit();pauseKeyboardWalking();viewToggle.exitLock();eventMenu.open=false;player.jumpRequested=false;wantSlide=false;
+ original.cancelSpellCast?.();if(travelAction){travelAction=null;original.stopPreview();}slideUntil=0;
+ },onOnlineToggle:()=>communityUser?setOnlineEnabled(!onlineEnabled):communityPanel.open(),onTeleport:teleportToScene});
 
 const editable=target=>target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName);
 window.addEventListener('keydown', event => {
  if (!['KeyQ','KeyF','KeyE','KeyX','KeyG'].includes(event.code) || event.repeat || event.isComposing || event.metaKey || event.ctrlKey || (event.altKey&&!sprintHeld) || editable(event.target)) return;
- if (!worldReady || !actor || mode !== 'dafeiyu' || whale !== original || original.spellHeading!=null || teleportPending || portalPending || editor?.active || editor?.resetPending || agentConnect.panel || game.editing || crawling) return;
+ if (worldMap?.isOpen() || !worldReady || !actor || mode !== 'dafeiyu' || whale !== original || original.spellHeading!=null || teleportPending || portalPending || editor?.active || editor?.resetPending || agentConnect.panel || game.editing || crawling) return;
  if(travelAction){
   if(event.code==='KeyF'&&travelAction.roll){
    const roll=original.previewAction;
@@ -759,7 +1016,7 @@ window.addEventListener('keydown', event => {
  if(original.blocksWalking)pauseKeyboardWalking();
  actionPanel?.clearSelection();
 });
-window.addEventListener('keydown',e=>{if(teleportPending||e.repeat||editor?.resetPending||agentConnect.panel||editable(e.target)||!['KeyW','KeyA','KeyS','KeyD','Space','ShiftLeft','ShiftRight','AltLeft','AltRight','ControlLeft','ControlRight','KeyC'].includes(e.code))return;if(e.code==='AltLeft'||e.code==='AltRight'){sprintHeld=true;e.preventDefault();e.stopImmediatePropagation();return;}
+window.addEventListener('keydown',e=>{if(worldMap?.isOpen()||teleportPending||e.repeat||editor?.resetPending||agentConnect.panel||editable(e.target)||!['KeyW','KeyA','KeyS','KeyD','Space','ShiftLeft','ShiftRight','AltLeft','AltRight','ControlLeft','ControlRight','KeyC'].includes(e.code))return;if(e.code==='AltLeft'||e.code==='AltRight'){sprintHeld=true;e.preventDefault();e.stopImmediatePropagation();return;}
  if(e.code==='ShiftLeft'||e.code==='ShiftRight'){
   // 点一下切换冲刺：避免长时间按住 Shift 触发浏览器扩展的长按快捷键
   e.preventDefault();e.stopImmediatePropagation();
@@ -789,6 +1046,7 @@ window.addEventListener('keydown',e=>{if(teleportPending||e.repeat||editor?.rese
  }
  e.preventDefault();
  if(e.code==='Space'){
+   realtime?.markActivity();
   if(!editor?.active&&!player.jumpRequested){
    if((diveRequested??(player.sample()??actor)?.diving)===true){
     diveRequested=false;
@@ -803,6 +1061,7 @@ window.addEventListener('keydown',e=>{if(teleportPending||e.repeat||editor?.rese
   }
   return;
  }
+ realtime?.markActivity();
  keys.add(e.code);
 });
 function leaveCrawl(){
@@ -820,7 +1079,7 @@ function pauseKeyboardWalking(){
 }
 function stopMovement(){sprintHeld=false;diveRequested=undefined;const moving=keys.size>0;keys.clear();if(moving&&!editor?.active){player.stop();player.flush().catch(()=>{});}}window.addEventListener('blur',stopMovement);document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMovement();});
 const pointer=new THREE.Vector2();window.addEventListener('pointermove',e=>{pointer.set(e.clientX/window.innerWidth*2-1,-e.clientY/window.innerHeight*2+1);iso.setPointer(pointer.x,pointer.y);});
-const spellBar=mountSpellBar({canvas,scene,playSound:cue=>localSound.playAction(cue),startCast:({start,end},release)=>{
+const spellBar=mountSpellBar({canvas,scene,playSound:cue=>localSound.playAction(cue),onCast:cast=>realtime?.sendSpellCast({...cast,sceneId:actor?.sceneId||activeScene}),startCast:({start,end},release)=>{
  if(whale!==original||actor.actionId||crawling||travelAction||performance.now()<slideUntil||
     ['tree-climbing','climbing','sleeping','seated','eating','jumping'].includes(actor.pose))return false;
  if(mode!=='dafeiyu'&&!original.actions?.HumanSpFrisbeeThrow){release();return true;}
@@ -833,12 +1092,12 @@ const spellBar=mountSpellBar({canvas,scene,playSound:cue=>localSound.playAction(
  actor,feet:renderPosition,snapshot:client.snapshot,camera:fpActive?fp.camera:thirdActive?tp.camera:camera,
  training:actor.sceneId==='yard'?yard?.training:null,
  centered:fpActive||document.pointerLockElement===canvas,
- ready:worldReady&&client.connectionStatus==='connected'&&!teleportPending&&!portalPending&&
+ ready:worldReady&&!worldMap?.isOpen()&&client.connectionStatus==='connected'&&!teleportPending&&!portalPending&&
   !editor?.active&&!editor?.resetPending&&!game.editing&&!settings.isOpen&&!foodPicker.isOpen&&!agentConnect.panel,
 }});
 let fpDragging=false,lastX=0,lastY=0,fpPressMoved=0,thirdLeftHeld=false;
 let orbitRightHeld=false,orbitLockPending=false,orbitLocked=false;
-const canOrbit=()=>!fpActive&&worldReady&&!editor?.active&&!game.editing&&!settings.isOpen&&!agentConnect.panel;
+const canOrbit=()=>!worldMap?.isOpen()&&!fpActive&&worldReady&&!editor?.active&&!game.editing&&!settings.isOpen&&!agentConnect.panel;
 function stopOrbit(){
  orbitRightHeld=false;
  thirdLeftHeld=false;
@@ -973,7 +1232,7 @@ function advanceTravelAction(dt,now){
  return true;
 }
 function updateKeyboard(dt,now){
- if(teleportPending||settings.isOpen||foodPicker.isOpen||agentConnect.panel||editor?.resetPending){stopMovement();return;}
+ if(worldMap?.isOpen()||teleportPending||settings.isOpen||foodPicker.isOpen||agentConnect.panel||editor?.resetPending){stopMovement();return;}
  let x=Number(keys.has('KeyD'))-Number(keys.has('KeyA')),z=Number(keys.has('KeyS'))-Number(keys.has('KeyW'));
  if(thirdActive&&!editor?.active){const axis=thirdMoveAxis();x=axis.x;z=axis.z;}
  if(!actor)return;
@@ -1084,6 +1343,7 @@ function renderActor(dt,t){if(!actor)return;const local=player.sample();let visu
   }
  }
  const seatOffset=registry.seatOffset(visual);if(seatOffset)whale.group.position.add(seatOffset);renderPosition.copy(whale.group.position);
+ globalThis.__communityRealtime?.()?.sendPosition({position:visual.position,renderPosition:renderPosition.toArray(),sceneId:visual.sceneId,pose:visual.pose,rotation:visual.rotation,moving:visual.moving,sprint:visual.sprint,form:visual.form,animation:next.getNetworkAnimation?.(),syncAccount:!activeVisit});
  const outdoors=registry.scenes.get(activeScene)?.template.kind==='outdoor';
  const feetActive=!editor?.active&&!original.sliding&&!travelAction&&!visual.maneuver;
  fx.trackFootsteps(visual,outdoors&&feetActive,feetActive?side=>{
@@ -1111,8 +1371,13 @@ function frame(){
  if(freezeLog.lastFrameAt){const gap=frameStart-freezeLog.lastFrameAt;if(gap>600)freezeLog.gaps.push({t:Date.now()-freezeLog.startedAt,gap:Math.round(gap),fpActive,locked:document.pointerLockElement===canvas});if(gap>1500&&fpActive){setTimeout(()=>escapePointerTrap('检测到明显卡顿，已退出第一视角以免光标被锁住'),0);}}
  freezeLog.lastFrameAt=frameStart;
  try{
-  const dt=Math.min(.05,clock.getDelta());if(baizeBattle.active){baizeBattle.render(R.renderer,dt);return;}time+=dt;if(!encounterPending)updateKeyboard(dt,frameStart);updateControlStatus(frameStart);registry.update(dt,time);updateAuthorProgress();const visual=renderActor(dt,time);if(petSystem.isReady())baizeFollower.hide();else baizeFollower.update(dt,client.snapshot,visual,renderPosition);
-  petSystem.update(dt,client.snapshot,visual,renderPosition);backpack.update(dt);eggChest.update();iso.update(dt);if(fpActive){fp.setEye(renderPosition,currentPose);fpShadow.position.set(renderPosition.x,renderPosition.y+0.015,renderPosition.z);if(R.renderPass)R.renderPass.camera=fp.camera;}else if(thirdActive){const isBlob=whale===blob;tp.setBaseDistance(isBlob?6.4:3.6);tp.follow(renderPosition,dt,isBlob?1.9:(currentPose==='sleeping'?0.5:1.15));clampThirdCameraToRoom();if(R.renderPass)R.renderPass.camera=tp.camera;}else if(R.renderPass)R.renderPass.camera=camera;spellBar.update(dt,frameStart,renderedSpellCast,spellHand);fx.update(dt,time);hud.updateBubble(dt,fpActive?fp.camera:camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0){if(forestLighting)followForestSun();lights.sun.shadow.needsUpdate=true;}R.composer.render();performanceStats.frames.push(performance.now()-frameStart);if(performanceStats.frames.length>1200)performanceStats.frames.shift();
+ const dt=Math.min(.05,clock.getDelta());
+ if(baizeBattle.active){baizeBattle.render(R.renderer,dt);return;}
+ time+=dt;if(!encounterPending)updateKeyboard(dt,frameStart);updateControlStatus(frameStart);registry.update(dt,time);presenceLayer?.advance(dt);updateAuthorProgress();
+ const visual=renderActor(dt,time);if(petSystem.isReady())baizeFollower.hide();else baizeFollower.update(dt,client.snapshot,visual,renderPosition);
+ petSystem.update(dt,client.snapshot,visual,renderPosition);backpack.update(dt);eggChest.update();worldMap?.update(frameStart);harborUI?.update(game.camera);iso.update(dt);
+ if(fpActive){fp.setEye(renderPosition,currentPose);fpShadow.position.set(renderPosition.x,renderPosition.y+0.015,renderPosition.z);if(R.renderPass)R.renderPass.camera=fp.camera;}else if(thirdActive){const isBlob=whale===blob;tp.setBaseDistance(isBlob?6.4:3.6);tp.follow(renderPosition,dt,isBlob?1.9:(currentPose==='sleeping'?0.5:1.15));clampThirdCameraToRoom();if(R.renderPass)R.renderPass.camera=tp.camera;}else if(R.renderPass)R.renderPass.camera=camera;
+ spellBar.update(dt,frameStart,renderedSpellCast,spellHand);fx.update(dt,time);hud.updateBubble(dt,fpActive?fp.camera:camera);R.gradePass.uniforms.uTime.value=time;if(++shadowTick%2===0){if(forestLighting)followForestSun();lights.sun.shadow.needsUpdate=true;}R.composer.render();performanceStats.frames.push(performance.now()-frameStart);if(performanceStats.frames.length>1200)performanceStats.frames.shift();
  }catch(error){
   if(!frameErrorAt||performance.now()-frameErrorAt>3000){frameErrorAt=performance.now();console.error('frame loop failed',error);freezeLog.errors.push({t:Date.now()-freezeLog.startedAt,message:String(error?.message||error)});escapePointerTrap('运行出错，已退回等距视角：'+(error?.message||error));}
  }
@@ -1149,7 +1414,56 @@ window.dafeiyuDesktop?.onRenderSuspended?.(suspended=>{
  updateRenderVisibility();
 });
 document.addEventListener('visibilitychange',updateRenderVisibility);
-async function start(){const session=await ownerSession.ensure();client.csrfToken=session.csrfToken;void baizeFollower.load();void petSystem.load();registerLocalFurniture(await discoverLocalAssets());mountAudioPlayer(client,localSound,settings.muteButton);await client.connect('default');editor=new RoomEditor({group:registry.contexts[activeScene].group,scene,camera,canvas,getScene:()=>activeScene,contexts:registry.contexts,worldClient:client,registry,onClickSound:confirmClick,onOrbit:(dx,dy)=>{if(thirdActive)tp.look(dx,dy);else iso.addDrag(dx*.005);},onToggle:active=>{if(active&&fpActive)setFirstPerson(false);if(active)editor.camera=thirdActive?tp.camera:iso.camera;game.editing=active;stopOrbit();stopMovement();if(player.active){player.stop();player.drain().then(()=>player.release()).catch(()=>{});}keys.clear();if(!active)iso.target.copy(iso.homeTarget);},onChange:()=>yard?.refreshLandscape?.()});toolbar.insertBefore(editor.toggle,toolbar.querySelector('#settings-entry'));editor.setContext(activeScene);window.__editor=editor;mountAuthorExamples({renderActivity,onOpen:()=>{stopMovement();keys.clear();game.editing=true;},onClose:()=>{game.editing=editor.active;}});document.getElementById('loading')?.classList.add('gone');for(const id of ['title','hint','status'])document.getElementById(id)?.classList.add('in');updateControlStatus();}
+async function start(){
+ if(communityWorld){
+  communityUser=await ensureCommunityLogin(communityApi);
+  client.setSubjectId(communityUser.id);communityPanel.setUser(communityUser);
+ }else{
+  const session=await ownerSession.ensure();
+  client.csrfToken=session.csrfToken;
+ }
+ void baizeFollower.load();
+ void petSystem.load();
+ registerLocalFurniture(communityWorld?[]:await discoverLocalAssets());
+ mountAudioPlayer(communityWorld?null:client,localSound,settings.muteButton);
+ const initialWorld=communityWorld?(client.snapshot.worldId||'default'):selectedLocalWorld();
+ try{await client.connect(initialWorld);}
+ catch(error){if(communityWorld||initialWorld==='default')throw error;try{globalThis.localStorage?.removeItem(localWorldSelectionKey);}catch{}await client.connect('default');}
+ if(communityWorld)client.startInPublicLobby();
+ onlineEnabled=storedOnlineEnabled();communityPanel.setOnline(onlineEnabled);syncOnlineRoom();
+ editor=new RoomEditor({group:registry.contexts[activeScene].group,scene,camera,canvas,getScene:()=>activeScene,contexts:registry.contexts,worldClient:client,registry,onClickSound:confirmClick,onOrbit:(dx,dy)=>{if(thirdActive)tp.look(dx,dy);else iso.addDrag(dx*.005);},onToggle:active=>{if(active&&fpActive)setFirstPerson(false);if(active)editor.camera=thirdActive?tp.camera:iso.camera;game.editing=active;stopOrbit();stopMovement();if(player.active){player.stop();player.drain().then(()=>player.release()).catch(()=>{});}keys.clear();if(!active)iso.target.copy(iso.homeTarget);},onChange:()=>yard?.refreshLandscape?.()});
+ toolbar.insertBefore(editor.toggle,toolbar.querySelector('#settings-entry'));
+ editor.setContext(activeScene);editor.toggle.disabled=Boolean(registry.scenes.get(activeScene)?.template.readOnly||client.readOnly||accountChanging);window.__editor=editor;
+ mountAuthorExamples({renderActivity,onOpen:()=>{stopMovement();keys.clear();game.editing=true;},onClose:()=>{game.editing=editor.active;}});
+ {
+  harborUI=mountHarborPreview({communityPanel,onView:cycleView,
+   onFeed:()=>foodPicker.open(),
+   onNearbySend:content=>Boolean(realtime?.sendNearby(content)),
+   onChatFocus:()=>{stopMovement();stopOrbit();pauseKeyboardWalking();keys.clear();viewToggle.exitLock();},
+   getState:()=>({contextKey:JSON.stringify([client.contextKey,accountTransitionVersion,activeScene,onlineEnabled]),user:communityUser,online:onlineEnabled,connected:realtime?.status==='online'&&realtime?.roomReady===true,playerCount:(realtime?.players.size||0)+1,sceneId:activeScene}),
+   getSpeechAnchor:userId=>{
+    const group=userId===communityUser?.id?whale.group:presenceLayer?.players.get(userId)?.group;
+    return group?.visible?group.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0,2.5,0)):null;
+   },
+  });
+ }
+ document.getElementById('loading')?.classList.add('gone');for(const id of ['title','hint','status'])document.getElementById(id)?.classList.add('in');updateControlStatus();
+ if(!communityWorld)void restoreLocalAccountSession();
+}
+async function restoreLocalAccountSession(){
+ const expectedVersion=communityApi.identityVersion;
+ try{
+  const apiOrigin=new URL(communityApi.baseUrl||location.origin,location.href).origin;
+  const sameOrigin=apiOrigin===location.origin;
+  const csrfHint=`${communityApi.csrfCookieName}=`;
+  if(sameOrigin&&!document.cookie.split(';').some(part=>part.trim().startsWith(csrfHint)))return;
+  const result=await communityApi.me();
+  if(communityApi.identityVersion!==expectedVersion||communityUser)return;
+  await handleCommunityAuth(true,result.data.user);
+ }catch(error){
+  if(![401,'UNAUTHORIZED','NETWORK_ERROR','TIMEOUT'].includes(error.status??error.code))console.warn('社区账号自动恢复失败',error);
+ }
+}
 // Loading overlay must never hide the owner pairing dialog or block recovery.
 document.getElementById('loadBar').style.width='100%';document.getElementById('loadText').textContent='正在连接世界';start().catch(error=>{document.getElementById('loading')?.classList.add('gone');showMessage(`连接失败：${error.message} · 请刷新重试`);});
 Object.assign(window,{
@@ -1171,4 +1485,4 @@ Object.assign(window,{
   }};
   requestAnimationFrame(rec);
  }),
- __fp:fp,__tp:tp,__thirdPerson:()=>thirdActive,__thirdMouse:()=>({left:thirdLeftHeld,right:orbitRightHeld}),__player:player,__lease:()=>lease,__sprint:()=>({held:sprintHeld,toggled:sprintToggle,active:(sprintHeld||sprintToggle)&&!crawling}),__keys:()=>[...keys],__viewToggle:viewToggle,__actionPanel:()=>actionPanel,__transport:()=>client.socket?.readyState===1?'socket':'http',__skyDome:skyDome,__fpShadow:fpShadow,__localAssetCache:localAssetCache,__renderer:R.renderer,__R:R,__lights:lights,__iso:iso,__whale:whale,__scene:scene,__game:game,__blob:blob,__maid:original,__worldClient:client,__registry:registry,__coastalPerformance:()=>({p95:[...performanceStats.frames].sort((a,b)=>a-b)[Math.floor(performanceStats.frames.length*.95)]||0,longTasks:performanceStats.longTasks,heap:performance.memory?.usedJSHeapSize,geometries:R.renderer.info.memory.geometries,textures:R.renderer.info.memory.textures,loadedScenes:[...registry.scenes].filter(([,c])=>c.loaded||c.shell).map(([id])=>id),streaming:registry.scenes.get(activeScene)?.shell?.userData.streaming?.stats}),__ownerSession:ownerSession,__roomDebug:()=>({whale:whale.pos.toArray(),state:whale.state,sceneId:activeScene,zoom:iso.zoom,info:{calls:R.renderer.info.render.calls,tris:R.renderer.info.render.triangles}})});
+ __fp:fp,__tp:tp,__thirdPerson:()=>thirdActive,__thirdMouse:()=>({left:thirdLeftHeld,right:orbitRightHeld}),__player:player,__lease:()=>lease,__sprint:()=>({held:sprintHeld,toggled:sprintToggle,active:(sprintHeld||sprintToggle)&&!crawling}),__keys:()=>[...keys],__viewToggle:viewToggle,__actionPanel:()=>actionPanel,__transport:()=>communityWorld?'browser':client.socket?.readyState===1?'socket':'http',__skyDome:skyDome,__fpShadow:fpShadow,__localAssetCache:localAssetCache,__renderer:R.renderer,__R:R,__lights:lights,__iso:iso,__whale:whale,__scene:scene,__game:game,__blob:blob,__maid:original,__worldClient:client,__registry:registry,__presenceLayer:()=>presenceLayer,__spellBar:spellBar,__communityRuntime:communityWorld?'browser':'local',__communityUser:()=>communityUser,__communityAccountRequired:()=>gameRuntime.accountRequired,__communityRealtime:()=>realtime,__communityApi:communityApi,__cloudSync:cloudSync,__communityPanel:communityPanel,__coastalPerformance:()=>({p95:[...performanceStats.frames].sort((a,b)=>a-b)[Math.floor(performanceStats.frames.length*.95)]||0,longTasks:performanceStats.longTasks,heap:performance.memory?.usedJSHeapSize,geometries:R.renderer.info.memory.geometries,textures:R.renderer.info.memory.textures,loadedScenes:[...registry.scenes].filter(([,c])=>c.loaded||c.shell).map(([id])=>id),streaming:registry.scenes.get(activeScene)?.shell?.userData.streaming?.stats}),__ownerSession:ownerSession,__roomDebug:()=>({whale:whale.pos.toArray(),state:whale.state,sceneId:activeScene,zoom:iso.zoom,info:{calls:R.renderer.info.render.calls,tris:R.renderer.info.render.triangles}})});

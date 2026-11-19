@@ -133,7 +133,7 @@ export class PlayerController {
  fail(error,generation){if(generation!==this.generation)return;this.release();this.onError(error);}
  release(){
   // 任何释放路径都把最后一帧预测位置交给渲染层，避免回落到延迟采样时往后跳
-  const last=this.state;
+  const last=this.active?this.state:null;
   this.frozen=false;
   this.active=false;this.generation++;this.pending=[];this.held=false;
   if(last&&this.onRelease)this.onRelease(last);

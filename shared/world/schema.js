@@ -72,6 +72,7 @@ export const commandSchema=z.discriminatedUnion('kind',[
   obj({actorId:idSchema,sceneId:idSchema,landmarkId:idSchema.optional()}),
   obj({actorId:idSchema,templateId:z.literal('forest_v1'),landmarkId:idSchema}),
  ])),
+ cmd('actor.sync',obj({actorId:idSchema,state:obj({scene_id:idSchema,position:vectorSchema,render_position:vectorSchema.optional(),rotation:z.number().finite().optional(),pose:z.string().min(1).max(128).optional(),moving:z.boolean().optional(),sprint:z.boolean().optional(),form:z.enum(['normal','swim']).optional()})})),
  cmd('actor.input',obj({actorId:idSchema,leaseId:idSchema,leaseVersion:rev,frames:z.array(obj({sequence:z.number().int().positive(),jump:z.boolean().optional(),dtMs:z.number().finite().min(0).max(50),direction:z.tuple([z.number().finite().min(-1).max(1),z.number().finite().min(-1).max(1)]),sprint:z.boolean().optional(),crawl:z.boolean().optional(),boxing:z.boolean().optional(),dive:z.boolean().optional()})).min(1).max(120)})),
  cmd('action.cancel',obj({actorId:idSchema,actionId:idSchema,leaseId:idSchema,leaseVersion:rev})),
  cmd('control.renew',obj({actorId:idSchema,leaseId:idSchema,leaseVersion:rev})),cmd('control.release',obj({actorId:idSchema,leaseId:idSchema,leaseVersion:rev})),

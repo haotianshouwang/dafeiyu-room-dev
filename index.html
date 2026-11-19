@@ -160,12 +160,9 @@
     border:1px solid #e3d2bc;border-radius:12px;background:#fffdf7;color:#51454a;font:inherit;cursor:pointer}
   .food-grid button:hover{border-color:#b79065;background:#fff1d9}
   .food-grid .catalog-preview{width:min(100%,88px);height:auto;aspect-ratio:1;object-fit:contain;border-radius:7px}
-  .forest-teleport summary{position:relative;list-style:none;text-align:center}
-  .forest-teleport summary::after{content:'';position:absolute;right:12px;top:50%;width:5px;height:5px;
-    border-top:1.5px solid currentColor;border-right:1.5px solid currentColor;transform:translateY(-50%) rotate(45deg)}
-  .forest-destinations{position:fixed;z-index:1;display:grid;gap:6px;min-width:86px;padding:8px;
-    background:#faf1e5f5;border:1px solid #fff9;border-radius:13px;box-shadow:0 7px 24px #30231828;font:14px system-ui}
-  .forest-teleport:not([open]) .forest-destinations{display:none}
+  #left-rail{position:fixed;left:max(24px,env(safe-area-inset-left));top:max(278px,calc(env(safe-area-inset-top) + 264px));z-index:30;
+    display:flex;flex-direction:column;gap:10px;max-height:max(44px,calc(100dvh - 505px));overflow:auto;padding-right:4px}
+  #left-rail>*{flex-shrink:0}
 
   /* 第一视角 */
   #fp-reticle{position:fixed;left:50%;top:50%;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;border-radius:50%;
@@ -188,7 +185,7 @@
   }
 
   @media (max-width:760px){
-    #left-rail{left:12px!important;top:96px!important;max-height:calc(100vh - 320px)!important}
+    #left-rail{left:auto;right:max(12px,env(safe-area-inset-right));top:max(150px,calc(env(safe-area-inset-top) + 132px));max-height:max(44px,calc(100dvh - 434px));max-width:146px}
     #title{left:18px;top:18px;max-width:60vw}
     #title h1{font-size:17px}
     #hud #status-stack{left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right))}
@@ -202,6 +199,9 @@
   @media (max-width:520px){
     #actions{top:max(60px,calc(env(safe-area-inset-top) + 42px))}
     #hud #world-sync-status{top:max(116px,calc(env(safe-area-inset-top) + 98px))}
+  }
+  @media (max-height:620px) and (min-width:761px){
+    #left-rail{left:auto;right:max(24px,env(safe-area-inset-right));top:max(245px,calc(env(safe-area-inset-top) + 231px));max-height:max(44px,calc(100dvh - 330px));max-width:154px}
   }
 </style>
 </head>

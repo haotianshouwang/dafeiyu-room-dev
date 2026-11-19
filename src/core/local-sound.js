@@ -9,29 +9,32 @@ export class LocalSound {
  mealChewIndex=0;
  footstepIndex=0;
  kickEffortIndex=0;
- constructor({AudioClass=globalThis.Audio}={}){this.AudioClass=AudioClass;this.enabled=false;this.actionAudio=new Map();this.voiceAudio=new Map();this.voiceVersion=0;this.setMusic('home');}
- preloadVoice(kind){if(!this.voiceAudio.has(kind)){const audio=new this.AudioClass(`/resources/audio/${kind}.mp3`);audio.preload='auto';this.voiceAudio.set(kind,audio);}return this.voiceAudio.get(kind);}
+ constructor({AudioClass=globalThis.Audio,baseURI=globalThis.document?.baseURI||globalThis.location?.href,deferPreload=false}={}){this.AudioClass=AudioClass;this.baseURI=baseURI;this.deferPreload=deferPreload;this.enabled=false;this.actionAudio=new Map();this.voiceAudio=new Map();this.voiceVersion=0;this.setMusic('home');}
+ resourceUrl(filename){return this.baseURI?new URL('resources/audio/'+filename,this.baseURI).href:'/resources/audio/'+filename;}
+ preloadVoice(kind){if(!this.voiceAudio.has(kind)){const audio=new this.AudioClass(this.resourceUrl(kind+'.mp3'));audio.preload='auto';this.voiceAudio.set(kind,audio);}return this.voiceAudio.get(kind);}
  setMusic(theme){
   if(theme===this.musicTheme||!Object.hasOwn(MUSIC_THEMES,theme))return;
   this.music?.pause();
   this.musicTheme=theme;
-  this.music=new this.AudioClass(`/resources/audio/${MUSIC_THEMES[theme]}.mp3`);
+  this.music=new this.AudioClass(this.resourceUrl(MUSIC_THEMES[theme]+'.mp3'));
   this.music.loop=true;
   this.music.volume=this.musicDucked ? .07 : .18;
   if(this.enabled)void Promise.resolve(this.music.play()).catch(()=>{});
+ }
+ preload(){
+  if(!this.enabled)return;
+  for(const [clip] of Object.values(ACTION_EFFECTS))for(const name of Array.isArray(clip)?clip:[clip])this.actionClip(name);
+  for(const id of Object.keys(FOODS))this.mealVoice(id);
+  for(let i=1;i<=FOOTSTEP_COUNT;i++)this.actionClip(`footstep-${i}`);
+  for(const cue of CHEW_CUES)for(let i=1;i<=MEAL_CHEW_COUNT;i++)this.actionClip(`${cue}-${i}`);
+  for(const kind of ['pool','pet','feed','sleep'])this.preloadVoice(kind);
  }
  setEnabled(enabled){
   this.enabled=enabled;
   if(enabled){
    this.music.volume=.18;
    void Promise.resolve(this.music.play()).catch(()=>{});
-   for(const [clip] of Object.values(ACTION_EFFECTS)){
-    for(const name of Array.isArray(clip)?clip:[clip])this.actionClip(name);
-   }
-   for(const id of Object.keys(FOODS))this.mealVoice(id);
-   for(let i=1;i<=FOOTSTEP_COUNT;i++)this.actionClip(`footstep-${i}`);
-   for(const cue of CHEW_CUES)for(let i=1;i<=MEAL_CHEW_COUNT;i++)this.actionClip(`${cue}-${i}`);
-   for(const kind of ['pool','pet','feed','sleep'])this.preloadVoice(kind);
+   if(!this.deferPreload)this.preload();
   }else{
    this.voiceVersion++;
    this.musicDucked=false;
@@ -40,7 +43,7 @@ export class LocalSound {
   }
  }
  resume(){if(this.enabled&&this.music.paused)void Promise.resolve(this.music.play()).catch(()=>{});}
- play(kind){if(!this.enabled)return;const names={pet:'pet',eat:'feed',feed:'feed',sleep:'sleep',pool:'pool'};const name=names[kind];if(name)this.playVoice(new this.AudioClass(`/resources/audio/${name}.mp3`),.85);}
+ play(kind){if(!this.enabled)return;const names={pet:'pet',eat:'feed',feed:'feed',sleep:'sleep',pool:'pool'};const name=names[kind];if(name)this.playVoice(new this.AudioClass(this.resourceUrl(name+'.mp3')),.85);}
  mealVoice(foodId){
   return this.actionClip(`meal-voice-${foodId}`);
  }
@@ -50,7 +53,7 @@ export class LocalSound {
  }
  actionClip(name){
   if(!this.actionAudio.has(name)){
-   const audio=new this.AudioClass(`/resources/audio/action-${name}.wav`);
+   const audio=new this.AudioClass(this.resourceUrl('action-'+name+'.wav'));
    audio.preload='auto';
    this.actionAudio.set(name,audio);
   }

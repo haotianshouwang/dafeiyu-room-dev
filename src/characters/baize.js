@@ -5,11 +5,14 @@ import {BAIZE_ASSET_URL} from '/shared/world/baize-battle.js';
 import {surfaceAt} from '/shared/world/coastal.js';
 import {getTemplate} from '/shared/world/templates.js';
 import {nearestFree,segmentWalkable} from '/shared/world/navigation.js';
+import {resolveGameRuntime} from '../community/runtime-policy.js';
+import {petAssetUrl} from '../pets/pet-asset-url.js';
 
 let asset;
 export function loadBaize(){
  return asset??=(async()=>{
-  const response=await fetch(BAIZE_ASSET_URL);
+  const url=resolveGameRuntime().communityWorld?petAssetUrl('/resources/character/models/baize.glb'):BAIZE_ASSET_URL;
+  const response=await fetch(url);
   if(!response.ok||!response.headers.get('content-type')?.startsWith('model/gltf-binary'))return null;
   return new GLTFLoader().parseAsync(await response.arrayBuffer(),'');
  })().catch(error=>{console.warn('白泽模型加载失败',error);return null;});

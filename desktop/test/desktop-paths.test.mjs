@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import paths from '../paths.cjs';
 
 const { resolvePort, buildIssuer, resolveDevUrl, resolveDataPaths, isUsableDataRoot, clampWindowBounds, sanitizeSettings } = paths;
@@ -18,18 +19,18 @@ test('desktop: port and issuer come from env with 5200 defaults', () => {
 test('desktop: data paths reuse an existing game root or fall back to userData', () => {
   const existing = resolveDataPaths({ userData: '/tmp/userData', dataRoot: '/games/dafeiyu' });
   assert.equal(existing.mode, 'existing');
-  assert.equal(existing.databasePath, '/games/dafeiyu/data/game.sqlite');
-  assert.equal(existing.localAssetDir, '/games/dafeiyu/.cache/town-assets');
+  assert.equal(existing.databasePath, path.join('/games/dafeiyu', 'data', 'game.sqlite'));
+  assert.equal(existing.localAssetDir, path.join('/games/dafeiyu', '.cache', 'town-assets'));
   const fresh = resolveDataPaths({ userData: '/tmp/userData' });
   assert.equal(fresh.mode, 'fresh');
-  assert.equal(fresh.databasePath, '/tmp/userData/game.sqlite');
-  assert.equal(fresh.localAssetDir, '/tmp/userData/town-assets');
+  assert.equal(fresh.databasePath, path.join('/tmp/userData', 'game.sqlite'));
+  assert.equal(fresh.localAssetDir, path.join('/tmp/userData', 'town-assets'));
   assert.throws(() => resolveDataPaths({}), /userData/);
 });
 
 test('desktop: a usable game root must contain data/game.sqlite', () => {
   const existingRoot = '/games/dafeiyu';
-  const exists = (file) => file === '/games/dafeiyu/data/game.sqlite';
+  const exists = (file) => file === path.join('/games/dafeiyu', 'data', 'game.sqlite');
   assert.equal(isUsableDataRoot(existingRoot, exists), true);
   assert.equal(isUsableDataRoot('/games/empty', exists), false);
   assert.equal(isUsableDataRoot('', exists), false);
@@ -59,7 +60,7 @@ test('desktop: settings are sanitized before use', () => {
   assert.deepEqual(sanitizeSettings(null), {});
   assert.deepEqual(sanitizeSettings({ windowBounds: { x: 1 }, dataRoot: '  /games/x  ', firstRunDone: true }), {
     windowBounds: { x: 1 },
-    dataRoot: '/games/x',
+    dataRoot: path.resolve('/games/x'),
     firstRunDone: true,
   });
   assert.deepEqual(sanitizeSettings({ dataRoot: '   ' }), {});

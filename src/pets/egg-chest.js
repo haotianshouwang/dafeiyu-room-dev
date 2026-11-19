@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {companionErrorText} from '../core/companion-storage.js';
 import {getTemplate} from '../../shared/world/templates.js';
 import {nearestFree} from '../../shared/world/navigation.js';
 import {surfaceAt} from '../../shared/world/coastal.js';
@@ -135,6 +136,7 @@ export function mountEggChest({
   getCamera, getSnapshot, getSceneId, getPlayer, getActor,
   dispatchPet = null,
   isConnected = () => false,
+  getContextKey = () => getSnapshot()?._contextKey||getSnapshot()?.worldId||'',
   isEditing = () => false,
   isFirstPerson = () => false,
   isBattle = () => false,
@@ -149,6 +151,7 @@ export function mountEggChest({
   let duplicateBootstrap = false;
   let labelKey = '';
   let renderKey = '';
+  let contextKey=null,bootstrapError='',bootstrapAttempted=false,hatching=false;
 
   if (!document.getElementById('egg-chest-style')) {
     const style = document.createElement('style');
@@ -168,6 +171,18 @@ export function mountEggChest({
   </div>`;
   document.body.append(dialog);
   const eggBody = dialog.querySelector('.egg-body');
+
+  function resetContext(){
+    const next=getContextKey();if(next===contextKey)return;
+    contextKey=next;bootstrapError='';bootstrapAttempted=false;duplicateBootstrap=false;hatching=false;labelKey='';renderKey='';pointerDown=null;
+    if(dialog.open)dialog.close();
+    if(chest){
+      chest.root.removeFromParent();const materials=new Set(),geometries=new Set();
+      chest.root.traverse(node=>{if(node.geometry)geometries.add(node.geometry);for(const material of [].concat(node.material||[]))materials.add(material);});
+      for(const geometry of geometries)geometry.dispose();
+      for(const material of materials){material.map?.dispose();material.dispose();}chest=null;
+    }
+  }
 
   function actorId() {
     return getActor?.()?.actorId ?? getSnapshot()?.actors?.[0]?.actorId ?? null;
@@ -216,15 +231,16 @@ export function mountEggChest({
   }
 
   function bootstrap() {
-    if (!dispatchPet || duplicateBootstrap || !isConnected()) return;
+    if (!dispatchPet || duplicateBootstrap || bootstrapAttempted || !isConnected()) return;
     const id = actorId();
     if (!id) return;
     const owner = ownerBucket();
     if (owner && Array.isArray(owner.eggs)) return;
     duplicateBootstrap = true;
+    bootstrapAttempted=true;bootstrapError='';const requestContext=getContextKey();
     void dispatchPet('pet.bootstrap', {actorId: id})
-      .then(() => { duplicateBootstrap = false; if (dialog.open) render(); })
-      .catch(error => { duplicateBootstrap = false; onMessage(`宝箱初始化失败：${error.message}`); });
+      .then(() => { if(requestContext!==getContextKey())return;duplicateBootstrap = false; if (dialog.open) render(); })
+      .catch(error => { if(requestContext!==getContextKey())return;duplicateBootstrap=false;bootstrapError=companionErrorText(error);if(dialog.open)render(); });
   }
 
   function eggStateKey() {
@@ -238,6 +254,7 @@ export function mountEggChest({
     const available = eggs();
     if (!owner || !Array.isArray(owner.eggs)) {
       eggBody.innerHTML = `<p class="egg-note">宝箱正在准备中…</p>`;
+      if(bootstrapError){const note=eggBody.querySelector('p');note.textContent=bootstrapError;const retry=document.createElement('button');retry.type='button';retry.className='egg-card';retry.textContent='重试';retry.dataset.retry='';eggBody.append(retry);return;}
       bootstrap();
       return;
     }
@@ -256,19 +273,22 @@ export function mountEggChest({
   }
 
   async function hatch(eggId) {
+    if(hatching)return;
     if (!dispatchPet || !isConnected()) { onMessage('连接世界后才能孵化宠物蛋'); return; }
     const id = actorId();
     if (!id) return;
+    const requestContext=getContextKey();hatching=true;
     try {
       const result = await dispatchPet('pet.hatchEgg', {actorId: id, eggId});
+      if(requestContext!==getContextKey())return;
       if (!result) return;
       dialog.close();
       if (localSound) localSound.playAction?.('ui-confirm');
       if (fx && chest) fx.burst(chest.root.position.clone().add(new THREE.Vector3(0, 0.8, 0)), 10);
       onMessage(`${result.name} 从蛋里孵出来了！`);
     } catch (error) {
-      onMessage(`孵化失败：${error.message}`);
-    }
+      if(requestContext===getContextKey()){const message=companionErrorText(error);if(message)onMessage(message);}
+    }finally{if(requestContext===getContextKey())hatching=false;}
   }
 
   function updateLabel() {
@@ -292,6 +312,7 @@ export function mountEggChest({
   }
 
   function open() {
+    resetContext();
     if (!nearChest()) { onMessage('走近院子大树下的宝箱'); return; }
     bootstrap();
     render();
@@ -318,6 +339,7 @@ export function mountEggChest({
     if (chest && nearChest() && raycastChest(event.clientX, event.clientY)) canvas.style.cursor = 'pointer';
   });
   eggBody.addEventListener('click', event => {
+    if(event.target.closest('[data-retry]')){bootstrapAttempted=false;bootstrapError='';render();return;}
     const card = event.target.closest('[data-egg-id]');
     if (card) void hatch(card.dataset.eggId);
   });
@@ -326,6 +348,7 @@ export function mountEggChest({
 
   return {
     update() {
+      resetContext();
       ensureChest();
       if (!chest) return;
       chest.root.visible = getSceneId() === YARD_SCENE_ID;

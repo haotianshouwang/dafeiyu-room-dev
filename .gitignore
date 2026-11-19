@@ -1,7 +1,9 @@
 node_modules
 dist/
+dist-community/
 .DS_Store
 .env*
+!.env.example
 character.local.json
 模型
 *.glb
@@ -66,6 +68,8 @@ downloads/
 /resources/character/characters/
 /resources/character/notes/
 !/resources/character/models/Dafeiyu.glb
+!/resources/character/models/Dafeiyu-web-v1.glb
+!/resources/character/models/Dafeiyu-web-v1.glb.gz
 !/resources/character/models/baize.glb
 !/resources/character/models/fish-bowl.glb
 !/resources/character/models/fish-bowl-anims.glb

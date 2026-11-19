@@ -3,6 +3,7 @@ import {releaseLocalAssets} from './local-assets.js';
 import {ResourcePool} from '../core/resource-pool.js';
 import {buildCoastalTown} from './coastal.js';
 import {buildStoreStreet,buildStreetExitRoad} from './convenience-store.js';
+import {buildPublicLobby} from './public-lobby.js';
 import {animateOutdoorFurniture} from './outdoor-furniture.js';
 import {fitYardPool} from './yard-pool.js';
 import * as THREE from 'three';
@@ -25,6 +26,11 @@ function shell(template,openSlots){
 export class SceneRegistry {
  constructor({scene,createFurniture,legacy={},lazy=false}){Object.assign(this,{scene,createFurniture,legacy,lazy});this.pool=new ResourcePool();this.scenes=new Map();this.entities=new Map();this.contexts={};}
  applySnapshot(snapshot){
+  const contextKey=snapshot._contextKey??snapshot.worldId;
+  if(this.contextKey!==contextKey){
+   for(const [id,cfg] of this.scenes){cfg.draft=false;this.contexts[id]?.sync?.dispose?.();this.unload(id);}
+   this.entities.clear();this.hadDraft=false;this.snapshot=null;this.contextKey=contextKey;
+  }
   // Runtime state polls share the same layout arrays: don't recompute furniture
   // bounds and garden transforms on the rendering thread for every movement ack.
   const draft=[...this.scenes.values()].some(cfg=>cfg.draft);
@@ -66,14 +72,14 @@ export class SceneRegistry {
      if(!cfg.shell){cfg.shell=buildForest();cfg.root.add(cfg.shell);}
     }else{
      if(cfg.shell)cfg.root.remove(cfg.shell);
-     cfg.shell=template.authorSceneId?buildAuthorScene(template.authorSceneId):template.templateId==='coastal_town_v1'?buildCoastalTown():template.templateId==='street_corner_v1'?buildStoreStreet():shell(template,linkedSlots);
+     cfg.shell=template.authorSceneId?buildAuthorScene(template.authorSceneId):template.templateId==='public_lobby_v1'?buildPublicLobby():template.templateId==='coastal_town_v1'?buildCoastalTown():template.templateId==='street_corner_v1'?buildStoreStreet():shell(template,linkedSlots);
      cfg.root.add(cfg.shell);
     }
    }else if(this.legacy[data.sceneId])this.cutLegacyOpenings(cfg,linkedSlots);
   }
  }
  const ids=new Set(snapshot.entities.map(e=>e.entityId));for(const [id,o]of this.entities)if(!ids.has(id)&&!this.scenes.get(o.userData.worldEntity?.sceneId)?.draft){releaseLocalAssets(o);o.removeFromParent();this.entities.delete(id);}
- for(const entity of snapshot.entities){let object=this.entities.get(entity.entityId);const cfg=this.scenes.get(entity.sceneId);if(!cfg||cfg.draft||(this.lazy&&!snapshot.actors?.some(a=>a.sceneId===entity.sceneId)))continue;const adopted=cfg.furniture.children.find(o=>o.userData.entityId===entity.entityId);if(adopted){object=adopted;this.entities.set(entity.entityId,object);}if(cfg.template.progressiveEntities&&!object)continue;if(!object){const index=cfg.unclaimed.findIndex(o=>o.userData.furnitureType===entity.type);object=index>=0?cfg.unclaimed.splice(index,1)[0]:this.createFurniture(entity.type);cfg.furniture.add(object);this.entities.set(entity.entityId,object);}if(object.parent!==cfg.furniture)cfg.furniture.add(object);object.userData.entityId=entity.entityId;object.userData.protected=!!entity.protected;object.userData.worldEntity=entity;if(!object.userData.editPreview){object.position.fromArray(entity.position);object.rotation.y=entity.rotation;object.scale.fromArray(entity.scale);fitYardPool(object);}}
+ for(const entity of snapshot.entities){let object=this.entities.get(entity.entityId);const cfg=this.scenes.get(entity.sceneId);if(!cfg||cfg.draft||(this.lazy&&!snapshot.actors?.some(a=>a.sceneId===entity.sceneId)))continue;const adopted=cfg.furniture.children.find(o=>o.userData.entityId===entity.entityId);if(object&&object.userData.furnitureType!==entity.type){releaseLocalAssets(object);object.removeFromParent();this.entities.delete(entity.entityId);object=null;}if(adopted&&adopted.userData.furnitureType===entity.type){object=adopted;this.entities.set(entity.entityId,object);}if(cfg.template.progressiveEntities&&!object)continue;if(!object){const index=cfg.unclaimed.findIndex(o=>o.userData.furnitureType===entity.type);object=index>=0?cfg.unclaimed.splice(index,1)[0]:this.createFurniture(entity.type);cfg.furniture.add(object);this.entities.set(entity.entityId,object);}if(object.parent!==cfg.furniture)cfg.furniture.add(object);object.userData.entityId=entity.entityId;object.userData.protected=!!entity.protected;object.userData.worldEntity=entity;if(!object.userData.editPreview){object.position.fromArray(entity.position);object.rotation.y=entity.rotation;object.scale.fromArray(entity.scale);fitYardPool(object);}}
  for(const cfg of this.scenes.values()){if(!cfg.draft)for(const object of cfg.furniture.children.filter(o=>o.userData.furnitureType&&!snapshot.entities.some(e=>e.entityId===o.userData.entityId))){releaseLocalAssets(object);object.removeFromParent();}for(const object of cfg.unclaimed.splice(0)){releaseLocalAssets(object);object.removeFromParent();}cfg.refreshLandscape?.();}return this;
  }
  cutLegacyOpenings(cfg,slots){
