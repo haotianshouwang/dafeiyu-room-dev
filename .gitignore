@@ -118,3 +118,21 @@ public/tidewater/.DS_Store
 !/public/petalwake/**
 public/petalwake/.DS_Store
 !docs/PETALWAKE.md
+
+# Private GitHub game development notes.
+!docs/GITHUB-DEVELOPMENT.md
+
+# Generated local logs, browser captures and authentication helpers.
+/.playwright-cli/
+/.test-temp/
+/logs/
+/output/
+/.tmp-gitee-push.ps1
+
+# Internal integration checks require the separate closed-source cloud server.
+/scripts/fixtures/account-position-community.mjs
+/scripts/verify-account-position.mjs
+/scripts/verify-auth-legal.mjs
+/scripts/verify-private-isolation.mjs
+/tests/community-structured-sync.test.mjs
+/tests/community-structured-wrapper.test.mjs
