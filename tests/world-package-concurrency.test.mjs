@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {spawn} from 'node:child_process';
+import {mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync, readFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {pathToFileURL, fileURLToPath} from 'node:url';
+import {buildWorldPackage, inspectWorldPackage, recoverWorldPackageTemps} from '../server/world-package.js';
+import {migrateWorld} from '../server/storage/migrations.js';
+
+const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const packageUrl=pathToFileURL(path.join(repo,'server/world-package.js')).href;
+const migrationsUrl=pathToFileURL(path.join(repo,'server/storage/migrations.js')).href;
+const nodeExecutable=[process.execPath,...((process.env.Path||process.env.PATH||'').split(path.delimiter).map(directory=>path.join(directory,'node.exe')))].find(candidate=>existsSync(candidate))||'node';
+function snapshot(worldId='source',revision=5){return {worldId,schemaVersion:1,rulesVersion:1,layoutRevision:revision,topologyRevision:1,scenes:[{sceneId:'room',name:'Room',templateId:'cozy_room_v1'}],entities:[],portals:[],actors:[]};}
+function pkg(worldId='source',content='data'){return buildWorldPackage({snapshot:snapshot(worldId),assets:[{path:'assets/shared.bin',bytes:Buffer.from(content)}]});}
+function runChild(code,env={}){return new Promise(resolve=>{const child=spawn(nodeExecutable,['--input-type=module','-e',code],{cwd:repo,env:{...process.env,...env},stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);child.on('exit',(code,signal)=>resolve({code,signal,stdout,stderr}));});}
+function initDb(file){const db=new DatabaseSync(file);db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL');migrateWorld(db);db.close();}
+function importCode({dbPath,packagePath,targetWorldId,assetDirectory}){return `import {DatabaseSync} from 'node:sqlite';import {readFileSync} from 'node:fs';import {migrateWorld} from ${JSON.stringify(migrationsUrl)};import {importWorldPackage} from ${JSON.stringify(packageUrl)};let db;try{db=new DatabaseSync(${JSON.stringify(dbPath)});db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL');migrateWorld(db);const result=importWorldPackage({buffer:readFileSync(${JSON.stringify(packagePath)}),db,targetWorldId:${JSON.stringify(targetWorldId)},assetDirectory:${JSON.stringify(assetDirectory)}});console.log(JSON.stringify({ok:true,result}));}catch(error){console.error(error.message);process.exitCode=2;}finally{try{db?.close();}catch{}}`;}
+function exportCode({dbPath,outPath}){return `import {DatabaseSync} from 'node:sqlite';import {writeFileSync} from 'node:fs';import {migrateWorld} from ${JSON.stringify(migrationsUrl)};import {exportWorldPackage} from ${JSON.stringify(packageUrl)};let db;try{db=new DatabaseSync(${JSON.stringify(dbPath)});db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL');migrateWorld(db);writeFileSync(${JSON.stringify(outPath)},exportWorldPackage({db,worldId:'default'}));console.log('ok');}catch(error){console.error(error.message);process.exitCode=2;}finally{try{db?.close();}catch{}}`;}
+
+test('same world concurrent imports commit at most one and never overwrite its resource', async()=>{
+  const root=mkdtempSync(path.join(tmpdir(),'dfworld-concurrent-same-'));try{const dbPath=path.join(root,'world.sqlite'),assets=path.join(root,'assets'),p1=path.join(root,'a.dfworld'),p2=path.join(root,'b.dfworld');initDb(dbPath);writeFileSync(p1,pkg('source','A'));writeFileSync(p2,pkg('source','B'));const [a,b]=await Promise.all([runChild(importCode({dbPath,packagePath:p1,targetWorldId:'same-world',assetDirectory:assets})),runChild(importCode({dbPath,packagePath:p2,targetWorldId:'same-world',assetDirectory:assets}))]);assert.equal([a.code,b.code].filter(code=>code===0).length,1);assert.equal([a.code,b.code].filter(code=>code!==0).length,1);const db=new DatabaseSync(dbPath);const row=db.prepare('SELECT snapshot FROM worlds WHERE world_id=?').get('same-world');assert.ok(row);assert.equal(existsSync(path.join(assets,'shared.bin')),true);assert.ok([a.stderr,b.stderr].some(value=>value.includes('WORLD_ID_CONFLICT')));db.close();}finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('different world concurrent imports use isolated resource roots', async()=>{
+  const root=mkdtempSync(path.join(tmpdir(),'dfworld-concurrent-different-'));try{const dbPath=path.join(root,'world.sqlite'),aDir=path.join(root,'assets-a'),bDir=path.join(root,'assets-b'),p1=path.join(root,'a.dfworld'),p2=path.join(root,'b.dfworld');initDb(dbPath);writeFileSync(p1,pkg('a','A'));writeFileSync(p2,pkg('b','B'));const [a,b]=await Promise.all([runChild(importCode({dbPath,packagePath:p1,targetWorldId:'world-a',assetDirectory:aDir})),runChild(importCode({dbPath,packagePath:p2,targetWorldId:'world-b',assetDirectory:bDir}))]);assert.equal(a.code,0,a.stderr);assert.equal(b.code,0,b.stderr);const db=new DatabaseSync(dbPath);assert.ok(db.prepare('SELECT 1 FROM worlds WHERE world_id=?').get('world-a'));assert.ok(db.prepare('SELECT 1 FROM worlds WHERE world_id=?').get('world-b'));assert.equal(readFileSync(path.join(aDir,'shared.bin'),'utf8'),'A');assert.equal(readFileSync(path.join(bDir,'shared.bin'),'utf8'),'B');db.close();}finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('concurrent exports produce independently valid identical snapshots', async()=>{
+  const root=mkdtempSync(path.join(tmpdir(),'dfworld-concurrent-export-'));try{const dbPath=path.join(root,'world.sqlite'),outA=path.join(root,'a.dfworld'),outB=path.join(root,'b.dfworld');initDb(dbPath);const [a,b]=await Promise.all([runChild(exportCode({dbPath,outPath:outA})),runChild(exportCode({dbPath,outPath:outB}))]);assert.equal(a.code,0,a.stderr);assert.equal(b.code,0,b.stderr);const pa=inspectWorldPackage(readFileSync(outA)),pb=inspectWorldPackage(readFileSync(outB));assert.equal(pa.manifest.revision,pb.manifest.revision);assert.deepEqual(pa.snapshot,pb.snapshot);dbPath; }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('concurrent export and import never create a mixed snapshot', async()=>{
+  const root=mkdtempSync(path.join(tmpdir(),'dfworld-concurrent-mixed-'));try{const dbPath=path.join(root,'world.sqlite'),out=path.join(root,'export.dfworld'),packagePath=path.join(root,'import.dfworld'),assets=path.join(root,'assets');initDb(dbPath);writeFileSync(packagePath,pkg('source','import'));const [exported,imported]=await Promise.all([runChild(exportCode({dbPath,outPath:out})),runChild(importCode({dbPath,packagePath,targetWorldId:'imported-world',assetDirectory:assets}))]);assert.equal(exported.code,0,exported.stderr);assert.equal(imported.code,0,imported.stderr);const parsed=inspectWorldPackage(readFileSync(out));assert.equal(parsed.snapshot.worldId,'default');const db=new DatabaseSync(dbPath);assert.ok(db.prepare('SELECT 1 FROM worlds WHERE world_id=?').get('imported-world'));db.close();}finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('concurrent recovery has one safe cleanup outcome and preserves unmarked data', async()=>{
+  const root=mkdtempSync(path.join(tmpdir(),'dfworld-concurrent-recovery-'));try{const dbPath=path.join(root,'world.sqlite'),assets=path.join(root,'assets'),temp=path.join(root,'.dfworld-race');initDb(dbPath);mkdirSync(assets);mkdirSync(temp);writeFileSync(path.join(assets,'orphan.bin'),'orphan');writeFileSync(path.join(temp,'.dfworld-temp.json'),JSON.stringify({version:1,taskId:'.dfworld-race',format:'dfworld',worldId:'missing',created:['orphan.bin'],phase:'promoting',createdAt:1}));const code=`import {DatabaseSync} from 'node:sqlite';import {recoverWorldPackageTemps} from ${JSON.stringify(packageUrl)};const db=new DatabaseSync(${JSON.stringify(dbPath)});try{console.log(JSON.stringify(recoverWorldPackageTemps({assetDirectory:${JSON.stringify(assets)},db,maxAgeMs:0,now:Date.now()+1000})));}finally{db.close();}`;const [a,b]=await Promise.all([runChild(code),runChild(code)]);assert.equal(a.code,0,a.stderr);assert.equal(b.code,0,b.stderr);assert.equal(existsSync(path.join(assets,'orphan.bin')),false);assert.equal(existsSync(temp),false);}finally{rmSync(root,{recursive:true,force:true});}
+});

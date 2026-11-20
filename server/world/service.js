@@ -33,9 +33,13 @@ export class WorldService{
  }
  startMemoryRuntime(){
   if(!this.memoryPosition)return;
-  const db=this.db;
-  const rows=db.prepare('SELECT world_id,snapshot FROM worlds').all();
-  for(const row of rows){
+  for(const {world_id:worldId} of this.db.prepare('SELECT world_id FROM worlds').all())this.initializeMemoryWorld(worldId);
+ }
+ initializeMemoryWorld(worldId){
+  if(!this.memoryPosition||this.bufferedWorlds.has(worldId))return;
+  const db=this.db,row=db.prepare('SELECT snapshot FROM worlds WHERE world_id=?').get(worldId);
+  if(!row)return;
+  {
    const snapshot=JSON.parse(row.snapshot);
    const home=defaultManifest.actors[0];
    const scene=snapshot.scenes.find(scene=>scene.sceneId===home.sceneId&&scene.status==='active')
@@ -56,17 +60,18 @@ export class WorldService{
      const actor=snapshot.actors.find(actor=>actor.actorId===action.actorId);
      action.status=action.phase='cancelled';
      action.result={status:'cancelled',reason:'server_restart',sceneId:actor?.sceneId,pose:'idle',needs:actor?.needs};
-     appendEvent(db,{worldId:row.world_id,kind:'action.cancelled',subjectId:null,changeId:null,now,
+     appendEvent(db,{worldId,kind:'action.cancelled',subjectId:null,changeId:null,now,
       data:{actorId:action.actorId,actionId:action.actionId,result:action.result}});
     }
     if(needsMigration&&snapshot.runtime)delete snapshot.runtime.lastCheckpointSignature;
     if(needsMigration||interrupted.length)this.writeSnapshot(snapshot);
-    db.prepare('DELETE FROM movement_receipts WHERE world_id=?').run(row.world_id);
+    db.prepare('DELETE FROM movement_receipts WHERE world_id=?').run(worldId);
     db.exec('COMMIT');
-    this.bufferedWorlds.set(row.world_id,{snapshot,receipts:new Map(),dirty:false});
+    this.bufferedWorlds.set(worldId,{snapshot,receipts:new Map(),dirty:false});
    }catch(error){db.exec('ROLLBACK');throw error;}
   }
  }
+ worldIds(){return this.db.prepare('SELECT world_id FROM worlds ORDER BY world_id').all().map(row=>row.world_id);}
  writeMovementReceipts(receipts,now){
   if(this.memoryPosition||!receipts.size)return;
   this.db.prepare('DELETE FROM movement_receipts WHERE expires_at<=?').run(now);
@@ -198,7 +203,7 @@ export class WorldService{
  execute(principal,command){
   if(!validateCommand(command).ok)throw Error('INVALID_COMMAND');
   authorizePrincipal(principal,command.worldId,scopeFor(command.kind),command.payload.actorId,this.clock());
-  if((['control.takeover','actor.teleport'].includes(command.kind)||command.kind.startsWith('battle.'))&&principal.role!=='owner')throw Error('UNAUTHORIZED');
+  if((['control.takeover','actor.teleport','actor.sync'].includes(command.kind)||command.kind.startsWith('battle.'))&&principal.role!=='owner')throw Error('UNAUTHORIZED');
   if(command.kind==='pet.settlePoops'){
    // 先查历史回执（含内存/ SQLite 移动回执和空结算短期缓存），避免重试被空结算预检吞掉。
    const serialized=canonical(command);
@@ -220,7 +225,7 @@ export class WorldService{
    }
   }
   if(command.kind==='pet.syncPositions'&&this.memoryPosition)return this.rememberLivePetPositions(principal,command.worldId,command);
-  const movement=command.kind==='actor.input';
+  const movement=command.kind==='actor.input'||command.kind==='actor.sync';
   const canBuffer=movement&&this.memoryPosition;
   const serialized=canonical(command);const db=this.db;
   db.exec(canBuffer?'BEGIN':'BEGIN IMMEDIATE');

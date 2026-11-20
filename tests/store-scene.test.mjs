@@ -25,6 +25,37 @@ test('store assets and default geometry satisfy construction rules',async()=>{
  const {validateSpatial}=await import('../server/world/spatial.js');const db=new DatabaseSync(':memory:');try{migrateWorld(db);const s=new WorldService(db).readSnapshot('default');const before={...s,entities:s.entities.filter(e=>e.sceneId!==STORE_SCENE_ID)};assert.doesNotThrow(()=>validateSpatial(before,s));}finally{db.close();}
  const THREE=await import('three');const {STORE_FURNITURE,buildStoreStreet}=await import('../src/world/convenience-store.js');for(const [type,asset]of Object.entries(STORE_FURNITURE)){const root=asset.make(),bounds=new THREE.Box3().setFromObject(root),entry=getCatalogEntry(type);assert.ok(Number.isFinite(bounds.max.y)&&bounds.max.y>1,type);assert.ok(bounds.max.x<=entry.footprint.width/2+.02&&bounds.min.x>=-entry.footprint.width/2-.02,type+' footprint x');assert.ok(bounds.max.z<=entry.footprint.depth/2+.02&&bounds.min.z>=-entry.footprint.depth/2-.02,type+' footprint z');}assert.ok(buildStoreStreet().children.length>20);
 });
+
+test('flagged legacy streets restore missing shops without replacing relocated furniture',()=>{
+ const db=new DatabaseSync(':memory:');
+ try{
+  migrateWorld(db);
+  const service=new WorldService(db);
+  service.transactRuntime('default',({snapshot})=>{
+   snapshot.features??={};snapshot.features.convenienceStoreV1=1;
+   snapshot.entities=snapshot.entities.filter(entity=>entity.sceneId!==STORE_SCENE_ID);
+  });
+  const home=structuredClone(service.readSnapshot('default').entities);
+  assert.equal(installStoreScene(service).repaired,STORE_SCENE.entities.length);
+  const restored=service.readSnapshot('default');
+  assert.deepEqual(restored.entities.filter(entity=>entity.sceneId!==STORE_SCENE_ID),home);
+  const moved=structuredClone(restored.entities.find(entity=>entity.sceneId===STORE_SCENE_ID));
+  moved.position=[20,0,20];moved.rotation=.4;
+  service.transactRuntime('default',({snapshot})=>{
+   const missing=snapshot.entities.find(entity=>entity.sceneId===STORE_SCENE_ID&&entity.entityId!==moved.entityId);
+   snapshot.entities=snapshot.entities.filter(entity=>entity.entityId!==missing.entityId).map(entity=>entity.entityId===moved.entityId?moved:entity);
+  });
+  assert.equal(installStoreScene(service).repaired,1);
+  assert.deepEqual(service.readSnapshot('default').entities.find(entity=>entity.entityId===moved.entityId),moved);
+  const before=JSON.stringify(service.readSnapshot('default'));
+  const transactRuntime=service.transactRuntime.bind(service);
+  let writes=0;
+  service.transactRuntime=(...args)=>{writes++;return transactRuntime(...args);};
+  assert.equal(installStoreScene(service).installed,false);
+  assert.equal(writes,0,'relocated baseline entities do not trigger another repair transaction');
+  assert.equal(JSON.stringify(service.readSnapshot('default')),before,'subsequent startup does not change the world');
+ }finally{db.close();}
+});
 test('actual runtime completes living-to-store and store-to-living trips',async()=>{
  const {WorldRuntime,createRuntimeHandlers}=await import('../server/world/runtime.js');const db=new DatabaseSync(':memory:');let now=1000,n=0;try{migrateWorld(db);const service=new WorldService(db,{handlers:createRuntimeHandlers(),clock:()=>now});const runtime=new WorldRuntime(service);const principal={subjectId:'owner',role:'owner',worldIds:['default'],actorIds:['whale'],scopes:['world:read','actor:control']};const run=(kind,payload)=>service.execute(principal,{worldId:'default',requestId:`store-route-${++n}`,kind,payload});service.transactRuntime('default',({snapshot})=>Object.assign(snapshot.actors[0],{sceneId:'living',position:[2.35,0,-2.8]}));const lease=run('control.takeover',{actorId:'whale'});
  for(const sceneId of [STORE_SCENE_ID,'living']){const result=run('action.submit',{actorId:'whale',leaseId:lease.leaseId,leaseVersion:lease.leaseVersion,kind:'move',target:{sceneId}});for(let i=0;i<400&&service.readSnapshot('default').actions[result.actionId].status==='running';i++){now+=100;runtime.tick();}const snapshot=service.readSnapshot('default');assert.equal(snapshot.actions[result.actionId].status,'completed');assert.equal(snapshot.actors[0].sceneId,sceneId);}

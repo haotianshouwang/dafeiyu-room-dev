@@ -70,12 +70,16 @@ function connect({ host, csrfToken, cookie, origin = `http://${host}`, authoriza
 
 test('socket channel: hello carries snapshot+cursor, tick streams, dispatch acks and pushes events', async () => {
   const { app, ...ctx } = await boot();
+  let ws;
   try {
-    const { ws, next } = await connect(ctx);
+    const connection = await connect(ctx);
+    ws = connection.ws;
+    const { next } = connection;
     const hello = await next((frame) => frame.type === 'hello');
     assert.equal(hello.worldId, 'default');
     assert.ok(hello.cursor >= 0);
-    assert.equal(hello.snapshot.scenes.length, 4);
+    assert.equal(hello.snapshot.scenes.length, 5);
+    assert.ok(hello.snapshot.scenes.some(scene=>scene.sceneId==='public-lobby'));
     assert.equal(hello.snapshot.cursor, hello.cursor);
 
     const tick = await next((frame) => frame.type === 'tick');
@@ -92,14 +96,14 @@ test('socket channel: hello carries snapshot+cursor, tick streams, dispatch acks
 
     ws.send(JSON.stringify({ type: 'snapshot', id: 's1' }));
     const snapshot = await next((frame) => frame.type === 'snapshot' && frame.id === 's1');
-    assert.equal(snapshot.snapshot.scenes.length, 4);
+    assert.equal(snapshot.snapshot.scenes.length, 5);
 
     // 浏览器推送不写 MCP 的消费者记账
     const deliveries = app.worldService.db.prepare('SELECT COUNT(*) AS c FROM consumer_deliveries').get().c;
     assert.equal(deliveries, 0);
 
-    ws.close();
   } finally {
+    ws?.close();
     await app.close();
   }
 });
@@ -137,17 +141,20 @@ test('socket channel: rejects bad csrf, foreign origin and agent bearer tokens',
 
 test('socket channel: reconnect gets a fresh hello instead of replaying history', async () => {
   const { app, ...ctx } = await boot();
+  let first;
+  let second;
   try {
-    const first = await connect(ctx);
+    first = await connect(ctx);
     const hello = await first.next((frame) => frame.type === 'hello');
     first.ws.close();
     await new Promise((resolve) => setTimeout(resolve, 100));
-    const second = await connect(ctx);
+    second = await connect(ctx);
     const again = await second.next((frame) => frame.type === 'hello');
     assert.ok(again.cursor >= hello.cursor);
-    assert.equal(again.snapshot.scenes.length, 4);
-    second.ws.close();
+    assert.equal(again.snapshot.scenes.length, 5);
   } finally {
+    first?.ws.close();
+    second?.ws.close();
     await app.close();
   }
 });

@@ -53,11 +53,13 @@ export function installLocalAssetRoutes(app,directory,manifest){
   if(!file)return reply.code(404).send({error:'THUMBNAIL_MISSING'});
   return reply.header('Content-Type',relative.endsWith('.webp')?'image/webp':'image/png').header('Cache-Control','private, max-age=3600').header('X-Content-Type-Options','nosniff').send(createReadStream(file));
  });
- app.get('/api/local-assets/models/:file',async(req,reply)=>{
+ const serveModel=async(req,reply)=>{
   if(app.auth){try{app.auth.resolvePrincipal(req);}catch{return reply.code(401).send({error:'UNAUTHORIZED'});}}
   const asset=manifest.assets.find(a=>a.file===`models/${req.params.file}`||a.file===`glb/${req.params.file}`);
   const file=asset&&locateFile(asset,asset.file);
   if(!file)return reply.code(404).send({error:'LOCAL_ASSET_MISSING'});
   return reply.header('Content-Type','model/gltf-binary').header('Cache-Control','private, max-age=3600').send(createReadStream(file));
- });
+ };
+ app.get('/api/local-assets/models/:file',serveModel);
+ app.get('/api/local-assets/glb/:file',serveModel);
 }

@@ -9,6 +9,7 @@ import {BUNDLED_MODEL_DIR,readBundledModels,readLocalAssets,installLocalAssetRou
 import {installStreetHomeEntrance} from './world/street-home-feature.js';
 import {installStoreLights} from './world/store-lighting.js';
 import {installStoreScene} from './world/store-feature.js';
+import {installPublicLobby} from './world/public-lobby-feature.js';
 import {installAudio} from './audio/playback.js';
 import Fastify from 'fastify';
 import { DatabaseSync } from 'node:sqlite';
@@ -26,8 +27,14 @@ import {projectSnapshot} from './mcp/resources.js';
 import {createRuntimeHandlers,WorldRuntime} from './world/runtime.js';
 import {BAIZE_ASSET_URL} from '../shared/world/baize-battle.js';
 import {createBuildHandlers} from './world/build.js';
+import {registerStaticFiles} from './static-files.js';
+import {installCommunityApiProxy} from './community-api-proxy.js';
+import {exportCloudLayout,importCloudLayout} from './world/cloud-layout-store.js';
+import {syncStructuredLayout} from './world/structured-layout-bridge.js';
+import {exportWorldPackage,importWorldPackage} from './world-package.js';
+import {createHash} from 'node:crypto';
 
-export async function buildServer({ databasePath, serveStatic = false, logger = false, worldMode = false, resolvePrincipal, worldHandlers = {}, auth = {}, mcpExtensions = {}, mcpAdvancedActions = false, startRuntime = true, localAssetDir, baizeAssetPath, localPackOptions = {} } = {}) {
+export async function buildServer({ databasePath, serveStatic = false, logger = false, worldMode = false, resolvePrincipal, worldHandlers = {}, auth = {}, mcpExtensions = {}, mcpAdvancedActions = false, startRuntime = true, localAssetDir, baizeAssetPath, localPackOptions = {}, communityApiOrigin } = {}) {
   const root=fileURLToPath(new URL('../',import.meta.url));
   const defaultAssetDirs=databasePath===':memory:'?[]:[process.env.WORLD_LOCAL_ASSET_DIR,path.join(root,'.cache/town-assets')].filter(Boolean);
   const assetDirectory=localAssetDir!==undefined?localAssetDir:(defaultAssetDirs.find(dir=>existsSync(path.join(dir,'manifest.json')))||defaultAssetDirs[0]||null);
@@ -70,8 +77,20 @@ export async function buildServer({ databasePath, serveStatic = false, logger = 
   const migrated=Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='worlds'").get() && db.prepare('SELECT 1 FROM worlds LIMIT 1').get());
   const worldService=migrated?new WorldService(db,{handlers:{...createRuntimeHandlers({baizeEnabled}),...createBuildHandlers(),...worldHandlers},memoryPosition:filename!==':memory:'}):null;
   worldService?.startMemoryRuntime();
-  if(worldMode&&worldService){installStoreScene(worldService);installStoreLights(worldService);installStreetHomeEntrance(worldService);installAuthorBeach(worldService,localManifest);relocateStreetExits(worldService);}
+  if(worldMode&&worldService){
+    // Account worlds can outlive a server upgrade. Apply the same one-time
+    // public street repairs to every existing world so an older private copy
+    // cannot keep an empty commercial street.
+    for(const worldId of worldService.worldIds()){
+      installStoreScene(worldService,worldId);
+      installStoreLights(worldService,worldId);
+      installStreetHomeEntrance(worldService,worldId);
+    }
+    installAuthorBeach(worldService,localManifest);relocateStreetExits(worldService);
+  }
+  if(worldMode&&worldService)for(const worldId of worldService.worldIds())installPublicLobby(worldService,worldId);
   const app=Fastify({logger,bodyLimit:6*1024*1024});
+  installCommunityApiProxy(app,{origin:communityApiOrigin});
   app.decorate('worldService',worldService);
   const authService=worldService?installAuth(app,db,worldService,{...auth,apiKeyPath:filename===':memory:'?undefined:filename+'.mcp-json.key'}):null;
   app.decorate('auth',authService);
@@ -96,7 +115,7 @@ export async function buildServer({ databasePath, serveStatic = false, logger = 
   });
   if(authService){const audio=installAudio(app,authService);app.decorate('audioPlayback',audio);mcpExtensions={audio_play:({principal,worldId,args})=>audio.play(principal,worldId,args),audio_get_status:({principal,worldId,args})=>audio.public(audio.get(principal,worldId,args.playbackId)),audio_stop:({principal,worldId,args})=>audio.stop(principal,worldId,args.playbackId),...mcpExtensions};installMcp(app,worldService,authService,{extensions:mcpExtensions,advancedActions:mcpAdvancedActions});installMcpIntegration(app,authService);}
   if(worldService&&authService)installWorldSocket(app,{worldService,authService,resolvePrincipal});
-  const runtime=worldService&&startRuntime?new WorldRuntime(worldService).start():null;
+  const runtime=worldService&&startRuntime?new WorldRuntime(worldService,{worldId:null}).start():null;
   app.addHook('onClose',async()=>{
     runtime?.stop();
     try{worldService?.flushRuntime();}finally{db.close();}
@@ -114,6 +133,7 @@ export async function buildServer({ databasePath, serveStatic = false, logger = 
     if(!['bedroom','living','yard'].includes(req.params.scene))return reply.code(404).send({error:'Unknown scene'});
     if(authService&&!resolvePrincipal){try{authService.resolvePrincipal(req);}catch{return reply.code(401).send({error:'UNAUTHORIZED'});}}
     const row=read.get(req.params.scene);
+    if(migrated)return reply.code(409).send({error:'WORLD_MIGRATED',status:'draft',draft:{sceneId:req.params.scene,layout:row?JSON.parse(row.layout):null,legacyRevision:row?.revision||0},message:'旧布局仅保留为待合并草稿，请通过世界建设预览提交。'});
     return row?{layout:JSON.parse(row.layout),revision:row.revision,updatedAt:row.updated_at}:{layout:null,revision:0,updatedAt:null};
   });
   app.put('/api/layout/:scene',async(req,reply)=>{
@@ -134,7 +154,14 @@ export async function buildServer({ databasePath, serveStatic = false, logger = 
   });
   if(worldService){
     const principal=async req=>resolvePrincipal?await resolvePrincipal(req):authService.resolvePrincipal(req);
-    const failure=(reply,error)=>reply.code(error.message==='CSRF_REQUIRED'?403:error.message==='UNAUTHORIZED'?401:error.message==='WORLD_NOT_FOUND'?404:400).send({error:error.message,...(error.details?{details:error.details}:{})});
+    const failure=(reply,error)=>reply.code(error.message==='CSRF_REQUIRED'||error.message==='FORBIDDEN'?403:error.message==='UNAUTHORIZED'?401:error.message==='WORLD_NOT_FOUND'?404:400).send({error:error.message,...(error.details?{details:error.details}:{})});
+    const localOwner=async(req,worldId)=>{
+      if(!authService)throw Error('UNAUTHORIZED');
+      const value=await principal(req);
+      if(value.role!=='owner')throw Error('FORBIDDEN');
+      if(!value.worldIds.includes(worldId))throw Error('UNAUTHORIZED');
+      return value;
+    };
     app.get(BAIZE_ASSET_URL,async(req,reply)=>{
       try{
         if((await principal(req)).role!=='owner')throw Error('UNAUTHORIZED');
@@ -143,12 +170,18 @@ export async function buildServer({ databasePath, serveStatic = false, logger = 
       }catch(error){return failure(reply,error);}
     });
     app.get('/api/world/:id/snapshot',async(req,reply)=>{try{const p=await principal(req);const snapshot=worldService.getSnapshot(p,req.params.id);/* 两个读取都是同步的，单线程下不会插入写入，cursor 与快照一致 */return {...projectSnapshot(snapshot,p),cursor:worldService.latestCursor(p,req.params.id)};}catch(error){return failure(reply,error);}});
+    app.get('/api/world/:id/layout',async(req,reply)=>{try{await localOwner(req,req.params.id);const snapshot=worldService.readSnapshot(req.params.id);const result=exportCloudLayout(snapshot);return reply.header('cache-control','no-store').header('x-world-layout-sha256',result.digest).type('application/json').send(result.bytes);}catch(error){return failure(reply,error);}});
+    app.post('/api/world/:id/layout/import',async(req,reply)=>{try{await localOwner(req,req.params.id);const targetWorldId=req.query.target_world_id;const baseSnapshot=worldService.readSnapshot(req.params.id);const result=importCloudLayout({db,baseSnapshot,layout:req.body,targetWorldId,freshPlayer:req.query.fresh_player==='1'});worldService.initializeMemoryWorld(targetWorldId);if(worldMode){installStoreScene(worldService,targetWorldId);installStoreLights(worldService,targetWorldId);installStreetHomeEntrance(worldService,targetWorldId);installPublicLobby(worldService,targetWorldId);}return result;}catch(error){return failure(reply,error);}});
+    app.post('/api/world/:id/layout/sync',async(req,reply)=>{try{const p=await localOwner(req,req.params.id);return syncStructuredLayout({worldService,principal:p,worldId:req.params.id,input:req.body,resourceManifest:localManifest});}catch(error){return reply.code(error.statusCode??(error.message==='CSRF_REQUIRED'||error.message==='FORBIDDEN'?403:error.message==='UNAUTHORIZED'?401:error.message==='WORLD_NOT_FOUND'?404:400)).send({error:error.message,...(error.details?{details:error.details}:{})});}});
+    app.get('/api/world/:id/package',async(req,reply)=>{try{await localOwner(req,req.params.id);const bytes=exportWorldPackage({db,worldId:req.params.id,assetDirectory});return reply.header('cache-control','no-store').header('x-world-package-sha256',createHash('sha256').update(bytes).digest('hex')).type('application/octet-stream').send(bytes);}catch(error){return failure(reply,error);}});
+    app.addContentTypeParser('application/x-dfworld',{parseAs:'buffer',bodyLimit:64*1024*1024},(_req,body,done)=>done(null,body));
+    app.post('/api/world/:id/package/import',{bodyLimit:64*1024*1024},async(req,reply)=>{try{await localOwner(req,req.params.id);if(!Buffer.isBuffer(req.body))throw Error('INVALID_PACKAGE');const result=importWorldPackage({buffer:req.body,db,targetWorldId:req.query.target_world_id,assetDirectory});worldService.initializeMemoryWorld(result.worldId);if(worldMode){installStoreScene(worldService,result.worldId);installStoreLights(worldService,result.worldId);installStreetHomeEntrance(worldService,result.worldId);installPublicLobby(worldService,result.worldId);}return result;}catch(error){return failure(reply,error);}});
     app.get('/api/world/:id/state',async(req,reply)=>{try{const p=await principal(req);const s=projectSnapshot(worldService.getSnapshot(p,req.params.id),p);const liveActions=Object.fromEntries(Object.entries(s.actions||{}).filter(([,action])=>['running','queued'].includes(action.status)));return {worldId:s.worldId,layoutRevision:s.layoutRevision,topologyRevision:s.topologyRevision,actors:s.actors,actions:liveActions};}catch(error){return failure(reply,error);}});
     app.get('/api/world/:id/events',async(req,reply)=>{try{const principalValue=await principal(req);const after=req.query.after;const afterCursor=after==='latest'?worldService.latestCursor(principalValue,req.params.id):Number(after??0);return worldService.getEvents(principalValue,{worldId:req.params.id,afterCursor,limit:Number(req.query.limit??100)});}catch(error){return failure(reply,error);}});
     app.post('/api/world/:id/commands',async(req,reply)=>{try{if(req.body?.worldId!==req.params.id)throw Error('WORLD_ID_MISMATCH');return worldService.execute(await principal(req),req.body);}catch(error){return failure(reply,error);}});
   }
   if(serveStatic && existsSync(path.join(root,'dist','index.html'))) {
-    await app.register((await import('@fastify/static')).default,{root:path.join(root,'dist')});
+    await registerStaticFiles(app,path.join(root,'dist'));
   }
   return app;
 }

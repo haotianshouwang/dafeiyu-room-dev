@@ -125,7 +125,11 @@ test('fresh game with no local pack loads the frozen layouts and serves their bu
     .map(({type,position,rotation,scale})=>({type,position,rotation,scale}));
    assert.deepEqual(objects,scene.entities);
   }
-  assert.deepEqual(fresh.portals,defaultManifest.portals);
+  assert.deepEqual(fresh.portals.filter(portal=>!portal.id?.startsWith('lobby-exit-')),defaultManifest.portals);
+  const lobbyExit=fresh.portals.find(portal=>portal.id==='lobby-exit-commercial-street');
+  assert.equal(lobbyExit.from.sceneId,'public-lobby');
+  assert.equal(lobbyExit.to.sceneId,'convenience-store');
+  assert.equal(lobbyExit.to.slotId,'south');
   const owner=await app.inject({method:'POST',url:'/api/auth/local-session',
    headers:{host:'127.0.0.1:5200',origin:'http://127.0.0.1:5200'},payload:{}});
   const headers={cookie:String(owner.headers['set-cookie']).split(';')[0]};

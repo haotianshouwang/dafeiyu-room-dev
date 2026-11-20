@@ -39,6 +39,29 @@ test('server only serves allowlisted local files and preserves unavailable descr
  }finally{await app?.close();rmSync(dir,{recursive:true,force:true});}
 });
 
+test('glb manifest URLs serve allowlisted files and keep the legacy models alias',async()=>{
+ const {mkdtempSync,mkdirSync,writeFileSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {buildServer}=await import('../server/app.js');
+ const dir=mkdtempSync(join(tmpdir(),'pf-glb-routes-'));
+ const bundled={...asset,type:'pf-glb-route-cottage',file:'glb/pf-glb-route-cottage.glb'};
+ const bytes=Buffer.alloc(32,7);
+ mkdirSync(join(dir,'glb'));
+ writeFileSync(join(dir,bundled.file),bytes);
+ writeFileSync(join(dir,'glb/pf-secret.glb'),bytes);
+ writeFileSync(join(dir,'manifest.json'),JSON.stringify({assets:[bundled]}));
+ let app;
+ try{
+  app=await buildServer({databasePath:join(dir,'test.sqlite'),localAssetDir:dir});
+  const manifest=(await app.inject('/api/local-assets/manifest')).json();
+  const response=await app.inject('/api/local-assets/'+manifest.assets[0].file);
+  assert.equal(response.statusCode,200);
+  assert.equal(response.headers['content-type'],'model/gltf-binary');
+  assert.deepEqual(response.rawPayload,bytes);
+  assert.equal((await app.inject('/api/local-assets/models/pf-glb-route-cottage.glb')).statusCode,200);
+  assert.equal((await app.inject('/api/local-assets/glb/pf-secret.glb')).statusCode,404,'files outside the manifest stay private');
+  assert.equal((await app.inject('/api/local-assets/glb/pf-missing.glb')).statusCode,404);
+ }finally{await app?.close();rmSync(dir,{recursive:true,force:true});}
+});
+
 test('local sample protects relocated default IDs using authoritative rotated footprints',async()=>{
  const {installLocalTown}=await import('../server/world/local-town.js');const {COASTAL_ENTITIES}=await import('../shared/world/coastal.js');
  const customized={...structuredClone(COASTAL_ENTITIES[0]),entityId:'seaside-town-1',sceneId:'seaside-town',position:[3.8,2,-9],rotation:.3};

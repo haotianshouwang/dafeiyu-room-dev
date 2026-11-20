@@ -1,7 +1,22 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';
+import {test} from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {migrateWorld} from '../server/storage/migrations.js';import {WorldService} from '../server/world/service.js';import {WorldRuntime,createRuntimeHandlers} from '../server/world/runtime.js';
+import {exportCloudLayout,importCloudLayout} from '../server/world/cloud-layout-store.js';
 const p={subjectId:'owner',worldIds:['default'],actorIds:['whale'],scopes:['world:read','actor:control'],role:'owner'};
 function setup(){let now=1000;const db=new DatabaseSync(':memory:');migrateWorld(db);const service=new WorldService(db,{handlers:createRuntimeHandlers(),clock:()=>now});const runtime=new WorldRuntime(service,{worldId:'default'});let n=0;const run=(kind,payload)=>service.execute(p,{worldId:'default',requestId:`r${++n}`,kind,payload});const lease=run('control.acquire',{actorId:'whale'});return {db,service,runtime,run,lease,tick:()=>{now+=100;runtime.tick();},snapshot:()=>service.getSnapshot(p,'default')};}
+
+test('account location sync cancels stale movement and only a local owner can apply it',()=>{
+ const s=setup();try{
+  const prior=s.snapshot().actors[0],needs={...prior.needs};
+  const action=s.run('action.submit',{actorId:'whale',leaseId:s.lease.leaseId,leaseVersion:s.lease.leaseVersion,kind:'move',target:{sceneId:'yard'}});
+  const payload={actorId:'whale',state:{scene_id:'living',position:[1,0,2],rotation:.5,moving:false,pose:'idle',form:'normal'}};
+  const result=s.run('actor.sync',payload);
+  assert.equal(result.actor.sceneId,'living');assert.deepEqual(result.actor.position,[1,0,2]);assert.equal(result.actor.controller,null);
+  assert.deepEqual(result.actor.needs,needs);assert.equal(s.snapshot().actions[action.actionId].status,'cancelled');
+  assert.throws(()=>s.service.execute({...p,role:'agent'},{worldId:'default',requestId:'agent-sync',kind:'actor.sync',payload}),/UNAUTHORIZED/);
+  assert.throws(()=>s.run('actor.sync',{...payload,state:{...payload.state,scene_id:'missing'}}),/PLAYER_STATE_SCENE_UNAVAILABLE/);
+  assert.deepEqual(s.snapshot().actors[0].position,[1,0,2]);
+ }finally{s.db.close();}
+});
 test('movement advances at ticks and persists factual completion, retries do not restart',()=>{const s=setup();const a=s.run('action.submit',{actorId:'whale',leaseId:s.lease.leaseId,leaseVersion:s.lease.leaseVersion,kind:'move',target:{sceneId:'bedroom',position:[.05,0,1.1]}});assert.equal(a.status,'running');assert.notEqual(s.snapshot().actors[0].position[2],1.1);for(let i=0;i<30;i++)s.tick();assert.equal(s.snapshot().actions[a.actionId].status,'completed');assert.equal(s.snapshot().actors[0].position[2],1.1);s.db.close();});
 test('cancellation and stale leases never complete the interrupted effect',()=>{const s=setup();assert.throws(()=>s.run('action.submit',{actorId:'whale',leaseId:'bad',leaseVersion:0,kind:'move',target:{sceneId:'yard'}}),/LEASE/);const a=s.run('action.submit',{actorId:'whale',leaseId:s.lease.leaseId,leaseVersion:s.lease.leaseVersion,kind:'move',target:{sceneId:'yard'}});s.run('action.submit',{actorId:'whale',leaseId:s.lease.leaseId,leaseVersion:s.lease.leaseVersion,kind:'cancel'});for(let i=0;i<20;i++)s.tick();assert.equal(s.snapshot().actions[a.actionId].status,'cancelled');assert.equal(s.snapshot().actors[0].sceneId,'bedroom');s.db.close();});
 test('navigation rejects occupied goal and routes to linked scenes',()=>{const s=setup();assert.throws(()=>s.run('action.submit',{actorId:'whale',leaseId:s.lease.leaseId,leaseVersion:s.lease.leaseVersion,kind:'move',target:{sceneId:'bedroom',position:[-2.52,0,-2.32]}}),/BLOCKED/);const a=s.run('action.submit',{actorId:'whale',leaseId:s.lease.leaseId,leaseVersion:s.lease.leaseVersion,kind:'move',target:{sceneId:'living'}});for(let i=0;i<200;i++)s.tick();assert.equal(s.snapshot().actions[a.actionId].status,'completed');assert.equal(s.snapshot().actors[0].sceneId,'living');s.db.close();});
@@ -150,6 +165,34 @@ test('real-time position and input receipts stay in memory, with bedroom spawn a
   const checkpoint=JSON.parse(db.prepare("SELECT data FROM events WHERE kind='runtime.checkpoint' LIMIT 1").get().data);
   assert.equal(checkpoint.actors[0].position,undefined);
  }finally{db.close();}
+});
+
+test('persistent private homes join the shared scheduler with isolated in-memory actor state',()=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'dafeiyu-private-runtime-'));
+ const db=new DatabaseSync(path.join(directory,'world.sqlite'));
+ try{
+  migrateWorld(db);let now=1000;
+  const service=new WorldService(db,{handlers:createRuntimeHandlers(),clock:()=>now,memoryPosition:true});
+  service.startMemoryRuntime();
+  service.transactRuntime('default',({snapshot})=>Object.assign(snapshot.actors[0],{sceneId:'living',position:[1,0,1]}),{buffered:true});
+  const source=service.readSnapshot('default');
+  const layout=exportCloudLayout(source).bytes;
+  importCloudLayout({db,baseSnapshot:source,layout,targetWorldId:'private-alice',freshPlayer:true});
+  service.initializeMemoryWorld('private-alice');
+  const privateHome=service.readSnapshot('private-alice');
+  assert.equal(privateHome.actors[0].sceneId,'bedroom');
+  assert.ok(Array.isArray(privateHome.actors[0].position));
+  assert.ok(service.worldIds().includes('private-alice'));
+  const runtime=new WorldRuntime(service,{worldId:null});
+  now+=100;runtime.tick();
+  assert.equal(service.readSnapshot('private-alice').runtime.lastTickAt,now);
+  assert.equal(service.readSnapshot('default').runtime.lastTickAt,now);
+  service.flushRuntime();
+  const durable=JSON.parse(db.prepare('SELECT snapshot FROM worlds WHERE world_id=?').get('private-alice').snapshot);
+  assert.equal(durable.actors[0].position,undefined);
+  assert.equal(durable.actors[0].sceneId,undefined);
+  assert.notDeepEqual(service.readSnapshot('private-alice').actors[0].position,service.readSnapshot('default').actors[0].position);
+ }finally{db.close();fs.rmSync(directory,{recursive:true,force:true});}
 });
 
 test('owner control expires after ten idle seconds and MCP still receives a minute',()=>{

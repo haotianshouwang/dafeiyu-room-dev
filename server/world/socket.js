@@ -107,6 +107,7 @@ export function installWorldSocket(app, { worldService, authService, resolvePrin
     }
     const match = SOCKET_PATH.exec(url.pathname);
     if (!match) {
+      if (url.pathname === '/community-api/ws/realtime') return;
       // 不是我们的通道：拒绝并关闭，避免悬挂连接影响其他 upgrade 使用方
       rejectUpgrade(socket, 404, 'Not Found');
       return;
