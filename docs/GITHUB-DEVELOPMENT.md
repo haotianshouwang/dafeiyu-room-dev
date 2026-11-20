@@ -1,6 +1,6 @@
 # GitHub 游戏开发仓库
 
-本仓库为昊天兽王的私有游戏开发仓库，保留游戏源码、公开模型、场景资源、Electron 桌面壳、本地运行接口、测试及 Git 历史。
+本仓库为昊天兽王维护的公开游戏开发仓库，保留游戏源码、公开模型、场景资源、Electron 桌面壳、本地运行接口、测试及 Git 历史。后续游戏开发与更新以 [GitHub 仓库](https://github.com/haotianshouwang/dafeiyu-room-dev) 的 `main` 分支为准。
 
 独立的云端 `dafeiyu-community-server` 不在本仓库中。游戏自带的 `server/` 用于本地运行和桌面版，是游戏启动所需的接口；此目录随游戏保留。
 
@@ -26,7 +26,7 @@ npm run check:public
 
 ## 远程仓库与分支
 
-- `github-dev`：私有游戏开发仓库 `haotianshouwang/dafeiyu-room-dev`。
+- `github-dev`：公开游戏开发仓库 `haotianshouwang/dafeiyu-room-dev`，作为后续开发与更新的主要仓库。
 - `origin`：Gitee 上游 `poxiao12138/dafeiyu-room`，用于跟进原游戏。
 - `personal`：Gitee 公开 Fork `haotianshouwang/dafeiyu-room`，用于提交经过审核的 PR。
 - 本地 `dev/github-game` 跟踪 `github-dev/main`，日常开发在此分支提交和推送。

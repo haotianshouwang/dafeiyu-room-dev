@@ -119,7 +119,7 @@ public/tidewater/.DS_Store
 public/petalwake/.DS_Store
 !docs/PETALWAKE.md
 
-# Private GitHub game development notes.
+# GitHub game development documentation.
 !docs/GITHUB-DEVELOPMENT.md
 
 # Generated local logs, browser captures and authentication helpers.

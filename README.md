@@ -4,6 +4,8 @@
 
 **作者 / 抖音：破晓手记**
 
+本仓库由昊天兽王维护，后续游戏开发与更新在 [GitHub](https://github.com/haotianshouwang/dafeiyu-room-dev) 进行。原游戏来自[破晓手记的 Gitee 仓库](https://gitee.com/poxiao12138/dafeiyu-room)。
+
 [快速启动](#快速启动) · [联机与社区](#联机与社区) · [玩法与场景](#玩法与场景) · [操作按键](#操作按键) · [MCP 智能体](#mcp-智能体) · [开发与文档](#开发与文档) · [项目来源与许可](#项目来源与许可)
 
 ![大肥鱼的卧室](docs/screenshots/room.webp)
@@ -21,8 +23,8 @@
 ### 浏览器版
 
 ```bash
-git clone https://gitee.com/poxiao12138/dafeiyu-room.git
-cd dafeiyu-room
+git clone https://github.com/haotianshouwang/dafeiyu-room-dev.git
+cd dafeiyu-room-dev
 npm ci
 npm run dev
 ```
@@ -47,7 +49,7 @@ npm run desktop:dev
 
 ## 联机与社区
 
-联机服务由 **昊天兽王** 提供。服务器目前仍在测试中，功能和稳定性还有需要完善的地方，感谢大家愿意帮忙体验。如果遇到登录失败、角色模型加载较慢、位置不同步或其他问题，欢迎到 [Issues](https://gitee.com/poxiao12138/dafeiyu-room/issues) 提交反馈。如果方便，请附上客户端版本、设备与系统、复现步骤和截图，便于排查。
+联机服务由 **昊天兽王** 提供。服务器目前仍在测试中，功能和稳定性还有需要完善的地方，感谢大家愿意帮忙体验。如果遇到登录失败、角色模型加载较慢、位置不同步或其他问题，欢迎到 [Issues](https://github.com/haotianshouwang/dafeiyu-room-dev/issues) 提交反馈。如果方便，请附上客户端版本、设备与系统、复现步骤和截图，便于排查。
 
 ### 在线版
 
