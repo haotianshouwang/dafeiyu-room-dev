@@ -31,11 +31,12 @@ test('213 distinct Chinese display names preserve source IDs and map author alia
  assert.equal(blockedPublicFile('public/images/town-house-1room-blue.png'),true,'private previews cannot be copied into public images');
 });
 
-test('thumbnail route authenticates, allowlists and rechecks symlink containment',async()=>{
- const root=mkdtempSync(join(tmpdir(),'town-thumbnails-')),dir=join(root,'package');mkdirSync(join(dir,'thumbnails'),{recursive:true});const good='thumbnails/town-house-1room-blue.png',escape='thumbnails/town-escape.png';const data=Buffer.from('private-thumbnail');writeFileSync(join(dir,good),data);writeFileSync(join(root,'outside.png'),'secret');symlinkSync(join(root,'outside.png'),join(dir,escape));
+test('thumbnail route authenticates, allowlists and rechecks containment',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'town-thumbnails-')),dir=join(root,'package');mkdirSync(join(dir,'thumbnails'),{recursive:true});const good='thumbnails/town-house-1room-blue.png',escape='thumbnails/town-escape.png';const data=Buffer.from('private-thumbnail');writeFileSync(join(dir,good),data);writeFileSync(join(root,'outside.png'),'secret');let symlinkAvailable=true;try{symlinkSync(join(root,'outside.png'),join(dir,escape));}catch(error){assert.equal(error.code,'EPERM');symlinkAvailable=false;}
  const app=Fastify();app.decorate('auth',{resolvePrincipal(req){if(req.headers.authorization!=='Bearer test-owner')throw Error('unauthorized');}});installLocalAssetRoutes(app,dir,{assets:[{thumbnail:good},{thumbnail:escape},{thumbnail:'../outside.png'}]});const get=url=>app.inject({url,headers:{authorization:'Bearer test-owner'}});
  try{assert.equal((await app.inject('/api/local-assets/'+good)).statusCode,401);const ok=await get('/api/local-assets/'+good);assert.equal(ok.statusCode,200);assert.deepEqual(ok.rawPayload,data);assert.equal(ok.headers['content-type'],'image/png');assert.match(ok.headers['cache-control'],/^private/);assert.equal((await get('/api/local-assets/'+escape)).statusCode,404);assert.equal((await get('/api/local-assets/thumbnails/town-not-listed.png')).statusCode,404);assert.equal((await get('/api/local-assets/thumbnails/%2e%2e%2foutside.png')).statusCode,404);
- rmSync(join(dir,good));symlinkSync(join(root,'outside.png'),join(dir,good));assert.equal((await get('/api/local-assets/'+good)).statusCode,404,'changed symlink cannot escape after registration');
+ if(symlinkAvailable)assert.equal((await get('/api/local-assets/'+escape)).statusCode,404,'registered symlink cannot escape');
+ rmSync(join(dir,good));if(symlinkAvailable)symlinkSync(join(root,'outside.png'),join(dir,good));else mkdirSync(join(dir,good));assert.equal((await get('/api/local-assets/'+good)).statusCode,404,'changed path cannot escape after registration');
  }finally{await app.close();rmSync(root,{recursive:true,force:true});}
 });
 

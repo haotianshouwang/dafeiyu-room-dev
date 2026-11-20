@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-import {readFile,lstat,writeFile,rename} from 'node:fs/promises';
+import {readFile,writeFile,rename} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {Server} from '@modelcontextprotocol/sdk/server/index.js';
 import {StdioServerTransport} from '@modelcontextprotocol/sdk/server/stdio.js';
 import {ListToolsRequestSchema,CallToolRequestSchema,ListResourcesRequestSchema,ReadResourceRequestSchema} from '@modelcontextprotocol/sdk/types.js';
+import {assertSecureCredentialFile, secureCredentialFile} from './file-security.mjs';
 const args=process.argv.slice(2),configPath=args[args.indexOf('--config')+1];
 try{
  if(args.indexOf('--config')<0||!configPath)throw Error('请使用 --config 指定受保护的凭证 JSON 文件。');
- const stat=await lstat(configPath);if(!stat.isFile()||stat.mode&0o077||process.getuid&&stat.uid!==process.getuid())throw Error('凭证文件须为当前用户所有的普通文件，权限0600。');
+ await assertSecureCredentialFile(configPath);
  const config=JSON.parse(await readFile(configPath,'utf8')),url=new URL(config.endpoint);
  if(url.username||url.password||url.search||url.hash||url.pathname!=='/mcp'||!(url.protocol==='https:'||url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname))||typeof config.accessToken!=='string')throw Error('凭证配置无效。');
  const client=new Client({name:'dafeiyu-stdio-adapter',version:'1.0.0'});
@@ -19,7 +20,7 @@ try{
   clientMetadata:{redirect_uris:[],grant_types:['refresh_token'],token_endpoint_auth_method:'none'},
   clientInformation:()=>({client_id:config.clientId,token_endpoint_auth_method:'none',issuer:url.origin}),
   tokens:()=>({access_token:config.accessToken,refresh_token:config.refreshToken,token_type:'Bearer',issuer:url.origin}),
-  saveTokens:async tokens=>{config.accessToken=tokens.access_token;config.refreshToken=tokens.refresh_token||config.refreshToken;const temporary=configPath+'.'+randomUUID()+'.tmp';await writeFile(temporary,JSON.stringify(config),{mode:0o600,flag:'wx'});await rename(temporary,configPath);},
+  saveTokens:async tokens=>{config.accessToken=tokens.access_token;config.refreshToken=tokens.refresh_token||config.refreshToken;const temporary=configPath+'.'+randomUUID()+'.tmp';try{await writeFile(temporary,JSON.stringify(config),{mode:0o600,flag:'wx'});await secureCredentialFile(temporary);await rename(temporary,configPath);}catch(error){await import('node:fs/promises').then(({rm})=>rm(temporary,{force:true}));throw error;}},
   redirectToAuthorization:()=>{throw Error('凭证已失效，请从游戏重新授权。');},
   saveCodeVerifier:()=>{},codeVerifier:()=>{throw Error('该适配器仅续期已授权凭证。');}
  }:undefined;

@@ -1,4 +1,5 @@
 import test from'node:test';import assert from'node:assert/strict';import{execFileSync}from'node:child_process';import{fileURLToPath}from'node:url';
+import {findPythonCommand} from '../scripts/python-command.mjs';
 test('tar preflight accepts known pathname suffix and rejects traversal, duplicate and expansion attacks',()=>{
  const validator=fileURLToPath(new URL('../scripts/validate-town-package.py',import.meta.url));
  const code=String.raw`import runpy,tarfile,tempfile,pathlib,io,hashlib,json,gzip
@@ -29,5 +30,5 @@ p=archive([(g+'/asset',b'x'*5000,tarfile.REGTYPE)],True);validate.__globals__['M
 try:validate(p,hashlib.sha256(p.read_bytes()).hexdigest());raise AssertionError('gzip expansion accepted')
 except bad:results.append('UNSAFE_PACKAGE')
 __import__('shutil').rmtree(root);print(json.dumps(results))`;
- const results=JSON.parse(execFileSync('python3',['-c',code,validator],{encoding:'utf8',timeout:15000}));assert.equal(results.length,16);assert.equal(results.filter(r=>r==='ok').length,2);
+ const python=findPythonCommand();const results=JSON.parse(execFileSync(python.command,[...python.args,'-c',code,validator],{encoding:'utf8',timeout:15000}));assert.equal(results.length,16);assert.equal(results.filter(r=>r==='ok').length,2);
 });
